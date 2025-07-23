@@ -1,5 +1,5 @@
 // moderation/warn.js
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js'); // Added MessageFlags
 
 module.exports = {
     // Slash command data
@@ -16,7 +16,7 @@ module.exports = {
                 .setRequired(false)), // Reason is optional
 
     // Execute function for slash command
-    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction }) {
+    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, MessageFlags }) { // Received MessageFlags
         const targetUser = interaction.options.getUser('target');
         const reason = interaction.options.getString('reason') || 'No reason provided.';
         const moderator = interaction.user;
@@ -27,12 +27,12 @@ module.exports = {
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
         if (!targetMember) {
-            return interaction.reply({ content: 'Could not find that user in this server.', ephemeral: true });
+            return interaction.editReply({ content: 'Could not find that user in this server.' });
         }
 
         // Check if the target is exempt
         if (isExempt(targetMember, guildConfig)) {
-            return interaction.reply({ content: 'You cannot warn this user as they are exempt from moderation.', ephemeral: true });
+            return interaction.editReply({ content: 'You cannot warn this user as they are exempt from moderation.' });
         }
 
         guildConfig.caseNumber++;
@@ -51,10 +51,10 @@ module.exports = {
             // Log the moderation action
             await logModerationAction(guild, 'Warning', targetUser, reason, moderator, caseNumber);
 
-            await interaction.reply({ content: `Successfully warned ${targetUser.tag} for: ${reason} (Case #${caseNumber})`, ephemeral: true });
+            await interaction.editReply({ content: `Successfully warned ${targetUser.tag} for: ${reason} (Case #${caseNumber})` });
         } catch (error) {
             console.error(`Error warning user ${targetUser.tag}:`, error);
-            await interaction.reply({ content: `Failed to warn ${targetUser.tag}. An error occurred.`, ephemeral: true });
+            await interaction.editReply({ content: `Failed to warn ${targetUser.tag}. An error occurred. Make sure the bot has permissions and its role is above the target's highest role, and that the user's DMs are open.` });
         }
     },
 
