@@ -5,7 +5,7 @@ const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
+const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, orderBy, limit, startAfter, getDocs } = require('firebase/firestore'); // Added Firestore collection, addDoc, query, where, orderBy, limit, startAfter, getDocs
 const express = require('express'); // Import express
 
 // --- Web Server for Hosting Platforms (e.g., Render) ---
@@ -46,7 +46,9 @@ const commandFiles = [
     'warn.js',
     'timeout.js',
     'kick.js',
-    'ban.js'
+    'ban.js',
+    'warnings.js', // New command
+    'warning.js' // New command
 ];
 
 for (const file of commandFiles) {
@@ -60,7 +62,8 @@ for (const file of commandFiles) {
 
 // Helper function to get guild-specific config from Firestore
 const getGuildConfig = async (guildId) => {
-    const configRef = doc(db, `artifacts/${appId}/public/data/karma_configs`, guildId);
+    // Path: artifacts/{appId}/public/data/{guildId}/configs/settings
+    const configRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/configs`, 'settings');
     const configSnap = await getDoc(configRef);
 
     if (configSnap.exists()) {
@@ -81,7 +84,8 @@ const getGuildConfig = async (guildId) => {
 
 // Helper function to save guild-specific config to Firestore
 const saveGuildConfig = async (guildId, newConfig) => {
-    const configRef = doc(db, `artifacts/${appId}/public/data/karma_configs`, guildId);
+    // Path: artifacts/{appId}/public/data/{guildId}/configs/settings
+    const configRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/configs`, 'settings');
     await setDoc(configRef, newConfig, { merge: true }); // Use merge to update existing fields
 };
 
@@ -108,33 +112,60 @@ const isExempt = (targetMember, guildConfig) => {
     return isAdmin || isMod || isBot;
 };
 
-// Helper function to log moderation actions
-const logModerationAction = async (guild, actionType, targetUser, reason, moderator, caseNumber) => {
+// Helper function to log moderation actions AND store in Firestore
+const logModerationAction = async (guild, actionType, targetUser, reason, moderator, caseNumber, duration = null, messageLink = null) => {
     const guildConfig = await getGuildConfig(guild.id); // Fetch latest config
     const logChannelId = guildConfig.moderationLogChannelId;
 
-    if (!logChannelId) {
+    // Log to Discord channel
+    if (logChannelId) {
+        const logChannel = guild.channels.cache.get(logChannelId);
+        if (logChannel) {
+            const embed = new EmbedBuilder()
+                .setTitle(`${targetUser.username} - Case #${caseNumber}`)
+                .setDescription(`**Action:** ${actionType}\n**Reason:** ${reason || 'No reason provided.'}`)
+                .addFields(
+                    { name: 'User', value: `${targetUser.tag} (${targetUser.id})`, inline: true },
+                    { name: 'Moderator', value: `${moderator.user.tag} (${moderator.id})`, inline: true }
+                )
+                .setTimestamp()
+                .setColor(0xFFA500); // Orange color for moderation logs
+
+            if (duration) {
+                embed.addFields({ name: 'Duration', value: duration, inline: true });
+            }
+            if (messageLink) {
+                embed.addFields({ name: 'Original Message', value: `[Link](${messageLink})`, inline: true });
+            }
+
+            await logChannel.send({ embeds: [embed] });
+        } else {
+            console.error(`Moderation log channel with ID ${logChannelId} not found in guild ${guild.name}.`);
+        }
+    } else {
         console.log(`Moderation log channel not set for guild ${guild.name}.`);
-        return;
     }
 
-    const logChannel = guild.channels.cache.get(logChannelId);
-    if (!logChannel) {
-        console.error(`Moderation log channel with ID ${logChannelId} not found in guild ${guild.name}.`);
-        return;
+    // Store in Firestore
+    try {
+        // Path: artifacts/{appId}/public/data/{guildId}/moderation_records/{recordId}
+        const moderationRecordsRef = collection(db, `artifacts/${appId}/public/data/guilds/${guild.id}/moderation_records`);
+        await addDoc(moderationRecordsRef, {
+            caseNumber: caseNumber,
+            actionType: actionType.replace(' (Emoji)', ''), // Remove (Emoji) from actionType for database storage
+            targetUserId: targetUser.id,
+            targetUserTag: targetUser.tag,
+            moderatorId: moderator.id,
+            moderatorTag: moderator.user.tag,
+            reason: reason,
+            duration: duration,
+            timestamp: new Date(), // Store as Firestore Timestamp
+            messageLink: messageLink
+        });
+        console.log(`Moderation record for Case #${caseNumber} stored in Firestore.`);
+    } catch (error) {
+        console.error(`Error storing moderation record for Case #${caseNumber} in Firestore:`, error);
     }
-
-    const embed = new EmbedBuilder()
-        .setTitle(`${targetUser.username} - Case #${caseNumber}`)
-        .setDescription(`**Action:** ${actionType}\n**Reason:** ${reason || 'No reason provided.'}`)
-        .addFields(
-            { name: 'User', value: `${targetUser.tag} (${targetUser.id})`, inline: true },
-            { name: 'Moderator', value: `${moderator.user.tag} (${moderator.id})`, inline: true } // Corrected to moderator.user.tag
-        )
-        .setTimestamp()
-        .setColor(0xFFA500); // Orange color for moderation logs
-
-    await logChannel.send({ embeds: [embed] });
 };
 
 // Helper function to log deleted messages
@@ -188,7 +219,7 @@ client.once('ready', async () => {
         };
 
         // Check if essential Firebase config values are present
-        if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
+        if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId || !firebaseConfig.authDomain) {
             console.error('Missing essential Firebase environment variables. Please check your .env or hosting configuration.');
             process.exit(1); // Exit if Firebase cannot be properly configured
         }
@@ -310,7 +341,9 @@ client.on('interactionCreate', async interaction => {
                 isExempt,
                 logModerationAction,
                 logMessage,
-                MessageFlags // Pass MessageFlags to commands
+                MessageFlags, // Pass MessageFlags to commands
+                db, // Pass db instance for new commands
+                appId // Pass appId for new commands
             });
         } catch (error) {
             console.error(error);
@@ -328,6 +361,20 @@ client.on('interactionCreate', async interaction => {
 
         // Defer reply for buttons as well, if they might take time
         await interaction.deferUpdate(); // Use deferUpdate for buttons that don't need a new message
+
+        // Handle pagination buttons for /warnings command
+        if (customId.startsWith('warnings_page_')) {
+            const [_, action, targetUserId, currentPageStr] = customId.split('_');
+            const currentPage = parseInt(currentPageStr);
+            const targetUser = await client.users.fetch(targetUserId);
+
+            const warningsCommand = client.commands.get('warnings');
+            if (warningsCommand) {
+                await warningsCommand.handlePagination(interaction, targetUser, action, currentPage, { db, appId, MessageFlags });
+            }
+            return;
+        }
+
 
         if (customId === 'setup_roles') {
             await interaction.followUp({ content: 'Please mention the Moderator role and then the Administrator role (e.g., `@Moderator @Administrator`). Type `none` if you don\'t have one of them.', flags: [MessageFlags.Ephemeral] });
@@ -451,7 +498,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     // Reason should simply be the message content
     const reason = `"${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
+    let actionTypeForDB = ''; // To store the action type without " (Emoji)"
     let actionTaken = false;
+    let duration = null; // For timeout/ban records
+    const messageLink = `https://discord.com/channels/${guild.id}/${message.channel.id}/${message.id}`;
 
     // Increment case number and save before action
     guildConfig.caseNumber++;
@@ -463,7 +513,8 @@ client.on('messageReactionAdd', async (reaction, user) => {
             try {
                 const warnCommand = client.commands.get('warn');
                 if (warnCommand) {
-                    await warnCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage });
+                    actionTypeForDB = 'Warning';
+                    await warnCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
                     actionTaken = true;
                 }
             } catch (error) {
@@ -474,8 +525,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
             try {
                 const timeoutCommand = client.commands.get('timeout');
                 if (timeoutCommand) {
+                    actionTypeForDB = 'Timeout';
+                    duration = '1h'; // Default timeout duration
                     // Pass 60 minutes for default timeout
-                    await timeoutCommand.executeEmoji(message, targetMember, 60, reason, reactorMember, caseNumber, { logModerationAction, logMessage });
+                    await timeoutCommand.executeEmoji(message, targetMember, 60, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
                     actionTaken = true;
                 }
             } catch (error) {
@@ -486,7 +539,8 @@ client.on('messageReactionAdd', async (reaction, user) => {
             try {
                 const kickCommand = client.commands.get('kick');
                 if (kickCommand) {
-                    await kickCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage });
+                    actionTypeForDB = 'Kick';
+                    await kickCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
                     actionTaken = true;
                 }
             } catch (error) {
