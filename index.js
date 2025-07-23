@@ -117,6 +117,9 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
     const guildConfig = await getGuildConfig(guild.id); // Fetch latest config
     const logChannelId = guildConfig.moderationLogChannelId;
 
+    // Determine moderator tag correctly
+    const moderatorTag = moderator.user ? moderator.user.tag : moderator.tag;
+
     // Log to Discord channel
     if (logChannelId) {
         const logChannel = guild.channels.cache.get(logChannelId);
@@ -126,7 +129,7 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
                 .setDescription(`**Action:** ${actionType}\n**Reason:** ${reason || 'No reason provided.'}`)
                 .addFields(
                     { name: 'User', value: `${targetUser.tag} (${targetUser.id})`, inline: true },
-                    { name: 'Moderator', value: `${moderator.user.tag} (${moderator.id})`, inline: true }
+                    { name: 'Moderator', value: `${moderatorTag} (${moderator.id})`, inline: true } // Corrected moderator tag access
                 )
                 .setTimestamp()
                 .setColor(0xFFA500); // Orange color for moderation logs
@@ -156,7 +159,7 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
             targetUserId: targetUser.id,
             targetUserTag: targetUser.tag,
             moderatorId: moderator.id,
-            moderatorTag: moderator.user.tag,
+            moderatorTag: moderatorTag, // Corrected moderator tag storage
             reason: reason,
             duration: duration,
             timestamp: new Date(), // Store as Firestore Timestamp
@@ -172,6 +175,9 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
 const logMessage = async (guild, message, moderator, actionType) => {
     const guildConfig = await getGuildConfig(guild.id); // Fetch latest config
     const logChannelId = guildConfig.messageLogChannelId;
+
+    // Determine moderator tag correctly
+    const moderatorTag = moderator.user ? moderator.user.tag : moderator.tag;
 
     if (!logChannelId) {
         console.log(`Message log channel not set for guild ${guild.name}.`);
@@ -191,7 +197,7 @@ const logMessage = async (guild, message, moderator, actionType) => {
             { name: 'Author', value: `${message.author ? message.author.tag : 'Unknown User'} (${message.author ? message.author.id : 'Unknown ID'})`, inline: true },
             { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
             { name: 'Sent At', value: `<t:${Math.floor(message.createdTimestamp / 1000)}:F>`, inline: true },
-            { name: 'Moderated By', value: `${moderator ? moderator.user.tag : 'System'}`, inline: true } // Corrected to moderator.user.tag
+            { name: 'Moderated By', value: `${moderatorTag}`, inline: true } // Corrected moderator tag access
         )
         .setTimestamp()
         .setColor(0xADD8E6); // Light blue for message logs
