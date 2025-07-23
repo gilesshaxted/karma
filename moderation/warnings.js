@@ -1,6 +1,6 @@
 // moderation/warnings.js
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
-const { collection, query, where, orderBy, limit, startAfter, getDocs, doc } = require('firebase/firestore'); // Added doc import
+const { collection, query, where, orderBy, limit, startAfter, getDocs, documentId } = require('firebase/firestore'); // Added documentId import
 
 const ITEMS_PER_PAGE = 10;
 
@@ -24,6 +24,7 @@ module.exports = {
             where("targetUserId", "==", targetUser.id),
             where("actionType", "==", "Warning"), // Specifically filter for warnings
             orderBy("timestamp", "desc"),
+            orderBy(documentId()), // Crucial: Order by document ID for consistent pagination with composite index
             limit(ITEMS_PER_PAGE + 1) // Fetch one more to check for next page
         );
 
@@ -95,9 +96,6 @@ module.exports = {
 
         const ITEMS_PER_PAGE = 10; // Ensure ITEMS_PER_PAGE is defined here too
 
-        // To handle pagination correctly with `startAfter`, we need the *last document snapshot* of the previous page.
-        // Re-fetching the entire set up to the desired offset is inefficient for very large datasets,
-        // but robust for typical bot usage. For extreme scale, you'd store `lastVisible` document IDs.
         let q;
         if (newPage === 1) {
             q = query(
@@ -105,17 +103,19 @@ module.exports = {
                 where("targetUserId", "==", targetUser.id),
                 where("actionType", "==", "Warning"),
                 orderBy("timestamp", "desc"),
+                orderBy(documentId()), // Crucial: Order by document ID for consistent pagination with composite index
                 limit(ITEMS_PER_PAGE + 1)
             );
         } else {
-            // Fetch the documents for the previous page to get the last document snapshot
-            const prevPageOffset = (newPage - 1) * ITEMS_PER_PAGE;
+            // To get the starting point for the new page, we need to fetch the last document of the *previous* page.
+            // This is done by querying for the previous page's data and getting its last document snapshot.
             const qPrevPage = query(
                 moderationRecordsRef,
                 where("targetUserId", "==", targetUser.id),
                 where("actionType", "==", "Warning"),
                 orderBy("timestamp", "desc"),
-                limit(prevPageOffset) // Get all documents up to the start of the current page
+                orderBy(documentId()), // Also order by document ID for consistency
+                limit((newPage - 1) * ITEMS_PER_PAGE) // Get all documents up to the start of the current page
             );
             const prevPageSnapshot = await getDocs(qPrevPage);
             const lastDocOfPrevPage = prevPageSnapshot.docs[prevPageSnapshot.docs.length - 1];
@@ -131,11 +131,11 @@ module.exports = {
                 where("targetUserId", "==", targetUser.id),
                 where("actionType", "==", "Warning"),
                 orderBy("timestamp", "desc"),
+                orderBy(documentId()), // Crucial: Order by document ID for consistent pagination with composite index
                 startAfter(lastDocOfPrevPage),
                 limit(ITEMS_PER_PAGE + 1)
             );
         }
-
 
         const querySnapshot = await getDocs(q);
         const warnings = querySnapshot.docs.map(doc => doc.data());
