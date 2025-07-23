@@ -1,105 +1,159 @@
 # Karma
-Karma - A Discord Moderation Bot<br/>
+
+Karma - A Discord Moderation Bot
 Author - BallisticEel
-<br/><br/>
-**Description**<br/>
+
+## Description
+
 Karma is a powerful and intuitive Discord moderation bot designed to help server administrators and moderators maintain a safe and respectful community. With a suite of slash commands and an innovative emoji-based moderation system, Karma streamlines the process of managing user behavior, ensuring a positive environment for everyone.
 
-# Key Features:<br/>
-## Slash Commands:<br/>
+# Key Features:
 
-/warn <user> <reason>: Issues a warning to a user.<br/>
-/timeout <duration> <user> <reason>: Puts a user in timeout for a specified duration (default: 1 hour).<br/>
-/kick <user> <reason>: Removes a user from the server.<br/>
-/ban <duration_or_forever> <user> <reason>: Permanently or temporarily bans a user from the server.<br/>
-<br/>
-## Emoji-Based Moderation:<br/>
-<br/>
-React to a message with ⚠️ (warning emoji) to warn the author and delete the message.<br/>
-React to a message with ⏰ (alarm clock emoji) to timeout the author for 1 hour and delete the message.<br/>
-React to a message with 👢 (boot emoji) to kick the author and delete the message.
+## Slash Commands:
+
+* `/warn <user> <reason>`: Issues a warning to a user.
+
+* `/timeout <duration> <user> <reason>`: Puts a user in timeout for a specified duration (default: 1 hour).
+
+* `/kick <user> <reason>`: Removes a user from the server.
+
+* `/ban <duration_or_forever> <user> <reason>`: Permanently or temporarily bans a user from the server.
+
+* `/warnings <user>`: Lists a user's past warnings, paginated 10 at a time.
+
+* `/warning <case_number>`: Shows detailed information for a specific warning by its case number.
+
+## Emoji-Based Moderation:
+
+* React to a message with ⚠️ (warning emoji) to warn the author and delete the message.
+
+* React to a message with ⏰ (alarm clock emoji) to timeout the author for 1 hour and delete the message.
+
+* React to a message with 👢 (boot emoji) to kick the author and delete the message.
 
 Automated Logging: All moderation actions are logged to a designated moderation log channel with detailed embeds, including case numbers. Deleted messages (especially those from kicks/bans) are logged to a separate message log channel.
 
-Configurable Roles & Channels: Use the /setup command to easily configure moderator roles, admin roles, and logging channels directly within Discord.
+Configurable Roles & Channels: Use the `/setup` command to easily configure moderator roles, admin roles, and logging channels directly within Discord.
 
 Message Deletion on Kick/Ban: When a user is kicked or banned, their messages from the last 24 hours are automatically deleted and logged, helping to clean up disruptive content.
 
-Firestore Integration: All bot configurations (moderator/admin roles, logging channels, case numbers) are persistently stored in Google Firestore, ensuring data is saved across restarts and accessible from any host.
+Firestore Integration: All bot configurations and moderation records are persistently stored in Google Firestore, organized under each guild's unique ID.
 
 Karma is designed to be efficient, user-friendly, and highly effective in maintaining a healthy Discord server. It's the ultimate tool for a harmonious community!
 
-Setup Instructions
-Node.js: Ensure you have Node.js installed (v16.x or higher recommended).
+# Setup Instructions
 
-Discord Bot Token & Application ID:
+## Node.js:
 
-Go to the Discord Developer Portal.
+Ensure you have Node.js installed (v16.x or higher recommended).
 
-Create a new application.
+## Discord Bot Token & Application ID:
 
-Navigate to "Bot" on the left sidebar.
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications).
 
-Click "Add Bot" and then "Yes, do it!".
+2. Create a new application.
 
-Under "Privileged Gateway Intents", enable PRESENCE INTENT, SERVER MEMBERS INTENT, and MESSAGE CONTENT INTENT.
+3. Navigate to "Bot" on the left sidebar.
 
-Copy your bot's token. Keep this token secret!
+4. Click "Add Bot" and then "Yes, do it!".
 
-Copy your Application ID (found under "General Information").
+5. Under "Privileged Gateway Intents", enable `PRESENCE INTENT`, `SERVER MEMBERS INTENT`, and `MESSAGE CONTENT INTENT`.
 
-Firebase Project:
+6. Copy your bot's token. **Keep this token secret!**
+
+7. Copy your Application ID (found under "General Information").
+
+## Firebase Project:
 
 Set up a Google Cloud project and enable Firestore.
+**Crucially, ensure your Firestore security rules allow authenticated users to read and write to the following paths:**
 
-Ensure your Firestore security rules allow authenticated users to read and write to /artifacts/{appId}/public/data/karma_configs/{guildId}.
+* `/artifacts/{appId}/public/data/guilds/{guildId}/configs/settings`
 
-Environment Variables: When deploying, ensure the following environment variables are set:
+* `/artifacts/{appId}/public/data/guilds/{guildId}/moderation_records/{recordId}`
 
-DISCORD_BOT_TOKEN: Your Discord bot's token.
+Example rules:
+```
+rules_version = '2';
+service cloud.firestore {
+match /databases/{database}/documents {
+// Allow read/write for guild configurations
+match /artifacts/{appId}/public/data/guilds/{guildId}/configs/settings {
+allow read, write: if request.auth != null;
+}
+// Allow read/write for moderation records
+match /artifacts/{appId}/public/data/guilds/{guildId}/moderation_records/{recordId} {
+allow read, write: if request.auth != null;
+}
+// Default rule, usually more restrictive
+match /{document=**} {
+allow read, write: if false;
+}
+}
+}
+```
+## Environment Variables:
 
-DISCORD_APPLICATION_ID: Your Discord bot's Application ID.
+When deploying, ensure the following environment variables are set:
 
-__app_id: (Provided by Canvas/Render environment) The application ID for Firestore.
+* `DISCORD_BOT_TOKEN`: Your Discord bot's token.
 
-__firebase_config: (Provided by Canvas/Render environment) Your Firebase project configuration in JSON format.
+* `DISCORD_APPLICATION_ID`: Your Discord bot's Application ID.
 
-__initial_auth_token: (Provided by Canvas/Render environment) A Firebase custom authentication token.
+* `__app_id`: (Provided by Canvas/Render environment) The application ID for Firestore.
 
-Install Dependencies: Open your terminal in the bot's root directory and run:
+* `__initial_auth_token`: (Provided by Canvas/Render environment) A Firebase custom authentication token.
 
-npm install discord.js dotenv firebase
+* `FIREBASE_API_KEY`: Your Firebase project's API Key.
 
-Run the Bot:
+* `FIREBASE_APP_ID`: Your Firebase project's App ID.
 
-node index.js
+* `FIREBASE_AUTH_DOMAIN`: Your Firebase project's Auth Domain.
 
-Invite the Bot to Your Server:
+* `FIREBASE_MESSAGING_SENDER_ID`: Your Firebase project's Messaging Sender ID.
 
-In the Discord Developer Portal, go to "OAuth2" -> "URL Generator".
+* `FIREBASE_PROJECT_ID`: Your Firebase project's Project ID.
 
-Select bot and applications.commands scopes.
+* `FIREBASE_STORAGE_BUCKET`: Your Firebase project's Storage Bucket.
 
-Under "Bot Permissions", grant the following permissions:
+## Install Dependencies:
 
-Manage Channels
+Open your terminal in the bot's root directory and run:
 
-Manage Roles
+`npm install discord.js dotenv firebase express`
 
-Kick Members
+## Run the Bot:
 
-Ban Members
+`node index.js`
 
-Timeout Members
+## Invite the Bot to Your Server:
 
-Read Message History
+1. In the Discord Developer Portal, go to "OAuth2" -> "URL Generator".
 
-Send Messages
+2. Select `bot` and `applications.commands` scopes.
 
-Manage Messages
+3. Under "Bot Permissions", grant the following permissions:
 
-Copy the generated URL and paste it into your browser to invite the bot to your server.
+   * Manage Channels
 
-Configure with /setup: Once the bot is in your server, use the /setup command to configure moderator/admin roles and logging channels. This is crucial for the bot's functionality.
+   * Manage Roles
+
+   * Kick Members
+
+   * Ban Members
+
+   * Timeout Members
+
+   * Read Message History
+
+   * Send Messages
+
+   * Manage Messages
+
+4. Copy the generated URL and paste it into your browser to invite the bot to your server.
+
+## Configure with /setup:
+
+Once the bot is in your server, use the `/setup` command to configure moderator/admin roles and logging channels. This is crucial for the bot's functionality.
 
 Enjoy using Karma to moderate your Discord server!
