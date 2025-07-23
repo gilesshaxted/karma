@@ -6,15 +6,15 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('ban')
         .setDescription('Bans a user from the server.')
-        .addStringOption(option =>
-            option.setName('duration')
-                .setDescription('Duration of ban in days (e.g., 7) or "forever". Default: forever.')
-                .setRequired(false))
-        .addUserOption(option =>
+        .addUserOption(option => // Required option first
             option.setName('target')
                 .setDescription('The user to ban')
                 .setRequired(true))
-        .addStringOption(option =>
+        .addStringOption(option => // Optional option second
+            option.setName('duration')
+                .setDescription('Duration of ban in days (e.g., 7) or "forever". Default: forever.')
+                .setRequired(false))
+        .addStringOption(option => // Optional option third
             option.setName('reason')
                 .setDescription('The reason for the ban')
                 .setRequired(false)),
