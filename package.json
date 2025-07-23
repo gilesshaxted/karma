@@ -1,0 +1,28 @@
+{
+  "name": "karma-discord-bot",
+  "version": "0.0.1",
+  "description": "A Discord moderation bot named Karma, built with Node.js and Discord.js, using Firestore for configuration.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "deploy-commands": "node deploy-commands.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "moderation",
+    "karma",
+    "nodejs",
+    "discord.js",
+    "firestore"
+  ],
+  "author": "BallisticEel",
+  "license": "ISC",
+  "dependencies": {
+    "@discordjs/rest": "^1.7.1",
+    "discord-api-types": "^0.37.84",
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
+    "firebase": "^10.12.3"
+  }
+}
