@@ -287,59 +287,61 @@ client.once('ready', async () => {
 
 // Event: Interaction created (for slash commands and buttons)
 client.on('interactionCreate', async interaction => {
-    if (interaction.isCommand()) {
-        const { commandName } = interaction;
+    // Wrap the entire interaction processing in a try-catch to prevent unhandled rejections
+    // and ensure deferReply is attempted even if subsequent logic fails.
+    try {
+        if (interaction.isCommand()) {
+            const { commandName } = interaction;
 
-        // Defer reply immediately for all slash commands to prevent "Unknown interaction"
-        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Using flags for ephemeral
+            // Defer reply immediately for all slash commands to prevent "Unknown interaction"
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Using flags for ephemeral
 
-        // Handle /setup command
-        if (commandName === 'setup') {
-            // Check if the user has Administrator permissions
-            if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                return interaction.editReply({ content: 'You must have Administrator permissions to use the `/setup` command.' });
+            // Handle /setup command
+            if (commandName === 'setup') {
+                // Check if the user has Administrator permissions
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                    return interaction.editReply({ content: 'You must have Administrator permissions to use the `/setup` command.' });
+                }
+
+                const embed = new EmbedBuilder()
+                    .setTitle('Karma Bot Setup')
+                    .setDescription('Welcome to Karma Bot setup! Use the buttons below to configure your server\'s moderation settings.')
+                    .addFields(
+                        { name: '1. Set Moderator & Admin Roles', value: 'Define which roles can use moderation commands and are exempt from moderation.' },
+                        { name: '2. Set Moderation Channels', value: 'Specify channels for moderation logs and deleted message logs.' }
+                    )
+                    .setColor(0x0099FF);
+
+                const row = new ActionRowBuilder()
+                    .addComponents(
+                        new ButtonBuilder()
+                            .setCustomId('setup_roles')
+                            .setLabel('Set Roles')
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder()
+                            .setCustomId('setup_channels')
+                            .setLabel('Set Channels')
+                            .setStyle(ButtonStyle.Primary),
+                    );
+
+                await interaction.editReply({ embeds: [embed], components: [row] });
+                return;
             }
 
-            const embed = new EmbedBuilder()
-                .setTitle('Karma Bot Setup')
-                .setDescription('Welcome to Karma Bot setup! Use the buttons below to configure your server\'s moderation settings.')
-                .addFields(
-                    { name: '1. Set Moderator & Admin Roles', value: 'Define which roles can use moderation commands and are exempt from moderation.' },
-                    { name: '2. Set Moderation Channels', value: 'Specify channels for moderation logs and deleted message logs.' }
-                )
-                .setColor(0x0099FF);
+            // Handle other slash commands
+            const command = client.commands.get(commandName);
 
-            const row = new ActionRowBuilder()
-                .addComponents(
-                    new ButtonBuilder()
-                        .setCustomId('setup_roles')
-                        .setLabel('Set Roles')
-                        .setStyle(ButtonStyle.Primary),
-                    new ButtonBuilder()
-                        .setCustomId('setup_channels')
-                        .setLabel('Set Channels')
-                        .setStyle(ButtonStyle.Primary),
-                );
+            if (!command) {
+                return interaction.editReply({ content: 'No command matching that name was found.' });
+            }
 
-            await interaction.editReply({ embeds: [embed], components: [row] });
-            return;
-        }
+            const guildConfig = await getGuildConfig(interaction.guildId); // Await config fetch
 
-        // Handle other slash commands
-        const command = client.commands.get(commandName);
+            // Check if the command user has permission
+            if (!hasPermission(interaction.member, guildConfig)) {
+                return interaction.editReply({ content: 'You do not have permission to use this command.' });
+            }
 
-        if (!command) {
-            return interaction.editReply({ content: 'No command matching that name was found.' });
-        }
-
-        const guildConfig = await getGuildConfig(interaction.guildId); // Await config fetch
-
-        // Check if the command user has permission
-        if (!hasPermission(interaction.member, guildConfig)) {
-            return interaction.editReply({ content: 'You do not have permission to use this command.' });
-        }
-
-        try {
             await command.execute(interaction, {
                 getGuildConfig,
                 saveGuildConfig, // Pass the updated save function
@@ -351,110 +353,109 @@ client.on('interactionCreate', async interaction => {
                 db, // Pass db instance for new commands
                 appId // Pass appId for new commands
             });
-        } catch (error) {
-            console.error(error);
-            // Check if interaction was already replied/deferred to avoid "Unknown interaction" on error reply
-            if (interaction.replied || interaction.deferred) {
-                await interaction.editReply({ content: 'There was an error while executing this command!' });
-            } else {
-                // Fallback, though deferReply should prevent this path for slash commands
-                await interaction.reply({ content: 'There was an error while executing this command!', flags: [MessageFlags.Ephemeral] });
+        } else if (interaction.isButton()) {
+            const { customId } = interaction;
+            const guildConfig = await getGuildConfig(interaction.guildId); // Await config fetch
+
+            // Defer reply for buttons as well, if they might take time
+            await interaction.deferUpdate(); // Use deferUpdate for buttons that don't need a new message
+
+            // Handle pagination buttons for /warnings command
+            if (customId.startsWith('warnings_page_')) {
+                const [_, action, targetUserId, currentPageStr] = customId.split('_');
+                const currentPage = parseInt(currentPageStr);
+                const targetUser = await client.users.fetch(targetUserId);
+
+                const warningsCommand = client.commands.get('warnings');
+                if (warningsCommand) {
+                    await warningsCommand.handlePagination(interaction, targetUser, action, currentPage, { db, appId, MessageFlags });
+                }
+                return;
+            }
+
+
+            if (customId === 'setup_roles') {
+                await interaction.followUp({ content: 'Please mention the Moderator role and then the Administrator role (e.g., `@Moderator @Administrator`). Type `none` if you don\'t have one of them.', flags: [MessageFlags.Ephemeral] });
+
+                const filter = m => m.author.id === interaction.user.id;
+                const collector = interaction.channel.createMessageCollector({ filter, time: 60000 }); // 60 seconds to respond
+
+                collector.on('collect', async m => {
+                    const roles = m.mentions.roles;
+                    let modRole = null;
+                    let adminRole = null;
+
+                    if (roles.size >= 1) {
+                        modRole = roles.first();
+                        if (roles.size >= 2) {
+                            adminRole = roles.last();
+                        }
+                    } else if (m.content.toLowerCase() === 'none') {
+                        // User explicitly said 'none' for both
+                    } else {
+                        await interaction.followUp({ content: 'Please mention the roles correctly or type `none`.', flags: [MessageFlags.Ephemeral] });
+                        return;
+                    }
+
+                    guildConfig.modRoleId = modRole ? modRole.id : null;
+                    guildConfig.adminRoleId = adminRole ? adminRole.id : null;
+                    await saveGuildConfig(interaction.guildId, guildConfig); // Await save
+
+                    await interaction.followUp({ content: `Moderator role set to: ${modRole ? modRole.name : 'None'}\nAdministrator role set to: ${adminRole ? adminRole.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
+                    collector.stop();
+                    m.delete().catch(console.error); // Delete the user's message
+                });
+
+                collector.on('end', collected => {
+                    if (collected.size === 0) {
+                        interaction.followUp({ content: 'You did not respond in time. Role setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
+                    }
+                });
+
+            } else if (customId === 'setup_channels') {
+                await interaction.followUp({ content: 'Please mention the Moderation Log Channel and then the Message Log Channel (e.g., `#mod-logs #message-logs`).', flags: [MessageFlags.Ephemeral] });
+
+                const filter = m => m.author.id === interaction.user.id;
+                const collector = interaction.channel.createMessageCollector({ filter, time: 60000 });
+
+                collector.on('collect', async m => {
+                    const channels = m.mentions.channels;
+                    let modLogChannel = null;
+                    let msgLogChannel = null;
+
+                    if (channels.size >= 1) {
+                        modLogChannel = channels.first();
+                        if (channels.size >= 2) {
+                            msgLogChannel = channels.last();
+                        }
+                    } else {
+                        await interaction.followUp({ content: 'Please mention the channels correctly.', flags: [MessageFlags.Ephemeral] });
+                        return;
+                    }
+
+                    guildConfig.moderationLogChannelId = modLogChannel ? modLogChannel.id : null;
+                    guildConfig.messageLogChannelId = msgLogChannel ? msgLogChannel.id : null;
+                    await saveGuildConfig(interaction.guildId, guildConfig); // Await save
+
+                    await interaction.followUp({ content: `Moderation Log Channel set to: ${modLogChannel ? modLogChannel.name : 'None'}\nMessage Log Channel set to: ${msgLogChannel ? msgLogChannel.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
+                    collector.stop();
+                    m.delete().catch(console.error); // Delete the user's message
+                });
+
+                collector.on('end', collected => {
+                    if (collected.size === 0) {
+                        interaction.followUp({ content: 'You did not respond in time. Channel setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
+                    }
+                });
             }
         }
-    } else if (interaction.isButton()) {
-        const { customId } = interaction;
-        const guildConfig = await getGuildConfig(interaction.guildId); // Await config fetch
-
-        // Defer reply for buttons as well, if they might take time
-        await interaction.deferUpdate(); // Use deferUpdate for buttons that don't need a new message
-
-        // Handle pagination buttons for /warnings command
-        if (customId.startsWith('warnings_page_')) {
-            const [_, action, targetUserId, currentPageStr] = customId.split('_');
-            const currentPage = parseInt(currentPageStr); // Corrected line
-            const targetUser = await client.users.fetch(targetUserId);
-
-            const warningsCommand = client.commands.get('warnings');
-            if (warningsCommand) {
-                await warningsCommand.handlePagination(interaction, targetUser, action, currentPage, { db, appId, MessageFlags });
-            }
-            return;
-        }
-
-
-        if (customId === 'setup_roles') {
-            await interaction.followUp({ content: 'Please mention the Moderator role and then the Administrator role (e.g., `@Moderator @Administrator`). Type `none` if you don\'t have one of them.', flags: [MessageFlags.Ephemeral] });
-
-            const filter = m => m.author.id === interaction.user.id;
-            const collector = interaction.channel.createMessageCollector({ filter, time: 60000 }); // 60 seconds to respond
-
-            collector.on('collect', async m => {
-                const roles = m.mentions.roles;
-                let modRole = null;
-                let adminRole = null;
-
-                if (roles.size >= 1) {
-                    modRole = roles.first();
-                    if (roles.size >= 2) {
-                        adminRole = roles.last();
-                    }
-                } else if (m.content.toLowerCase() === 'none') {
-                    // User explicitly said 'none' for both
-                } else {
-                    await interaction.followUp({ content: 'Please mention the roles correctly or type `none`.', flags: [MessageFlags.Ephemeral] });
-                    return;
-                }
-
-                guildConfig.modRoleId = modRole ? modRole.id : null;
-                guildConfig.adminRoleId = adminRole ? adminRole.id : null;
-                await saveGuildConfig(interaction.guildId, guildConfig); // Await save
-
-                await interaction.followUp({ content: `Moderator role set to: ${modRole ? modRole.name : 'None'}\nAdministrator role set to: ${adminRole ? adminRole.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
-                collector.stop();
-                m.delete().catch(console.error); // Delete the user's message
-            });
-
-            collector.on('end', collected => {
-                if (collected.size === 0) {
-                    interaction.followUp({ content: 'You did not respond in time. Role setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
-                }
-            });
-
-        } else if (customId === 'setup_channels') {
-            await interaction.followUp({ content: 'Please mention the Moderation Log Channel and then the Message Log Channel (e.g., `#mod-logs #message-logs`).', flags: [MessageFlags.Ephemeral] });
-
-            const filter = m => m.author.id === interaction.user.id;
-            const collector = interaction.channel.createMessageCollector({ filter, time: 60000 });
-
-            collector.on('collect', async m => {
-                const channels = m.mentions.channels;
-                let modLogChannel = null;
-                let msgLogChannel = null;
-
-                if (channels.size >= 1) {
-                    modLogChannel = channels.first();
-                    if (channels.size >= 2) {
-                        msgLogChannel = channels.last();
-                    }
-                } else {
-                    await interaction.followUp({ content: 'Please mention the channels correctly.', flags: [MessageFlags.Ephemeral] });
-                    return;
-                }
-
-                guildConfig.moderationLogChannelId = modLogChannel ? modLogChannel.id : null;
-                guildConfig.messageLogChannelId = msgLogChannel ? msgLogChannel.id : null;
-                await saveGuildConfig(interaction.guildId, guildConfig); // Await save
-
-                await interaction.followUp({ content: `Moderation Log Channel set to: ${modLogChannel ? modLogChannel.name : 'None'}\nMessage Log Channel set to: ${msgLogChannel ? msgLogChannel.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
-                collector.stop();
-                m.delete().catch(console.error); // Delete the user's message
-            });
-
-            collector.on('end', collected => {
-                if (collected.size === 0) {
-                    interaction.followUp({ content: 'You did not respond in time. Channel setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
-                }
-            });
+    } catch (error) {
+        console.error('Error during interaction processing:', error);
+        // Attempt to edit reply if it was deferred, otherwise reply ephemerally
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply after error:', e));
+        } else {
+            await interaction.reply({ content: 'An unexpected error occurred while processing your command.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to reply after error:', e));
         }
     }
 });
