@@ -6,7 +6,18 @@ const { Routes } = require('discord-api-types/v10');
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = require('firebase/auth');
 const { getFirestore, doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
-const port = process.env.PORT || 3000
+const express = require('express'); // Import express
+
+// --- Web Server for Hosting Platforms (e.g., Render) ---
+const app = express();
+
+app.get('/', (req, res) => {
+    res.send('Discord bot is running and listening for commands!');
+});
+
+app.listen(PORT, () => {
+    console.log(`Web server listening on port ${PORT}`);
+});
 
 // Create a new Discord client with necessary intents
 const client = new Client({
@@ -484,6 +495,18 @@ client.on('messageReactionAdd', async (reaction, user) => {
             console.error(`Failed to delete message ${message.id}:`, error);
         }
     }
+});
+
+// Add a simple Express server to satisfy Render's Web Service port binding requirement
+const app = express();
+const PORT = process.env.PORT || 3000; // Use Render's PORT env var or default to 3000
+
+app.get('/', (req, res) => {
+    res.send('Karma bot is running!'); // Basic health check endpoint
+});
+
+app.listen(PORT, () => {
+    console.log(`Web server listening on port ${PORT}`);
 });
 
 // Log in to Discord with your client's token
