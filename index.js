@@ -110,7 +110,15 @@ const getOrCreateUserKarma = async (guildId, userId) => {
     const karmaSnap = await getDoc(karmaRef);
 
     if (karmaSnap.exists()) {
-        return karmaSnap.data();
+        const data = karmaSnap.data();
+        // Ensure dates are Date objects, converting from Firestore Timestamp if necessary
+        if (data.lastActivityDate && typeof data.lastActivityDate.toDate === 'function') {
+            data.lastActivityDate = data.lastActivityDate.toDate();
+        }
+        if (data.lastKarmaCalculationDate && typeof data.lastKarmaCalculationDate.toDate === 'function') {
+            data.lastKarmaCalculationDate = data.lastKarmaCalculationDate.toDate();
+        }
+        return data;
     } else {
         const defaultKarma = {
             userId: userId,
@@ -153,7 +161,8 @@ const calculateAndAwardKarma = async (guild, user, karmaData) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Normalize to start of day
 
-    const lastCalcDate = karmaData.lastKarmaCalculationDate.toDate();
+    // Ensure lastKarmaCalculationDate is a Date object
+    const lastCalcDate = karmaData.lastKarmaCalculationDate instanceof Date ? karmaData.lastKarmaCalculationDate : new Date(karmaData.lastKarmaCalculationDate);
     lastCalcDate.setHours(0, 0, 0, 0);
 
     // Check for recent moderation actions for this user
@@ -662,6 +671,9 @@ client.on('interactionCreate', async interaction => {
 
 // Event: Message reaction added (for emoji moderation)
 client.on('messageReactionAdd', async (reaction, user) => {
+    // Ignore bot reactions and DMs
+    if (user.bot || !reaction.message.guild) return;
+
     // When a reaction is received, check if the structure is partial
     if (reaction.partial) {
         // If the message this reaction belongs to was removed from the cache,
@@ -674,15 +686,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
         }
     }
 
-    // Ignore reactions from bots
-    if (user.bot) return;
-
     const message = reaction.message;
     const guild = message.guild;
-    if (!guild) return; // Ignore DMs
-
     const reactorMember = await guild.members.fetch(user.id);
-    const guildConfig = await getGuildConfig(guild.id); // Await config fetch
+    const guildConfig = await getGuildConfig(guild.id);
 
     // Check if the reactor has permission
     if (!hasPermission(reactorMember, guildConfig)) {
@@ -771,6 +778,38 @@ client.on('messageReactionAdd', async (reaction, user) => {
         }
     }
 });
+
+// Event: Message Reaction Added (for Karma system)
+client.on('messageReactionAdd', async (reaction, user) => {
+    // Ignore bot reactions, DMs, or reactions from the message author themselves
+    if (user.bot || !reaction.message.guild || reaction.message.author.id === user.id) return;
+
+    // Fetch full reaction if partial
+    if (reaction.partial) {
+        try {
+            await reaction.fetch();
+        } catch (error) {
+            console.error('Something went wrong when fetching the reaction:', error);
+            return;
+        }
+    }
+
+    const message = reaction.message;
+    const guild = message.guild;
+    const originalAuthor = message.author;
+
+    try {
+        const originalAuthorKarmaData = await getOrCreateUserKarma(guild.id, originalAuthor.id);
+        await updateUserKarmaData(guild.id, originalAuthor.id, {
+            reactionsReceivedToday: (originalAuthorKarmaData.reactionsReceivedToday || 0) + 1,
+            lastActivityDate: new Date()
+        });
+        await calculateAndAwardKarma(guild, originalAuthor, { ...originalAuthorKarmaData, reactionsReceivedToday: (originalAuthorKarmaData.reactionsReceivedToday || 0) + 1 });
+    } catch (error) {
+        console.error(`Error in messageReactionAdd karma tracking for ${originalAuthor.tag}:`, error);
+    }
+});
+
 
 // Log in to Discord with your client's token
 client.login(process.env.DISCORD_BOT_TOKEN);
