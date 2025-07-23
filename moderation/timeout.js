@@ -1,5 +1,5 @@
 // moderation/timeout.js
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js'); // Added MessageFlags
 
 // Function to parse duration string (e.g., "1h", "30m", "2d") to milliseconds
 function parseDuration(durationString) {
@@ -41,7 +41,7 @@ module.exports = {
                 .setRequired(false)),
 
     // Execute function for slash command
-    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction }) {
+    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, MessageFlags }) { // Received MessageFlags
         const targetUser = interaction.options.getUser('target');
         const durationString = interaction.options.getString('duration') || '1h'; // Default to 1 hour
         const reason = interaction.options.getString('reason') || 'No reason provided.';
@@ -52,24 +52,24 @@ module.exports = {
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
         if (!targetMember) {
-            return interaction.reply({ content: 'Could not find that user in this server.', ephemeral: true });
+            return interaction.editReply({ content: 'Could not find that user in this server.' });
         }
 
         // Check if the target is exempt
         if (isExempt(targetMember, guildConfig)) {
-            return interaction.reply({ content: 'You cannot timeout this user as they are exempt from moderation.', ephemeral: true });
+            return interaction.editReply({ content: 'You cannot timeout this user as they are exempt from moderation.' });
         }
 
         const durationMs = parseDuration(durationString);
 
         if (durationMs === null) {
-            return interaction.reply({ content: 'Invalid duration format. Please use formats like `30m`, `1h`, `2d`.', ephemeral: true });
+            return interaction.editReply({ content: 'Invalid duration format. Please use formats like `30m`, `1h`, `2d`.' });
         }
 
         // Discord's timeout limit is 28 days (2,419,200,000 milliseconds)
         const maxTimeoutMs = 28 * 24 * 60 * 60 * 1000;
         if (durationMs > maxTimeoutMs) {
-            return interaction.reply({ content: 'Timeout duration cannot exceed 28 days.', ephemeral: true });
+            return interaction.editReply({ content: 'Timeout duration cannot exceed 28 days.' });
         }
 
         guildConfig.caseNumber++;
@@ -90,10 +90,10 @@ module.exports = {
             // Log the moderation action
             await logModerationAction(guild, `Timeout (${durationString})`, targetUser, reason, moderator, caseNumber);
 
-            await interaction.reply({ content: `Successfully timed out ${targetUser.tag} for ${durationString} for: ${reason} (Case #${caseNumber})`, ephemeral: true });
+            await interaction.editReply({ content: `Successfully timed out ${targetUser.tag} for ${durationString} for: ${reason} (Case #${caseNumber})` });
         } catch (error) {
             console.error(`Error timing out user ${targetUser.tag}:`, error);
-            await interaction.reply({ content: `Failed to timeout ${targetUser.tag}. Make sure the bot has permissions and its role is above the target's highest role.`, ephemeral: true });
+            await interaction.editReply({ content: `Failed to timeout ${targetUser.tag}. Make sure the bot has permissions and its role is above the target's highest role, and that the user's DMs are open.` });
         }
     },
 
