@@ -86,15 +86,15 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Allow read/write for guild configurations
-    match /artifacts/{appId}/public/data/guilds/{guildId}/configs/settings {
+    match /artifacts/default-app-id/public/data/guilds/{guildId}/configs/settings {
       allow read, write: if request.auth != null;
     }
     // Allow read/write for moderation records
-    match /artifacts/{appId}/public/data/guilds/{guildId}/moderation_records/{recordId} {
+    match /artifacts/default-app-id/public/data/guilds/{guildId}/moderation_records/{recordId} {
       allow read, write: if request.auth != null;
     }
     // Allow read/write for user karma profiles
-    match /artifacts/{appId}/public/data/guilds/{guildId}/karma_users/{userId} {
+    match /artifacts/default-app-id/public/data/guilds/{guildId}/karma_users/{userId} {
       allow read, write: if request.auth != null;
     }
     // Default rule, usually more restrictive
