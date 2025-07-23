@@ -27,15 +27,15 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('timeout')
         .setDescription('Puts a user in timeout.')
-        .addStringOption(option =>
-            option.setName('duration')
-                .setDescription('Duration of timeout (e.g., 30m, 1h, 2d). Default: 1h.')
-                .setRequired(false)) // Optional, default is 1 hour
-        .addUserOption(option =>
+        .addUserOption(option => // Required option first
             option.setName('target')
                 .setDescription('The user to timeout')
                 .setRequired(true))
-        .addStringOption(option =>
+        .addStringOption(option => // Optional option second
+            option.setName('duration')
+                .setDescription('Duration of timeout (e.g., 30m, 1h, 2d). Default: 1h.')
+                .setRequired(false))
+        .addStringOption(option => // Optional option third
             option.setName('reason')
                 .setDescription('The reason for the timeout')
                 .setRequired(false)),
