@@ -1,6 +1,6 @@
 {
   "name": "karma-discord-bot",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "A Discord moderation bot named Karma, built with Node.js and Discord.js, using Firestore for configuration.",
   "main": "index.js",
   "scripts": {
@@ -23,7 +23,7 @@
     "discord-api-types": "^0.37.84",
     "discord.js": "^14.15.3",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2",  <-- ENSURE THIS LINE IS PRESENT
+    "express": "^4.19.2",
     "firebase": "^10.12.3"
   }
 }
