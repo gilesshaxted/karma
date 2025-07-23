@@ -1,6 +1,6 @@
 // index.js
 require('dotenv').config();
-const { Client, Collection, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField, MessageFlags } = require('discord.js'); // Added MessageFlags
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const { initializeApp } = require('firebase/app');
@@ -253,11 +253,14 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isCommand()) {
         const { commandName } = interaction;
 
+        // Defer reply immediately for all slash commands to prevent "Unknown interaction"
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Using flags for ephemeral
+
         // Handle /setup command
         if (commandName === 'setup') {
             // Check if the user has Administrator permissions
             if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                return interaction.reply({ content: 'You must have Administrator permissions to use the `/setup` command.', ephemeral: true });
+                return interaction.editReply({ content: 'You must have Administrator permissions to use the `/setup` command.' });
             }
 
             const embed = new EmbedBuilder()
@@ -281,7 +284,7 @@ client.on('interactionCreate', async interaction => {
                         .setStyle(ButtonStyle.Primary),
                 );
 
-            await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+            await interaction.editReply({ embeds: [embed], components: [row] });
             return;
         }
 
@@ -289,14 +292,14 @@ client.on('interactionCreate', async interaction => {
         const command = client.commands.get(commandName);
 
         if (!command) {
-            return interaction.reply({ content: 'No command matching that name was found.', ephemeral: true });
+            return interaction.editReply({ content: 'No command matching that name was found.' });
         }
 
         const guildConfig = await getGuildConfig(interaction.guildId); // Await config fetch
 
         // Check if the command user has permission
         if (!hasPermission(interaction.member, guildConfig)) {
-            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+            return interaction.editReply({ content: 'You do not have permission to use this command.' });
         }
 
         try {
@@ -306,23 +309,28 @@ client.on('interactionCreate', async interaction => {
                 hasPermission,
                 isExempt,
                 logModerationAction,
-                logMessage
+                logMessage,
+                MessageFlags // Pass MessageFlags to commands
             });
         } catch (error) {
             console.error(error);
+            // Check if interaction was already replied/deferred to avoid "Unknown interaction" on error reply
             if (interaction.replied || interaction.deferred) {
-                await interaction.followUp({ content: 'There was an error while executing this command!', ephemeral: true });
+                await interaction.editReply({ content: 'There was an error while executing this command!' });
             } else {
-                await interaction.reply({ content: 'There was an error while executing this command!', ephemeral: true });
+                // Fallback, though deferReply should prevent this path for slash commands
+                await interaction.reply({ content: 'There was an error while executing this command!', flags: [MessageFlags.Ephemeral] });
             }
         }
     } else if (interaction.isButton()) {
         const { customId } = interaction;
         const guildConfig = await getGuildConfig(interaction.guildId); // Await config fetch
 
+        // Defer reply for buttons as well, if they might take time
+        await interaction.deferUpdate(); // Use deferUpdate for buttons that don't need a new message
+
         if (customId === 'setup_roles') {
-            await interaction.deferReply({ ephemeral: true });
-            await interaction.editReply({ content: 'Please mention the Moderator role and then the Administrator role (e.g., `@Moderator @Administrator`). Type `none` if you don\'t have one of them.', ephemeral: true });
+            await interaction.followUp({ content: 'Please mention the Moderator role and then the Administrator role (e.g., `@Moderator @Administrator`). Type `none` if you don\'t have one of them.', flags: [MessageFlags.Ephemeral] });
 
             const filter = m => m.author.id === interaction.user.id;
             const collector = interaction.channel.createMessageCollector({ filter, time: 60000 }); // 60 seconds to respond
@@ -340,7 +348,7 @@ client.on('interactionCreate', async interaction => {
                 } else if (m.content.toLowerCase() === 'none') {
                     // User explicitly said 'none' for both
                 } else {
-                    await interaction.followUp({ content: 'Please mention the roles correctly or type `none`.', ephemeral: true });
+                    await interaction.followUp({ content: 'Please mention the roles correctly or type `none`.', flags: [MessageFlags.Ephemeral] });
                     return;
                 }
 
@@ -348,20 +356,19 @@ client.on('interactionCreate', async interaction => {
                 guildConfig.adminRoleId = adminRole ? adminRole.id : null;
                 await saveGuildConfig(interaction.guildId, guildConfig); // Await save
 
-                await interaction.followUp({ content: `Moderator role set to: ${modRole ? modRole.name : 'None'}\nAdministrator role set to: ${adminRole ? adminRole.name : 'None'}`, ephemeral: true });
+                await interaction.followUp({ content: `Moderator role set to: ${modRole ? modRole.name : 'None'}\nAdministrator role set to: ${adminRole ? adminRole.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
                 collector.stop();
                 m.delete().catch(console.error); // Delete the user's message
             });
 
             collector.on('end', collected => {
                 if (collected.size === 0) {
-                    interaction.followUp({ content: 'You did not respond in time. Role setup cancelled.', ephemeral: true }).catch(console.error);
+                    interaction.followUp({ content: 'You did not respond in time. Role setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
                 }
             });
 
         } else if (customId === 'setup_channels') {
-            await interaction.deferReply({ ephemeral: true });
-            await interaction.editReply({ content: 'Please mention the Moderation Log Channel and then the Message Log Channel (e.g., `#mod-logs #message-logs`).', ephemeral: true });
+            await interaction.followUp({ content: 'Please mention the Moderation Log Channel and then the Message Log Channel (e.g., `#mod-logs #message-logs`).', flags: [MessageFlags.Ephemeral] });
 
             const filter = m => m.author.id === interaction.user.id;
             const collector = interaction.channel.createMessageCollector({ filter, time: 60000 });
@@ -377,7 +384,7 @@ client.on('interactionCreate', async interaction => {
                         msgLogChannel = channels.last();
                     }
                 } else {
-                    await interaction.followUp({ content: 'Please mention the channels correctly.', ephemeral: true });
+                    await interaction.followUp({ content: 'Please mention the channels correctly.', flags: [MessageFlags.Ephemeral] });
                     return;
                 }
 
@@ -385,16 +392,115 @@ client.on('interactionCreate', async interaction => {
                 guildConfig.messageLogChannelId = msgLogChannel ? msgLogChannel.id : null;
                 await saveGuildConfig(interaction.guildId, guildConfig); // Await save
 
-                await interaction.followUp({ content: `Moderation Log Channel set to: ${modLogChannel ? modLogChannel.name : 'None'}\nMessage Log Channel set to: ${msgLogChannel ? msgLogChannel.name : 'None'}`, ephemeral: true });
+                await interaction.followUp({ content: `Moderation Log Channel set to: ${modLogChannel ? modLogChannel.name : 'None'}\nMessage Log Channel set to: ${msgLogChannel ? msgLogChannel.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
                 collector.stop();
                 m.delete().catch(console.error); // Delete the user's message
             });
 
             collector.on('end', collected => {
                 if (collected.size === 0) {
-                    interaction.followUp({ content: 'You did not respond in time. Channel setup cancelled.', ephemeral: true }).catch(console.error);
+                    interaction.followUp({ content: 'You did not respond in time. Channel setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
                 }
             });
+        }
+    }
+});
+
+// Event: Message reaction added (for emoji moderation)
+client.on('messageReactionAdd', async (reaction, user) => {
+    // When a reaction is received, check if the structure is partial
+    if (reaction.partial) {
+        // If the message this reaction belongs to was removed from the cache,
+        // fetch it now.
+        try {
+            await reaction.fetch();
+        } catch (error) {
+            console.error('Something went wrong when fetching the message:', error);
+            return;
+        }
+    }
+
+    // Ignore reactions from bots
+    if (user.bot) return;
+
+    const message = reaction.message;
+    const guild = message.guild;
+    if (!guild) return; // Ignore DMs
+
+    const reactorMember = await guild.members.fetch(user.id);
+    const guildConfig = await getGuildConfig(guild.id); // Await config fetch
+
+    // Check if the reactor has permission
+    if (!hasPermission(reactorMember, guildConfig)) {
+        return; // User is not a moderator or admin
+    }
+
+    const targetMember = await guild.members.fetch(message.author.id).catch(() => null);
+    if (!targetMember) {
+        console.log(`Could not fetch target member ${message.author.id}.`);
+        return;
+    }
+
+    // Check if the target user is exempt
+    if (isExempt(targetMember, guildConfig)) {
+        return reaction.users.remove(user.id).catch(console.error); // Remove the reaction if target is exempt
+    }
+
+    const reason = `Emoji moderation: "${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
+    let actionTaken = false;
+
+    // Increment case number and save before action
+    guildConfig.caseNumber++;
+    await saveGuildConfig(guild.id, guildConfig);
+    const caseNumber = guildConfig.caseNumber;
+
+    switch (reaction.emoji.name) {
+        case '⚠️': // Warning emoji
+            try {
+                const warnCommand = client.commands.get('warn');
+                if (warnCommand) {
+                    await warnCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage });
+                    actionTaken = true;
+                }
+            } catch (error) {
+                console.error('Error during emoji warn:', error);
+            }
+            break;
+        case '⏰': // Alarm clock emoji (default timeout 1 hour)
+            try {
+                const timeoutCommand = client.commands.get('timeout');
+                if (timeoutCommand) {
+                    // Pass 60 minutes for default timeout
+                    await timeoutCommand.executeEmoji(message, targetMember, 60, reason, reactorMember, caseNumber, { logModerationAction, logMessage });
+                    actionTaken = true;
+                }
+            } catch (error) {
+                console.error('Error during emoji timeout:', error);
+            }
+            break;
+        case '👢': // Boot emoji (kick)
+            try {
+                const kickCommand = client.commands.get('kick');
+                if (kickCommand) {
+                    await kickCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage });
+                    actionTaken = true;
+                }
+            } catch (error) {
+                console.error('Error during emoji kick:', error);
+            }
+            break;
+    }
+
+    // If an action was taken, delete the original message
+    if (actionTaken) {
+        try {
+            // Ensure the message is not already deleted
+            if (message.deletable) {
+                await message.delete();
+                console.log(`Message deleted after emoji moderation: ${message.id}`);
+            }
+        } catch (error) {
+            console.error(`Failed to delete message ${message.id}:`, error);
         }
     }
 });
