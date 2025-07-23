@@ -1,5 +1,5 @@
 // moderation/kick.js
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js'); // Added MessageFlags
 
 module.exports = {
     // Slash command data
@@ -16,7 +16,7 @@ module.exports = {
                 .setRequired(false)),
 
     // Execute function for slash command
-    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, logMessage }) {
+    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, logMessage, MessageFlags }) { // Received MessageFlags
         const targetUser = interaction.options.getUser('target');
         const reason = interaction.options.getString('reason') || 'No reason provided.';
         const moderator = interaction.user;
@@ -26,12 +26,12 @@ module.exports = {
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
         if (!targetMember) {
-            return interaction.reply({ content: 'Could not find that user in this server.', ephemeral: true });
+            return interaction.editReply({ content: 'Could not find that user in this server.' });
         }
 
         // Check if the target is exempt
         if (isExempt(targetMember, guildConfig)) {
-            return interaction.reply({ content: 'You cannot kick this user as they are exempt from moderation.', ephemeral: true });
+            return interaction.editReply({ content: 'You cannot kick this user as they are exempt from moderation.' });
         }
 
         guildConfig.caseNumber++;
@@ -69,10 +69,10 @@ module.exports = {
             // Log the moderation action
             await logModerationAction(guild, 'Kick', targetUser, reason, moderator, caseNumber);
 
-            await interaction.reply({ content: `Successfully kicked ${targetUser.tag} for: ${reason} (Case #${caseNumber})`, ephemeral: true });
+            await interaction.editReply({ content: `Successfully kicked ${targetUser.tag} for: ${reason} (Case #${caseNumber})` });
         } catch (error) {
             console.error(`Error kicking user ${targetUser.tag}:`, error);
-            await interaction.reply({ content: `Failed to kick ${targetUser.tag}. Make sure the bot has permissions and its role is above the target's highest role.`, ephemeral: true });
+            await interaction.editReply({ content: `Failed to kick ${targetUser.tag}. Make sure the bot has permissions and its role is above the target's highest role, and that the user's DMs are open.` });
         }
     },
 
