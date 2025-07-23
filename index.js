@@ -36,7 +36,7 @@ const client = new Client({
 let db;
 let auth;
 let appId;
-let userId; // To store the authenticated user ID for Firestore rules
+let userId; // To store the authenticated authenticated user ID for Firestore rules
 
 // Create a collection to store commands
 client.commands = new Collection();
@@ -129,7 +129,7 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
         .setDescription(`**Action:** ${actionType}\n**Reason:** ${reason || 'No reason provided.'}`)
         .addFields(
             { name: 'User', value: `${targetUser.tag} (${targetUser.id})`, inline: true },
-            { name: 'Moderator', value: `${moderator.tag} (${moderator.id})`, inline: true }
+            { name: 'Moderator', value: `${moderator.user.tag} (${moderator.id})`, inline: true } // Corrected to moderator.user.tag
         )
         .setTimestamp()
         .setColor(0xFFA500); // Orange color for moderation logs
@@ -160,7 +160,7 @@ const logMessage = async (guild, message, moderator, actionType) => {
             { name: 'Author', value: `${message.author ? message.author.tag : 'Unknown User'} (${message.author ? message.author.id : 'Unknown ID'})`, inline: true },
             { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
             { name: 'Sent At', value: `<t:${Math.floor(message.createdTimestamp / 1000)}:F>`, inline: true },
-            { name: 'Moderated By', value: `${moderator ? moderator.tag : 'System'}`, inline: true }
+            { name: 'Moderated By', value: `${moderator ? moderator.user.tag : 'System'}`, inline: true } // Corrected to moderator.user.tag
         )
         .setTimestamp()
         .setColor(0xADD8E6); // Light blue for message logs
@@ -432,21 +432,25 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     // Check if the reactor has permission
     if (!hasPermission(reactorMember, guildConfig)) {
-        return; // User is not a moderator or admin
+        // If user doesn't have permission, remove their reaction
+        return reaction.users.remove(user.id).catch(console.error);
     }
 
     const targetMember = await guild.members.fetch(message.author.id).catch(() => null);
     if (!targetMember) {
         console.log(`Could not fetch target member ${message.author.id}.`);
-        return;
+        // Still remove the reaction even if target member can't be fetched
+        return reaction.users.remove(user.id).catch(console.error);
     }
 
     // Check if the target user is exempt
     if (isExempt(targetMember, guildConfig)) {
-        return reaction.users.remove(user.id).catch(console.error); // Remove the reaction if target is exempt
+        // If target is exempt, remove the reaction
+        return reaction.users.remove(user.id).catch(console.error);
     }
 
-    const reason = `Emoji moderation: "${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
+    // Reason should simply be the message content
+    const reason = `Message contents: "${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
     let actionTaken = false;
 
     // Increment case number and save before action
@@ -491,7 +495,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
             break;
     }
 
-    // If an action was taken, delete the original message
+    // If an action was taken, delete the original message AND the reaction
     if (actionTaken) {
         try {
             // Ensure the message is not already deleted
@@ -499,8 +503,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
                 await message.delete();
                 console.log(`Message deleted after emoji moderation: ${message.id}`);
             }
+            // Remove the user's reaction after successful moderation
+            await reaction.users.remove(user.id).catch(console.error);
         } catch (error) {
-            console.error(`Failed to delete message ${message.id}:`, error);
+            console.error(`Failed to delete message ${message.id} or reaction:`, error);
         }
     }
 });
