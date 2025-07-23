@@ -1,0 +1,104 @@
+// moderation/ban.js
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+
+module.exports = {
+    // Slash command data
+    data: new SlashCommandBuilder()
+        .setName('ban')
+        .setDescription('Bans a user from the server.')
+        .addStringOption(option =>
+            option.setName('duration')
+                .setDescription('Duration of ban in days (e.g., 7) or "forever". Default: forever.')
+                .setRequired(false))
+        .addUserOption(option =>
+            option.setName('target')
+                .setDescription('The user to ban')
+                .setRequired(true))
+        .addStringOption(option =>
+            option.setName('reason')
+                .setDescription('The reason for the ban')
+                .setRequired(false)),
+
+    // Execute function for slash command
+    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, logMessage }) {
+        const targetUser = interaction.options.getUser('target');
+        const durationInput = interaction.options.getString('duration') || 'forever'; // Default to forever
+        const reason = interaction.options.getString('reason') || 'No reason provided.';
+        const moderator = interaction.user;
+        const guild = interaction.guild;
+        const guildConfig = await getGuildConfig(guild.id); // Await config fetch
+
+        const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
+
+        if (targetMember && isExempt(targetMember, guildConfig)) {
+            return interaction.reply({ content: 'You cannot ban this user as they are exempt from moderation.', ephemeral: true });
+        }
+
+        let deleteMessageSeconds = 24 * 60 * 60; // Default to delete messages from the last 24 hours (1 day)
+        let banDurationText = 'forever';
+
+        if (durationInput.toLowerCase() !== 'forever') {
+            const days = parseInt(durationInput);
+            if (isNaN(days) || days <= 0) {
+                return interaction.reply({ content: 'Invalid duration. Please enter a number of days or "forever".', ephemeral: true });
+            }
+            // Discord's ban message deletion is limited to 7 days (604800 seconds)
+            deleteMessageSeconds = Math.min(days * 24 * 60 * 60, 7 * 24 * 60 * 60);
+            banDurationText = `${days} day(s)`;
+        }
+
+        guildConfig.caseNumber++;
+        await saveGuildConfig(guild.id, guildConfig); // Await save
+        const caseNumber = guildConfig.caseNumber;
+
+        try {
+            // Fetch messages from the last 24 hours from all channels and log them
+            // Note: This is a more intensive operation and might take time for large servers.
+            // Discord's API for fetching messages is per channel.
+            // For simplicity, we'll iterate through text channels.
+            const textChannels = guild.channels.cache.filter(c => c.isTextBased() && c.viewable);
+            const oneDayAgo = Date.now() - (24 * 60 * 60 * 1000);
+            let messagesLoggedCount = 0;
+
+            for (const channel of textChannels.values()) {
+                try {
+                    const channelMessages = await channel.messages.fetch({ limit: 100 }); // Fetch recent messages
+                    const messagesFromTargetInChannel = channelMessages.filter(msg =>
+                        msg.author.id === targetUser.id &&
+                        msg.createdTimestamp > oneDayAgo
+                    );
+
+                    for (const msg of messagesFromTargetInChannel.values()) {
+                        await logMessage(guild, msg, moderator, 'Deleted (Ban)');
+                        messagesLoggedCount++;
+                    }
+                } catch (channelError) {
+                    console.error(`Could not fetch messages from channel ${channel.name}:`, channelError);
+                }
+            }
+            console.log(`Logged ${messagesLoggedCount} messages from ${targetUser.tag} for ban.`);
+
+
+            // Attempt to send a DM to the banned user
+            const dmEmbed = new EmbedBuilder()
+                .setTitle('You have been banned!')
+                .setDescription(`**Server:** ${guild.name}\n**Duration:** ${banDurationText}\n**Reason:** ${reason}\n**Moderator:** ${moderator.tag}`)
+                .setColor(0xFFA500)
+                .setTimestamp();
+            await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
+
+            await guild.members.ban(targetUser.id, {
+                deleteMessageSeconds: deleteMessageSeconds,
+                reason: reason
+            });
+
+            // Log the moderation action
+            await logModerationAction(guild, `Ban (${banDurationText})`, targetUser, reason, moderator, caseNumber);
+
+            await interaction.reply({ content: `Successfully banned ${targetUser.tag} for ${banDurationText} for: ${reason} (Case #${caseNumber})`, ephemeral: true });
+        } catch (error) {
+            console.error(`Error banning user ${targetUser.tag}:`, error);
+            await interaction.reply({ content: `Failed to ban ${targetUser.tag}. Make sure the bot has permissions and its role is above the target's highest role.`, ephemeral: true });
+        }
+    }
+};
