@@ -41,8 +41,8 @@ let userId; // To store the authenticated authenticated user ID for Firestore ru
 // Create a collection to store commands
 client.commands = new Collection();
 
-// Dynamically load command files from the 'moderation' folder
-const commandFiles = [
+// Dynamically load command files from the 'moderation' and 'karma' folders
+const moderationCommandFiles = [
     'warn.js',
     'timeout.js',
     'kick.js',
@@ -51,14 +51,29 @@ const commandFiles = [
     'warning.js' // New command
 ];
 
-for (const file of commandFiles) {
+const karmaCommandFiles = [
+    'karma.js', // New karma command
+    'leaderboard.js' // New leaderboard command
+];
+
+for (const file of moderationCommandFiles) {
     const command = require(`./moderation/${file}`);
     if ('data' in command && 'execute' in command) {
         client.commands.set(command.data.name, command);
     } else {
-        console.log(`[WARNING] The command in ${file} is missing a required "data" or "execute" property.`);
+        console.log(`[WARNING] The moderation command in ${file} is missing a required "data" or "execute" property.`);
     }
 }
+
+for (const file of karmaCommandFiles) {
+    const command = require(`./karma/${file}`); // Load from new karma folder
+    if ('data' in command && 'execute' in command) {
+        client.commands.set(command.data.name, command);
+    } else {
+        console.log(`[WARNING] The karma command in ${file} is missing a required "data" or "execute" property.`);
+    }
+}
+
 
 // Helper function to get guild-specific config from Firestore
 const getGuildConfig = async (guildId) => {
@@ -88,6 +103,144 @@ const saveGuildConfig = async (guildId, newConfig) => {
     const configRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/configs`, 'settings');
     await setDoc(configRef, newConfig, { merge: true }); // Use merge to update existing fields
 };
+
+// Helper function to get or create a user's karma document
+const getOrCreateUserKarma = async (guildId, userId) => {
+    const karmaRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/karma_users`, userId);
+    const karmaSnap = await getDoc(karmaRef);
+
+    if (karmaSnap.exists()) {
+        return karmaSnap.data();
+    } else {
+        const defaultKarma = {
+            userId: userId,
+            karmaPoints: 0,
+            messagesToday: 0,
+            repliesReceivedToday: 0,
+            reactionsReceivedToday: 0,
+            lastActivityDate: new Date(),
+            lastKarmaCalculationDate: new Date()
+        };
+        await setDoc(karmaRef, defaultKarma);
+        return defaultKarma;
+    }
+};
+
+// Helper function to update user karma data
+const updateUserKarmaData = async (guildId, userId, data) => {
+    const karmaRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/karma_users`, userId);
+    await updateDoc(karmaRef, data);
+};
+
+// Helper function to check if a user has any moderation actions in the last 24 hours
+const hasRecentModeration = async (guildId, userIdToCheck) => {
+    const twentyFourHoursAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
+    const moderationRecordsRef = collection(db, `artifacts/${appId}/public/data/guilds/${guildId}/moderation_records`);
+    const q = query(
+        moderationRecordsRef,
+        where("targetUserId", "==", userIdToCheck),
+        where("timestamp", ">=", twentyFourHoursAgo),
+        limit(1) // Just need to find one to know if they have recent moderation
+    );
+    const querySnapshot = await getDocs(q);
+    return !querySnapshot.empty;
+};
+
+
+// Helper function to calculate and award karma
+const calculateAndAwardKarma = async (guild, user, karmaData) => {
+    let karmaAwarded = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to start of day
+
+    const lastCalcDate = karmaData.lastKarmaCalculationDate.toDate();
+    lastCalcDate.setHours(0, 0, 0, 0);
+
+    // Check for recent moderation actions for this user
+    const hasModerationRecently = await hasRecentModeration(guild.id, user.id);
+    if (hasModerationRecently) {
+        console.log(`${user.tag} has recent moderation, skipping karma gain.`);
+        // Reset daily counters even if no karma is awarded due to moderation
+        if (today.getTime() > lastCalcDate.getTime()) {
+            await updateUserKarmaData(guild.id, user.id, {
+                messagesToday: 0,
+                repliesReceivedToday: 0,
+                reactionsReceivedToday: 0,
+                lastKarmaCalculationDate: new Date()
+            });
+        }
+        return 0; // No karma awarded if recently moderated
+    }
+
+    // Only calculate if a new day has passed since last calculation
+    if (today.getTime() > lastCalcDate.getTime()) {
+        // Activity Karma
+        if (karmaData.messagesToday >= 100) {
+            karmaAwarded += 2; // Hyper active
+            console.log(`Awarded 2 karma to ${user.tag} for hyper activity.`);
+        } else if (karmaData.messagesToday >= 20) {
+            karmaAwarded += 1; // Active
+            console.log(`Awarded 1 karma to ${user.tag} for activity.`);
+        }
+
+        // Interaction Karma
+        if (karmaData.repliesReceivedToday >= 10) {
+            karmaAwarded += Math.floor(karmaData.repliesReceivedToday / 10);
+            console.log(`Awarded ${Math.floor(karmaData.repliesReceivedToday / 10)} karma to ${user.tag} for replies.`);
+        }
+        if (karmaData.reactionsReceivedToday >= 10) {
+            karmaAwarded += Math.floor(karmaData.reactionsReceivedToday / 10);
+            console.log(`Awarded ${Math.floor(karmaData.reactionsReceivedToday / 10)} karma to ${user.tag} for reactions.`);
+        }
+
+        // Reset daily counters and update karma points
+        await updateUserKarmaData(guild.id, user.id, {
+            karmaPoints: karmaData.karmaPoints + karmaAwarded,
+            messagesToday: 0,
+            repliesReceivedToday: 0,
+            reactionsReceivedToday: 0,
+            lastKarmaCalculationDate: new Date() // Update last calculation date to today
+        });
+        console.log(`Karma for ${user.tag} updated. Total: ${karmaData.karmaPoints + karmaAwarded}`);
+    } else {
+        console.log(`No new karma calculation for ${user.tag} today.`);
+    }
+    return karmaAwarded;
+};
+
+// Placeholder for AI sentiment analysis
+const analyzeSentiment = async (text) => {
+    // This is a placeholder. In a real scenario, you would make an API call to an LLM
+    // like Google's Gemini API here to get a sentiment score.
+    // For example:
+    /*
+    let chatHistory = [];
+    chatHistory.push({ role: "user", parts: [{ text: `Analyze the sentiment of the following text and return "positive", "neutral", or "negative":\n\n${text}` }] });
+    const payload = { contents: chatHistory };
+    const apiKey = ""; // If you want to use models other than gemini-2.0-flash, provide an API key here.
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const response = await fetch(apiUrl, {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify(payload)
+           });
+    const result = await response.json();
+    if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0) {
+      const sentiment = result.candidates[0].content.parts[0].text.toLowerCase();
+      return sentiment;
+    }
+    */
+    // For now, a very simple heuristic:
+    const negativeKeywords = ['bad', 'hate', 'stupid', 'idiot', 'negative', 'terrible', 'awful', 'no', 'not', 'fuck', 'shit', 'crap'];
+    const lowerText = text.toLowerCase();
+    for (const keyword of negativeKeywords) {
+        if (lowerText.includes(keyword)) {
+            return 'negative';
+        }
+    }
+    return 'positive'; // Default to positive if no negative keywords
+};
+
 
 // Helper function to check if a member has a moderator or admin role
 const hasPermission = (member, guildConfig) => {
@@ -285,6 +438,49 @@ client.once('ready', async () => {
     }
 });
 
+// Event: Message Creation (for Karma system)
+client.on('messageCreate', async message => {
+    // Ignore bot messages and DMs
+    if (message.author.bot || !message.guild) return;
+
+    const guild = message.guild;
+    const author = message.author;
+
+    try {
+        // Update author's message count and last activity
+        const authorKarmaData = await getOrCreateUserKarma(guild.id, author.id);
+        await updateUserKarmaData(guild.id, author.id, {
+            messagesToday: (authorKarmaData.messagesToday || 0) + 1,
+            lastActivityDate: new Date()
+        });
+        await calculateAndAwardKarma(guild, author, { ...authorKarmaData, messagesToday: (authorKarmaData.messagesToday || 0) + 1 }); // Pass updated messagesToday for immediate calc
+
+        // If it's a reply, track replies received by the original author
+        if (message.reference && message.reference.messageId) {
+            const repliedToMessage = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+            if (repliedToMessage && !repliedToMessage.author.bot && repliedToMessage.author.id !== author.id) {
+                const repliedToAuthor = repliedToMessage.author;
+                const repliedToKarmaData = await getOrCreateUserKarma(guild.id, repliedToAuthor.id);
+
+                // Sentiment analysis for replies
+                const sentiment = await analyzeSentiment(message.content);
+                if (sentiment === 'negative') {
+                    console.log(`Negative reply sentiment detected for message from ${author.tag} to ${repliedToAuthor.tag}. Skipping karma gain for reply.`);
+                } else {
+                    await updateUserKarmaData(guild.id, repliedToAuthor.id, {
+                        repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1,
+                        lastActivityDate: new Date()
+                    });
+                    await calculateAndAwardKarma(guild, repliedToAuthor, { ...repliedToKarmaData, repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1 });
+                }
+            }
+        }
+    } catch (error) {
+        console.error(`Error in messageCreate karma tracking for ${author.tag}:`, error);
+    }
+});
+
+
 // Event: Interaction created (for slash commands and buttons)
 client.on('interactionCreate', async interaction => {
     // Wrap the entire interaction processing in a try-catch to prevent unhandled rejections
@@ -351,7 +547,11 @@ client.on('interactionCreate', async interaction => {
                 logMessage,
                 MessageFlags, // Pass MessageFlags to commands
                 db, // Pass db instance for new commands
-                appId // Pass appId for new commands
+                appId, // Pass appId for new commands
+                getOrCreateUserKarma, // Pass karma helpers
+                updateUserKarmaData,
+                calculateAndAwardKarma,
+                analyzeSentiment
             });
         } else if (interaction.isButton()) {
             const { customId } = interaction;
