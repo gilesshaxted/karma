@@ -1,5 +1,5 @@
 // moderation/ban.js
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js'); // Added MessageFlags
 
 module.exports = {
     // Slash command data
@@ -20,7 +20,7 @@ module.exports = {
                 .setRequired(false)),
 
     // Execute function for slash command
-    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, logMessage }) {
+    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, logMessage, MessageFlags }) { // Received MessageFlags
         const targetUser = interaction.options.getUser('target');
         const durationInput = interaction.options.getString('duration') || 'forever'; // Default to forever
         const reason = interaction.options.getString('reason') || 'No reason provided.';
@@ -31,7 +31,7 @@ module.exports = {
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
         if (targetMember && isExempt(targetMember, guildConfig)) {
-            return interaction.reply({ content: 'You cannot ban this user as they are exempt from moderation.', ephemeral: true });
+            return interaction.editReply({ content: 'You cannot ban this user as they are exempt from moderation.' });
         }
 
         let deleteMessageSeconds = 24 * 60 * 60; // Default to delete messages from the last 24 hours (1 day)
@@ -40,7 +40,7 @@ module.exports = {
         if (durationInput.toLowerCase() !== 'forever') {
             const days = parseInt(durationInput);
             if (isNaN(days) || days <= 0) {
-                return interaction.reply({ content: 'Invalid duration. Please enter a number of days or "forever".', ephemeral: true });
+                return interaction.editReply({ content: 'Invalid duration. Please enter a number of days or "forever".' });
             }
             // Discord's ban message deletion is limited to 7 days (604800 seconds)
             deleteMessageSeconds = Math.min(days * 24 * 60 * 60, 7 * 24 * 60 * 60);
@@ -95,10 +95,10 @@ module.exports = {
             // Log the moderation action
             await logModerationAction(guild, `Ban (${banDurationText})`, targetUser, reason, moderator, caseNumber);
 
-            await interaction.reply({ content: `Successfully banned ${targetUser.tag} for ${banDurationText} for: ${reason} (Case #${caseNumber})`, ephemeral: true });
+            await interaction.editReply({ content: `Successfully banned ${targetUser.tag} for ${banDurationText} for: ${reason} (Case #${caseNumber})` });
         } catch (error) {
             console.error(`Error banning user ${targetUser.tag}:`, error);
-            await interaction.reply({ content: `Failed to ban ${targetUser.tag}. Make sure the bot has permissions and its role is above the target's highest role.`, ephemeral: true });
+            await interaction.editReply({ content: `Failed to ban ${targetUser.tag}. Make sure the bot has permissions and its role is above the target's highest role, and that the user's DMs are open.` });
         }
     }
 };
