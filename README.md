@@ -78,13 +78,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Allow read/write for guild configurations
-    match /artifacts/[your_actual_app_id_here]/public/data/guilds/{guildId}/configs/settings {
+    // Replace 'your_actual_app_id_from_logs' with the exact ID from Render logs (e.g., 'Xho9XQ6Ab8aDSeCXscmxcqg1nfz2')
+    match /artifacts/your_actual_app_id_from_logs/public/data/guilds/{guildId}/configs/settings {
       allow read, write: if request.auth != null;
     }
+
     // Allow read/write for moderation records
-    match /artifacts/[your_actual_app_id_here]/public/data/guilds/{guildId}/moderation_records/{recordId} {
+    // Replace 'your_actual_app_id_from_logs' with the exact ID from Render logs
+    match /artifacts/your_actual_app_id_from_logs/public/data/guilds/{guildId}/moderation_records/{recordId} {
       allow read, write: if request.auth != null;
     }
+
     // Default rule, usually more restrictive
     match /{document=**} {
       allow read, write: if false;
