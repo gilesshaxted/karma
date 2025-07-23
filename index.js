@@ -6,6 +6,7 @@ const { Routes } = require('discord-api-types/v10');
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = require('firebase/auth');
 const { getFirestore, doc, getDoc, setDoc, updateDoc } = require('firebase/firestore');
+const port = process.env.PORT || 3000
 
 // Create a new Discord client with necessary intents
 const client = new Client({
