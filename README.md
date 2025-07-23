@@ -76,20 +76,20 @@ Example rules:
 ```
 rules_version = '2';
 service cloud.firestore {
-match /databases/{database}/documents {
-// Allow read/write for guild configurations
-match /artifacts/{appId}/public/data/guilds/{guildId}/configs/settings {
-allow read, write: if request.auth != null;
-}
-// Allow read/write for moderation records
-match /artifacts/{appId}/public/data/guilds/{guildId}/moderation_records/{recordId} {
-allow read, write: if request.auth != null;
-}
-// Default rule, usually more restrictive
-match /{document=**} {
-allow read, write: if false;
-}
-}
+  match /databases/{database}/documents {
+    // Allow read/write for guild configurations
+    match /artifacts/[your_actual_app_id_here]/public/data/guilds/{guildId}/configs/settings {
+      allow read, write: if request.auth != null;
+    }
+    // Allow read/write for moderation records
+    match /artifacts/[your_actual_app_id_here]/public/data/guilds/{guildId}/moderation_records/{recordId} {
+      allow read, write: if request.auth != null;
+    }
+    // Default rule, usually more restrictive
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
 }
 ```
 ## Environment Variables:
