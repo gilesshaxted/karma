@@ -10,9 +10,10 @@ const express = require('express'); // Import express
 
 // --- Web Server for Hosting Platforms (e.g., Render) ---
 const app = express();
+const PORT = process.env.PORT || 3000; // Define PORT here, before it's used
 
 app.get('/', (req, res) => {
-    res.send('Discord bot is running and listening for commands!');
+    res.send('Karma bot is running and listening for commands!'); // Basic health check endpoint
 });
 
 app.listen(PORT, () => {
@@ -396,117 +397,6 @@ client.on('interactionCreate', async interaction => {
             });
         }
     }
-});
-
-// Event: Message reaction added (for emoji moderation)
-client.on('messageReactionAdd', async (reaction, user) => {
-    // When a reaction is received, check if the structure is partial
-    if (reaction.partial) {
-        // If the message this reaction belongs to was removed from the cache,
-        // fetch it now.
-        try {
-            await reaction.fetch();
-        } catch (error) {
-            console.error('Something went wrong when fetching the message:', error);
-            return;
-        }
-    }
-
-    // Ignore reactions from bots
-    if (user.bot) return;
-
-    const message = reaction.message;
-    const guild = message.guild;
-    if (!guild) return; // Ignore DMs
-
-    const reactorMember = await guild.members.fetch(user.id);
-    const guildConfig = await getGuildConfig(guild.id); // Await config fetch
-
-    // Check if the reactor has permission
-    if (!hasPermission(reactorMember, guildConfig)) {
-        return; // User is not a moderator or admin
-    }
-
-    const targetMember = await guild.members.fetch(message.author.id).catch(() => null);
-    if (!targetMember) {
-        console.log(`Could not fetch target member ${message.author.id}.`);
-        return;
-    }
-
-    // Check if the target user is exempt
-    if (isExempt(targetMember, guildConfig)) {
-        return reaction.users.remove(user.id).catch(console.error); // Remove the reaction if target is exempt
-    }
-
-    const reason = `Emoji moderation: "${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
-    let actionTaken = false;
-
-    // Increment case number and save before action
-    guildConfig.caseNumber++;
-    await saveGuildConfig(guild.id, guildConfig);
-    const caseNumber = guildConfig.caseNumber;
-
-    switch (reaction.emoji.name) {
-        case '⚠️': // Warning emoji
-            try {
-                const warnCommand = client.commands.get('warn');
-                if (warnCommand) {
-                    await warnCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage });
-                    actionTaken = true;
-                }
-            } catch (error) {
-                console.error('Error during emoji warn:', error);
-            }
-            break;
-        case '⏰': // Alarm clock emoji (default timeout 1 hour)
-            try {
-                const timeoutCommand = client.commands.get('timeout');
-                if (timeoutCommand) {
-                    // Pass 60 minutes for default timeout
-                    await timeoutCommand.executeEmoji(message, targetMember, 60, reason, reactorMember, caseNumber, { logModerationAction, logMessage });
-                    actionTaken = true;
-                }
-            } catch (error) {
-                console.error('Error during emoji timeout:', error);
-            }
-            break;
-        case '👢': // Boot emoji (kick)
-            try {
-                const kickCommand = client.commands.get('kick');
-                if (kickCommand) {
-                    await kickCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage });
-                    actionTaken = true;
-                }
-            } catch (error) {
-                console.error('Error during emoji kick:', error);
-            }
-            break;
-    }
-
-    // If an action was taken, delete the original message
-    if (actionTaken) {
-        try {
-            // Ensure the message is not already deleted
-            if (message.deletable) {
-                await message.delete();
-                console.log(`Message deleted after emoji moderation: ${message.id}`);
-            }
-        } catch (error) {
-            console.error(`Failed to delete message ${message.id}:`, error);
-        }
-    }
-});
-
-// Add a simple Express server to satisfy Render's Web Service port binding requirement
-const app = express();
-const PORT = process.env.PORT || 3000; // Use Render's PORT env var or default to 3000
-
-app.get('/', (req, res) => {
-    res.send('Karma bot is running!'); // Basic health check endpoint
-});
-
-app.listen(PORT, () => {
-    console.log(`Web server listening on port ${PORT}`);
 });
 
 // Log in to Discord with your client's token
