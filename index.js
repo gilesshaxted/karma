@@ -450,7 +450,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
     }
 
     // Reason should simply be the message content
-    const reason = `Message contents: "${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
+    const reason = `"${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
     let actionTaken = false;
 
     // Increment case number and save before action
