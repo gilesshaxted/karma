@@ -302,20 +302,21 @@ const isContentOffensive = async (text) => {
 // Regex patterns for specific hate speech/slurs
 const hateSpeechRegexes = [
     // N-word variations
-    /(?i)\b(n[\s]*(i|1|!)[\s]*g[\s]*(g|6)[\s]*(e|3|@|a)[\s]*r?)\b/,
+    /(?i)\b(?:n[\s]*(?:i|1|!)[\s]*g[\s]*(?:g|6)[\s]*(?:e|3|@|a)[\s]*r?)\b/,
     // Fag variations
-    /(?i)\b(f[\s]*(a|@)[\s]*g)\b/,
-    /(?i)^(.*\n)?\b((f\s?)(a|@)(\s?)+g\b)|\b((q\s?)(u|@)(e|3)+(\s?)+r)\b/, // Combined from user input
+    /(?i)\b(?:f[\s]*(?:a|@)[\s]*g)\b/,
+    // Combined regex from user input, modified to use non-capturing groups
+    /(?i)^(?:.*\n)?\b(?:(?:f\s?)(?:a|@)(?:\s?)+g)\b|\b(?:(?:q\s?)(?:u|@)(?:e|3)+(?:\s?)+r)\b/,
     // Queer variations
-    /(?i)\b(q[\s]*(u|@)[\s]*(e|3)[\s]*r)\b/,
+    /(?i)\b(?:q[\s]*(?:u|@)[\s]*(?:e|3)[\s]*r)\b/,
     // Kike variations
-    /(?i)\b(k[\s]*(i|1|!)[\s]*k[\s]*(e|3|@))\b/,
+    /(?i)\b(?:k[\s]*(?:i|1|!)[\s]*k[\s]*(?:e|3|@))\b/,
     // Chink variations
-    /(?i)\b(ch[\s]*(i|1|!|e|3|a)[\s]*k)\b/,
+    /(?i)\b(?:ch[\s]*(?:i|1|!|e|3|a)[\s]*k)\b/,
     // Spic variations
-    /(?i)\b(sp[\s]*a[\s]*c[\s]*)\b/,
+    /(?i)\b(?:sp[\s]*a[\s]*c[\s]*)\b/,
     // Wetback variations
-    /(?i)\b(wet[\s]*b[\s]*)\b/
+    /(?i)\b(?:wet[\s]*b[\s]*)\b/
 ];
 
 // Specific keywords for hate speech/slurs
@@ -487,7 +488,7 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
     const logChannelId = guildConfig.moderationLogChannelId;
 
     // Determine moderator tag correctly
-    const moderatorTag = moderator.user ? moderator.user.tag : moderator.tag; // Use .tag for User, .username for ClientUser
+    const moderatorTag = moderator.user ? moderator.user.tag : moderator.username; // Use .tag for User, .username for ClientUser (bot itself)
 
     // Log to Discord channel
     if (logChannelId) {
@@ -546,7 +547,7 @@ const logMessage = async (guild, message, moderator, actionType) => {
     const logChannelId = guildConfig.messageLogChannelId;
 
     // Determine moderator tag correctly
-    const moderatorTag = moderator.user ? moderator.user.tag : moderator.tag;
+    const moderatorTag = moderator.user ? moderator.user.tag : moderator.username;
 
     if (!logChannelId) {
         console.log(`Message log channel not set for guild ${guild.name}.`);
