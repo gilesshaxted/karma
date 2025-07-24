@@ -301,20 +301,20 @@ const isContentOffensive = async (text) => {
 
 // Regex patterns for specific hate speech/slurs
 const hateSpeechRegexes = [
-    // N-word variations (simplified further to avoid complex groups)
-    /(?i)\b(?:nigger|niggar|niggur|niga|nigga|nigg|n1gger|n!gger|n1gg@r|n!gg@r)\b/,
-    // Fag variations (simplified)
-    /(?i)\b(?:fag|faggot|f@g|f@ggot)\b/,
-    // Combined regex from user input, simplified
-    /(?i)\b(?:fag|f@g|queer|qweer|qu33r|q@eer)\b/, // Removed redundant 'fag|f@g' and simplified 'queer' group
-    // Kike variations (simplified)
-    /(?i)\b(?:kike|k1ke|k!ke|kik3)\b/,
-    // Chink variations (simplified)
-    /(?i)\b(?:chink|ch1nk|ch!nk|chenck|ch3nck|chanck)\b/,
-    // Spic variations (simplified)
-    /(?i)\b(?:spic|spick|sp@c|sp1c)\b/,
-    // Wetback variations (simplified)
-    /(?i)\b(?:wetback|w3tback)\b/
+    // N-word variations (simplified, explicit)
+    /(?i)\b(?:nigger|niggar|niggur|niga|nigga|nigg|n1gger|n!gger|n1gg@r|n!gg@r|n i g g e r|n 1 g g e r|n ! g g e r)\b/,
+    // Fag variations (simplified, explicit)
+    /(?i)\b(?:fag|faggot|f@g|f@ggot|f a g|f @ g)\b/,
+    // Queer variations (simplified, explicit)
+    /(?i)\b(?:queer|qweer|qu33r|q@eer|q u e e r|q w e e r)\b/,
+    // Kike variations (simplified, explicit)
+    /(?i)\b(?:kike|k1ke|k!ke|kik3|k i k e|k 1 k e)\b/,
+    // Chink variations (simplified, explicit)
+    /(?i)\b(?:chink|ch1nk|ch!nk|chenck|ch3nck|chanck|c h i n k|c h 1 n k)\b/,
+    // Spic variations (simplified, explicit)
+    /(?i)\b(?:spic|spick|sp@c|sp1c|s p i c|s p i c k)\b/,
+    // Wetback variations (simplified, explicit)
+    /(?i)\b(?:wetback|w3tback|w e t b a c k)\b/
 ];
 
 // Specific keywords for hate speech/slurs
