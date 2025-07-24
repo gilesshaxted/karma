@@ -534,19 +534,25 @@ const logMessage = async (guild, message, flaggedBy, actionType) => { // Renamed
     }
 
     // Safely get author ID and tag
-    let resolvedAuthor = message.author;
-    if (resolvedAuthor && resolvedAuthor.partial) {
-        try {
-            resolvedAuthor = await resolvedAuthor.fetch();
-        } catch (err) {
-            console.warn(`Could not fetch partial author for message ${message.id}:`, err);
-            // Fallback if fetch fails or author is truly gone
-            resolvedAuthor = null;
+    let authorId = 'Unknown ID';
+    let authorTag = 'Unknown User';
+
+    if (message.author) { // Check if message.author exists before trying to fetch/access
+        let resolvedAuthor = message.author;
+        if (resolvedAuthor.partial) {
+            try {
+                resolvedAuthor = await resolvedAuthor.fetch();
+            } catch (err) {
+                console.warn(`Could not fetch partial author for message ${message.id}:`, err);
+                resolvedAuthor = null; // Set to null if fetch fails or author is truly gone
+            }
+        }
+        // After potential fetch, if resolvedAuthor is still valid
+        if (resolvedAuthor) {
+            authorId = resolvedAuthor.id;
+            authorTag = resolvedAuthor.tag;
         }
     }
-
-    const authorId = resolvedAuthor ? resolvedAuthor.id : 'Unknown ID';
-    const authorTag = resolvedAuthor ? resolvedAuthor.tag : 'Unknown User';
 
     const embed = new EmbedBuilder()
         .setTitle('Message Moderated')
