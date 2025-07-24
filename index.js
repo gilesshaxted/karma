@@ -10,7 +10,7 @@ const express = require('express');
 
 // Import helper functions
 const { hasPermission, isExempt } = require('./helpers/permissions');
-const { logModerationAction, logMessage } = require('./logging/logging');
+const logging = require('./logging/logging'); // Import the entire logging module
 const karmaSystem = require('./karma/karmaSystem'); // Import the entire karmaSystem module
 const autoModeration = require('./automoderation/autoModeration'); // Import the entire autoModeration module
 const handleMessageReactionAdd = require('./events/messageReactionAdd'); // Import the event handler
@@ -39,17 +39,11 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
-// Firebase and Google API variables (will be initialized on ready)
-let db;
-let auth;
-let appId;
-let userId;
-let googleApiKey; // Store Google API Key here
-
-// Attach db, appId, and googleApiKey to client for easy access in modules
-client.db = db;
-client.appId = appId;
-client.googleApiKey = googleApiKey;
+// Firebase and Google API variables - Initialize them early to prevent 'null' errors
+client.db = null;
+client.auth = null;
+client.appId = null;
+client.googleApiKey = null;
 
 
 // Create a collection to store commands
@@ -93,6 +87,11 @@ for (const file of karmaCommandFiles) {
 
 // Helper function to get guild-specific config from Firestore
 const getGuildConfig = async (guildId) => {
+    // Ensure client.db and client.appId are initialized before use
+    if (!client.db || !client.appId) {
+        console.error('Firestore not initialized yet when getGuildConfig was called.');
+        return null; // Or throw an error, depending on desired behavior
+    }
     const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
     const configSnap = await getDoc(configRef);
 
@@ -115,6 +114,11 @@ const getGuildConfig = async (guildId) => {
 
 // Helper function to save guild-specific config to Firestore
 const saveGuildConfig = async (guildId, newConfig) => {
+    // Ensure client.db and client.appId are initialized before use
+    if (!client.db || !client.appId) {
+        console.error('Firestore not initialized yet when saveGuildConfig was called.');
+        return;
+    }
     const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
     await setDoc(configRef, newConfig, { merge: true });
 };
@@ -126,12 +130,8 @@ client.once('ready', async () => {
 
     // Initialize Firebase and Google API Key
     try {
-        appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        googleApiKey = process.env.GOOGLE_API_KEY || ""; // Get Google API Key
-
-        // Attach to client object
-        client.appId = appId;
-        client.googleApiKey = googleApiKey;
+        client.appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        client.googleApiKey = process.env.GOOGLE_API_KEY || "";
 
         const firebaseConfig = {
             apiKey: process.env.FIREBASE_API_KEY,
@@ -148,20 +148,16 @@ client.once('ready', async () => {
         }
 
         const firebaseApp = initializeApp(firebaseConfig);
-        db = getFirestore(firebaseApp);
-        auth = getAuth(firebaseApp);
-
-        // Attach db and auth to client object
-        client.db = db;
-        client.auth = auth;
+        client.db = getFirestore(firebaseApp); // Assign directly to client.db
+        client.auth = getAuth(firebaseApp); // Assign directly to client.auth
 
         if (typeof __initial_auth_token !== 'undefined') {
-            await signInWithCustomToken(auth, __initial_auth_token);
+            await signInWithCustomToken(client.auth, __initial_auth_token);
         } else {
-            await signInAnonymously(auth);
+            await signInAnonymously(client.auth);
         }
-        userId = auth.currentUser?.uid || crypto.randomUUID();
-        console.log(`Firebase initialized. User ID: ${userId}. App ID for Firestore: ${appId}`);
+        client.userId = client.auth.currentUser?.uid || crypto.randomUUID(); // Assign to client.userId
+        console.log(`Firebase initialized. User ID: ${client.userId}. App ID for Firestore: ${client.appId}`);
 
     } catch (firebaseError) {
         console.error('Failed to initialize Firebase:', firebaseError);
@@ -207,25 +203,29 @@ client.on('messageCreate', async message => {
     // Ignore bot messages and DMs
     if (message.author.bot || !message.guild) return;
 
+    // Crucial check: Ensure Firebase and essential services are initialized
+    if (!client.db || !client.appId || !client.googleApiKey) {
+        console.warn('Skipping message processing: Firebase or API keys not fully initialized yet.');
+        return;
+    }
+
     const guild = message.guild;
     const author = message.author;
 
     // --- Auto-Moderation Check ---
-    // Pass necessary dependencies to autoModeration functions
     await autoModeration.checkMessageForModeration(
         message,
-        client,
+        client, // Pass client directly
         getGuildConfig,
         saveGuildConfig,
         isExempt,
-        logging.logModerationAction, // Use logging module
-        logging.logMessage, // Use logging module
+        logging.logModerationAction,
+        logging.logMessage,
         client.googleApiKey
     );
 
     // --- Karma System Update ---
     try {
-        // Pass necessary dependencies to karmaSystem functions
         const authorKarmaData = await karmaSystem.getOrCreateUserKarma(guild.id, author.id, client.db, client.appId);
         await karmaSystem.updateUserKarmaData(guild.id, author.id, {
             messagesToday: (authorKarmaData.messagesToday || 0) + 1,
@@ -274,6 +274,18 @@ client.on('messageCreate', async message => {
 
 // Event: Interaction created (for slash commands and buttons)
 client.on('interactionCreate', async interaction => {
+    // Crucial check: Ensure Firebase and essential services are initialized
+    if (!client.db || !client.appId) {
+        console.warn('Skipping interaction processing: Firebase not fully initialized yet.');
+        // Attempt to reply if deferred/replied, otherwise just log
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: 'Bot is still starting up, please try again in a moment.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
+        } else {
+            await interaction.reply({ content: 'Bot is still starting up, please try again in a moment.', ephemeral: true }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
+        }
+        return;
+    }
+
     try {
         if (interaction.isCommand()) {
             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
@@ -333,16 +345,16 @@ client.on('interactionCreate', async interaction => {
                 saveGuildConfig,
                 hasPermission,
                 isExempt,
-                logModerationAction: logging.logModerationAction, // Use logging module
-                logMessage: logging.logMessage, // Use logging module
+                logModerationAction: logging.logModerationAction,
+                logMessage: logging.logMessage,
                 MessageFlags,
-                db: client.db, // Pass client's db
-                appId: client.appId, // Pass client's appId
-                getOrCreateUserKarma: karmaSystem.getOrCreateUserKarma, // Pass karmaSystem functions
+                db: client.db,
+                appId: client.appId,
+                getOrCreateUserKarma: karmaSystem.getOrCreateUserKarma,
                 updateUserKarmaData: karmaSystem.updateUserKarmaData,
                 calculateAndAwardKarma: karmaSystem.calculateAndAwardKarma,
                 analyzeSentiment: karmaSystem.analyzeSentiment,
-                client // Pass client for commands that need it (e.g., clearwarning)
+                client
             });
         } else if (interaction.isButton()) {
             await interaction.deferUpdate();
@@ -487,6 +499,14 @@ client.on('interactionCreate', async interaction => {
 
 // Event: Message reaction added (for emoji moderation and karma system reactions)
 client.on('messageReactionAdd', async (reaction, user) => {
+    // Crucial check: Ensure Firebase and essential services are initialized
+    if (!client.db || !client.appId || !client.googleApiKey) {
+        console.warn('Skipping reaction processing: Firebase or API keys not fully initialized yet.');
+        // Attempt to remove reaction if bot is not ready, to avoid confusion
+        reaction.users.remove(user.id).catch(e => console.error('Failed to remove reaction for uninitialized bot:', e));
+        return;
+    }
+
     // Delegate to the external event handler
     await handleMessageReactionAdd(
         reaction,
@@ -496,9 +516,9 @@ client.on('messageReactionAdd', async (reaction, user) => {
         saveGuildConfig,
         hasPermission,
         isExempt,
-        logging.logModerationAction, // Use logging module
-        logging.logMessage, // Use logging module
-        karmaSystem // Pass the entire karmaSystem module
+        logging.logModerationAction,
+        logging.logMessage,
+        karmaSystem
     );
 });
 
