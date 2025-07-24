@@ -25,6 +25,7 @@ Karma is a powerful and intuitive Discord moderation bot designed to help server
 * **Configurable Roles & Channels**: Use the `/setup` command to easily configure moderator roles, admin roles, and logging channels directly within Discord.
 * **Message Deletion on Kick/Ban**: When a user is kicked or banned, their messages from the last 24 hours are automatically deleted and logged, helping to clean up disruptive content.
 * **Firestore Integration**: All bot configurations (moderator/admin roles, logging channels, case numbers) are persistently stored in Google Firestore, ensuring data is saved across restarts and accessible from any host.
+* **LLM-Powered Sentiment Analysis**: The bot now uses a Large Language Model (LLM) to analyze the sentiment of replies. Negative replies will prevent karma gain for the replied-to user.
 
 Karma is designed to be efficient, user-friendly, and highly effective in maintaining a healthy Discord server. It's the ultimate tool for a harmonious community!
 
@@ -42,9 +43,13 @@ Karma is designed to be efficient, user-friendly, and highly effective in mainta
 3.  **Firebase Project**:
     * Set up a Google Cloud project and enable Firestore.
     * Ensure your Firestore security rules allow authenticated users to read and write to `/artifacts/{appId}/public/data/guilds/{guildId}/configs/settings` and `/artifacts/{appId}/public/data/guilds/{guildId}/moderation_records/{recordId}`.
-4.  **Environment Variables**: When deploying, ensure the following environment variables are set:
+4.  **Google Cloud Project for Gemini API**:
+    * Enable the "Generative Language API" in your Google Cloud Project.
+    * Create an **API Key** for this project.
+5.  **Environment Variables**: When deploying, ensure the following environment variables are set:
     * `DISCORD_BOT_TOKEN`: Your Discord bot's token.
     * `DISCORD_APPLICATION_ID`: Your Discord bot's Application ID.
+    * `GOOGLE_API_KEY`: The API key for accessing the Gemini Generative Language API.
     * `FIREBASE_API_KEY`: Your Firebase project's API Key.
     * `FIREBASE_AUTH_DOMAIN`: Your Firebase project's Auth Domain.
     * `FIREBASE_PROJECT_ID`: Your Firebase project's Project ID.
@@ -54,15 +59,15 @@ Karma is designed to be efficient, user-friendly, and highly effective in mainta
     * `__app_id`: (Provided by Canvas/Render environment) The application ID for Firestore.
     * `__firebase_config`: (Provided by Canvas/Render environment) Your Firebase project configuration in JSON format (though individual variables are now used for more clarity).
     * `__initial_auth_token`: (Provided by Canvas/Render environment) A Firebase custom authentication token.
-5.  **Install Dependencies**: Open your terminal in the bot's root directory and run:
+6.  **Install Dependencies**: Open your terminal in the bot's root directory and run:
     ```bash
     npm install discord.js dotenv firebase express
     ```
-6.  **Run the Bot**:
+7.  **Run the Bot**:
     ```bash
     node index.js
     ```
-7.  **Invite the Bot to Your Server**:
+8.  **Invite the Bot to Your Server**:
     * In the Discord Developer Portal, go to "OAuth2" -> "URL Generator".
     * Select `bot` and `applications.commands` scopes.
     * Under "Bot Permissions", grant the following permissions:
@@ -75,6 +80,6 @@ Karma is designed to be efficient, user-friendly, and highly effective in mainta
         * `Send Messages`
         * `Manage Messages`
     * Copy the generated URL and paste it into your browser to invite the bot to your server.
-8.  **Configure with `/setup`**: Once the bot is in your server, use the `/setup` command to configure moderator/admin roles and logging channels. This is crucial for the bot's functionality.
+9.  **Configure with `/setup`**: Once the bot is in your server, use the `/setup` command to configure moderator/admin roles and logging channels. This is crucial for the bot's functionality.
 
 Enjoy using Karma to moderate your Discord server!
