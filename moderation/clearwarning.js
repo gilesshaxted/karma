@@ -1,6 +1,6 @@
 // moderation/clearwarning.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { collection, query, where, getDocs, deleteDoc, doc } = require('firebase/firestore');
+const { collection, query, where, getDocs, deleteDoc, doc, writeBatch } = require('firebase/firestore');
 
 module.exports = {
     // Slash command data
@@ -17,7 +17,7 @@ module.exports = {
                 .setRequired(false)),
 
     // Execute function for slash command
-    async execute(interaction, { db, appId, getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, MessageFlags }) {
+    async execute(interaction, { db, appId, getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, MessageFlags, client }) { // Added 'client' here
         const caseNumberToClear = interaction.options.getInteger('casenumber');
         const targetUserOption = interaction.options.getUser('target'); // Optional target user
         const moderator = interaction.user;
@@ -45,7 +45,7 @@ module.exports = {
             // We expect only one document for a unique case number. If multiple, take the first.
             const warningDoc = querySnapshot.docs[0];
             const warningData = warningDoc.data();
-            const targetUser = await client.users.fetch(warningData.targetUserId).catch(() => null);
+            const targetUser = await client.users.fetch(warningData.targetUserId).catch(() => null); // Uses client to fetch user
 
             if (!targetUser) {
                 // This case should ideally not happen if the user exists in the record
@@ -73,10 +73,7 @@ module.exports = {
             // DM the target user
             const dmEmbed = new EmbedBuilder()
                 .setTitle('A Warning Has Been Cleared!')
-                .setDescription(`Warning #${caseNumberToClear} on **${guild.name}** has been cleared by ${moderator.tag}.`)
-                .addFields(
-                    { name: 'Original Reason', value: warningData.reason || 'No reason provided.' }
-                )
+                .setDescription(`**Server:** ${guild.name}\n**Warning Case #:** ${caseNumberToClear}\n**Original Reason:** ${warningData.reason || 'No reason provided.'}\n**Moderator:** ${moderator.tag}`)
                 .setColor(0x00FF00) // Green color for positive action
                 .setTimestamp();
             await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
