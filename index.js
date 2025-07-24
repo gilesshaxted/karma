@@ -47,15 +47,15 @@ const moderationCommandFiles = [
     'timeout.js',
     'kick.js',
     'ban.js',
-    'warnings.js', // Re-introduced
-    'warning.js', // Re-introduced
-    'clearwarnings.js', // Re-introduced
-    'clearwarning.js' // Re-introduced
+    'warnings.js',
+    'warning.js',
+    'clearwarnings.js',
+    'clearwarning.js'
 ];
 
 const karmaCommandFiles = [
-    'karma.js', // Re-introduced
-    'leaderboard.js' // Re-introduced
+    'karma.js',
+    'leaderboard.js'
 ];
 
 for (const file of moderationCommandFiles) {
@@ -68,7 +68,7 @@ for (const file of moderationCommandFiles) {
 }
 
 for (const file of karmaCommandFiles) {
-    const command = require(`./karma/${file}`); // Load from new karma folder
+    const command = require(`./karma/${file}`);
     if ('data' in command && 'execute' in command) {
         client.commands.set(command.data.name, command);
     } else {
@@ -92,8 +92,8 @@ const getGuildConfig = async (guildId) => {
             adminRoleId: null,
             moderationLogChannelId: null,
             messageLogChannelId: null,
-            modAlertChannelId: null, // Re-introduced
-            modPingRoleId: null, // Re-introduced
+            modAlertChannelId: null,
+            modPingRoleId: null,
             caseNumber: 0
         };
         await setDoc(configRef, defaultConfig);
@@ -221,7 +221,7 @@ const calculateAndAwardKarma = async (guild, user, karmaData) => {
     return karmaAwarded;
 };
 
-// LLM-powered sentiment analysis for general replies (Re-introduced)
+// LLM-powered sentiment analysis for general replies
 const analyzeSentiment = async (text) => {
     try {
         let chatHistory = [];
@@ -264,7 +264,7 @@ const analyzeSentiment = async (text) => {
     }
 };
 
-// LLM-powered check for offensive content (for auto-moderation) (Re-introduced)
+// LLM-powered check for offensive content (for auto-moderation)
 const isContentOffensive = async (text) => {
     try {
         const chatHistory = [{ role: "user", parts: [{ text: `Is the following text hate speech, a racial slur, homophobic, or otherwise severely offensive? Respond with "yes" or "no".\n\nText: "${text}"` }] }];
@@ -299,15 +299,15 @@ const isContentOffensive = async (text) => {
     }
 };
 
-// Regex patterns for specific hate speech/slurs (EMPTY - relying on LLM and keywords) (Re-introduced empty)
+// Regex patterns for specific hate speech/slurs (EMPTY - relying on LLM and keywords)
 const hateSpeechRegexes = [];
 
-// Specific keywords for hate speech/slurs (Re-introduced)
+// Specific keywords for hate speech/slurs
 const hateSpeechKeywords = [
     'fag', 'faggot', 'gypsy', 'homo', 'kike', 'nigg', 'nigger', 'retard', 'spic', 'spick', 'yn', 'yns'
 ];
 
-// Helper function to send a moderation alert to the designated channel (Re-introduced)
+// Helper function to send a moderation alert to the designated channel
 const sendModAlert = async (guild, message, reason, flaggedBy, messageLink, pingRoleId) => {
     const guildConfig = await getGuildConfig(guild.id);
     const alertChannelId = guildConfig.modAlertChannelId;
@@ -381,7 +381,7 @@ const sendModAlert = async (guild, message, reason, flaggedBy, messageLink, ping
 };
 
 
-// Main auto-moderation logic function (Re-introduced)
+// Main auto-moderation logic function
 const checkMessageForModeration = async (message) => {
     const guild = message.guild;
     const guildConfig = await getGuildConfig(guild.id);
@@ -754,7 +754,8 @@ client.on('interactionCreate', async interaction => {
                     .setDescription('Welcome to Karma Bot setup! Use the buttons below to configure your server\'s moderation settings.')
                     .addFields(
                         { name: '1. Set Moderator & Admin Roles', value: 'Define which roles can use moderation commands and are exempt from moderation.' },
-                        { name: '2. Set Moderation Channels', value: 'Specify channels for moderation logs and deleted message logs.' }
+                        { name: '2. Set Moderation Channels', value: 'Specify channels for moderation logs and deleted message logs.' },
+                        { name: '3. Set Auto-Moderation Channels & Role', value: 'Designate a channel for auto-moderation alerts and a role to ping.' } // Re-introduced setup step
                     )
                     .setColor(0x0099FF);
 
@@ -767,6 +768,10 @@ client.on('interactionCreate', async interaction => {
                         new ButtonBuilder()
                             .setCustomId('setup_channels')
                             .setLabel('Set Log Channels') // Renamed for clarity
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder() // Re-introduced button for auto-mod setup
+                            .setCustomId('setup_auto_mod_channels')
+                            .setLabel('Set Auto-Mod Channels')
                             .setStyle(ButtonStyle.Primary),
                     );
 
@@ -801,7 +806,7 @@ client.on('interactionCreate', async interaction => {
                 getOrCreateUserKarma, // Pass karma helpers
                 updateUserKarmaData,
                 calculateAndAwardKarma,
-                analyzeSentiment, // Pass placeholder analyzeSentiment
+                analyzeSentiment,
                 client // Pass client to access users for clearwarning
             });
         } else if (interaction.isButton()) {
@@ -811,7 +816,18 @@ client.on('interactionCreate', async interaction => {
             // Defer reply for buttons as well, if they might take time
             await interaction.deferUpdate(); // Use deferUpdate for buttons that don't need a new message
 
-            // Pagination for /warnings is not in this version, so no handler here.
+            // Handle pagination buttons for /warnings command (Re-introduced)
+            if (customId.startsWith('warnings_page_')) {
+                const [_, action, targetUserId, currentPageStr] = customId.split('_');
+                const currentPage = parseInt(currentPageStr);
+                const targetUser = await client.users.fetch(targetUserId); // client is defined here
+
+                const warningsCommand = client.commands.get('warnings');
+                if (warningsCommand) {
+                    await warningsCommand.handlePagination(interaction, targetUser, action, currentPage, { db, appId, MessageFlags });
+                }
+                return;
+            }
 
 
             if (customId === 'setup_roles') {
@@ -885,6 +901,44 @@ client.on('interactionCreate', async interaction => {
                 collector.on('end', collected => {
                     if (collected.size === 0) {
                         interaction.followUp({ content: 'You did not respond in time. Channel setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
+                    }
+                });
+            } else if (customId === 'setup_auto_mod_channels') { // Re-introduced setup for auto-mod channels
+                await interaction.followUp({ content: 'Please mention the Auto-Moderation Alert Channel and then the Role to ping (e.g., `#mod-alerts @Moderators`). Type `none` if you don\'t have one of them.', flags: [MessageFlags.Ephemeral] });
+
+                const filter = m => m.author.id === interaction.user.id;
+                const collector = interaction.channel.createMessageCollector({ filter, time: 60000 });
+
+                collector.on('collect', async m => {
+                    const channels = m.mentions.channels;
+                    const roles = m.mentions.roles;
+                    let modAlertChannel = null;
+                    let modPingRole = null;
+
+                    if (channels.size >= 1) {
+                        modAlertChannel = channels.first();
+                    }
+                    if (roles.size >= 1) {
+                        modPingRole = roles.first();
+                    } else if (m.content.toLowerCase() === 'none') {
+                        // User explicitly said 'none'
+                    } else if (channels.size === 0 && roles.size === 0) {
+                        await interaction.followUp({ content: 'Please mention the channel and role correctly or type `none`.', flags: [MessageFlags.Ephemeral] });
+                        return;
+                    }
+
+                    guildConfig.modAlertChannelId = modAlertChannel ? modAlertChannel.id : null;
+                    guildConfig.modPingRoleId = modPingRole ? modPingRole.id : null;
+                    await saveGuildConfig(interaction.guildId, guildConfig);
+
+                    await interaction.followUp({ content: `Auto-Moderation Alert Channel set to: ${modAlertChannel ? modAlertChannel.name : 'None'}\nModerator Ping Role set to: ${modPingRole ? modPingRole.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
+                    collector.stop();
+                    m.delete().catch(console.error);
+                });
+
+                collector.on('end', collected => {
+                    if (collected.size === 0) {
+                        interaction.followUp({ content: 'You did not respond in time. Auto-moderation channel setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
                     }
                 });
             }
