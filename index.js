@@ -1,11 +1,11 @@
 // index.js
 require('dotenv').config();
-const { Client, Collection, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField, MessageFlags } = require('discord.js'); // Added MessageFlags
+const { Client, Collection, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, orderBy, limit, startAfter, getDocs } = require('firebase/firestore'); // Added Firestore collection, addDoc, query, where, orderBy, limit, startAfter, getDocs
+const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, orderBy, limit, startAfter, getDocs } = require('firebase/firestore');
 const express = require('express'); // Import express
 
 // --- Web Server for Hosting Platforms (e.g., Render) ---
@@ -219,37 +219,49 @@ const calculateAndAwardKarma = async (guild, user, karmaData) => {
     return karmaAwarded;
 };
 
-// Placeholder for AI sentiment analysis
+// LLM-powered sentiment analysis
 const analyzeSentiment = async (text) => {
-    // This is a placeholder. In a real scenario, you would make an API call to an LLM
-    // like Google's Gemini API here to get a sentiment score.
-    // For example:
-    /*
-    let chatHistory = [];
-    chatHistory.push({ role: "user", parts: [{ text: `Analyze the sentiment of the following text and return "positive", "neutral", or "negative":\n\n${text}` }] });
-    const payload = { contents: chatHistory };
-    const apiKey = ""; // If you want to use models other than gemini-2.0-flash, provide an API key here.
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-    const response = await fetch(apiUrl, {
-               method: 'POST',
-               headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify(payload)
-           });
-    const result = await response.json();
-    if (result.candidates && result.candidates.length > 0 && result.candidates[0].content && result.candidates[0].content.parts && result.candidates[0].content.parts.length > 0) {
-      const sentiment = result.candidates[0].content.parts[0].text.toLowerCase();
-      return sentiment;
-    }
-    */
-    // For now, a very simple heuristic:
-    const negativeKeywords = ['bad', 'hate', 'stupid', 'idiot', 'negative', 'terrible', 'awful', 'no', 'not', 'fuck', 'shit', 'crap'];
-    const lowerText = text.toLowerCase();
-    for (const keyword of negativeKeywords) {
-        if (lowerText.includes(keyword)) {
-            return 'negative';
+    try {
+        let chatHistory = [];
+        chatHistory.push({ role: "user", parts: [{ text: `Analyze the sentiment of the following text and return only one word: "positive", "neutral", or "negative".\n\nText: "${text}"` }] });
+        const payload = { contents: chatHistory };
+        // Use the GOOGLE_API_KEY environment variable
+        const apiKey = process.env.GOOGLE_API_KEY || "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Gemini API error: ${response.status} - ${errorText}`);
+            return 'neutral'; // Fallback to neutral on API error
         }
+
+        const result = await response.json();
+
+        if (result.candidates && result.candidates.length > 0 &&
+            result.candidates[0].content && result.candidates[0].content.parts &&
+            result.candidates[0].content.parts.length > 0) {
+            const sentiment = result.candidates[0].content.parts[0].text.toLowerCase().trim();
+            // Basic validation for expected output
+            if (['positive', 'neutral', 'negative'].includes(sentiment)) {
+                return sentiment;
+            } else {
+                console.warn(`Gemini API returned unexpected sentiment: "${sentiment}". Falling back to neutral.`);
+                return 'neutral';
+            }
+        } else {
+            console.warn('Gemini API response structure unexpected or content missing. Falling back to neutral.');
+            return 'neutral';
+        }
+    } catch (error) {
+        console.error('Error calling Gemini API for sentiment analysis:', error);
+        return 'neutral'; // Fallback to neutral on fetch/parsing error
     }
-    return 'positive'; // Default to positive if no negative keywords
 };
 
 
@@ -711,4 +723,108 @@ client.on('messageReactionAdd', async (reaction, user) => {
     if (isExempt(targetMember, guildConfig)) {
         // If target is exempt, remove the reaction
         return reaction.users.remove(user.id).catch(console.error);
-  
+    }
+
+    // Reason should simply be the message content
+    const reason = `"${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
+    let actionTypeForDB = ''; // To store the action type without " (Emoji)"
+    let actionTaken = false;
+    let duration = null; // For timeout/ban records
+    const messageLink = `https://discord.com/channels/${guild.id}/${message.channel.id}/${message.id}`;
+
+    // Increment case number and save before action
+    guildConfig.caseNumber++;
+    await saveGuildConfig(guild.id, guildConfig);
+    const caseNumber = guildConfig.caseNumber;
+
+    switch (reaction.emoji.name) {
+        case '⚠️': // Warning emoji
+            try {
+                const warnCommand = client.commands.get('warn');
+                if (warnCommand) {
+                    actionTypeForDB = 'Warning';
+                    await warnCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
+                    actionTaken = true;
+                }
+            } catch (error) {
+                console.error('Error during emoji warn:', error);
+            }
+            break;
+        case '⏰': // Alarm clock emoji (default timeout 1 hour)
+            try {
+                const timeoutCommand = client.commands.get('timeout');
+                if (timeoutCommand) {
+                    actionTypeForDB = 'Timeout';
+                    duration = '1h'; // Default timeout duration
+                    // Pass 60 minutes for default timeout
+                    await timeoutCommand.executeEmoji(message, targetMember, 60, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
+                    actionTaken = true;
+                }
+            } catch (error) {
+                console.error('Error during emoji timeout:', error);
+            }
+            break;
+        case '👢': // Boot emoji (kick)
+            try {
+                const kickCommand = client.commands.get('kick');
+                if (kickCommand) {
+                    actionTypeForDB = 'Kick';
+                    await kickCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
+                    actionTaken = true;
+                }
+            } catch (error) {
+                console.error('Error during emoji kick:', error);
+            }
+            break;
+    }
+
+    // If an action was taken, delete the original message AND the reaction
+    if (actionTaken) {
+        try {
+            // Ensure the message is not already deleted
+            if (message.deletable) {
+                await message.delete();
+                console.log(`Message deleted after emoji moderation: ${message.id}`);
+            }
+            // Remove the user's reaction after successful moderation
+            await reaction.users.remove(user.id).catch(console.error);
+        } catch (error) {
+            console.error(`Failed to delete message ${message.id} or reaction:`, error);
+        }
+    }
+});
+
+// Event: Message Reaction Added (for Karma system)
+client.on('messageReactionAdd', async (reaction, user) => {
+    // Ignore bot reactions, DMs, or reactions from the message author themselves
+    if (user.bot || !reaction.message.guild || reaction.message.author.id === user.id) return;
+
+    // Fetch full reaction if partial
+    if (reaction.partial) {
+        try {
+            await reaction.fetch();
+        } catch (error) {
+            console.error('Something went wrong when fetching the reaction:', error);
+            return;
+        }
+    }
+
+    const message = reaction.message;
+    const guild = message.guild;
+    const originalAuthor = message.author;
+
+    try {
+        const originalAuthorKarmaData = await getOrCreateUserKarma(guild.id, originalAuthor.id);
+        await updateUserKarmaData(guild.id, originalAuthor.id, {
+            reactionsReceivedToday: (originalAuthorKarmaData.reactionsReceivedToday || 0) + 1,
+            lastActivityDate: new Date()
+        });
+        await calculateAndAwardKarma(guild, originalAuthor, { ...originalAuthorKarmaData, reactionsReceivedToday: (originalAuthorKarmaData.reactionsReceivedToday || 0) + 1 });
+    } catch (error) {
+        console.error(`Error in messageReactionAdd karma tracking for ${originalAuthor.tag}:`, error);
+    }
+});
+
+
+// Log in to Discord with your client's token
+client.login(process.env.DISCORD_BOT_TOKEN);
