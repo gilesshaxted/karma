@@ -9,7 +9,7 @@ const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query,
 const express = require('express');
 const axios = require('axios'); // Changed from node-fetch to axios
 
-// Create a new Discord client with necessary intents - MOVED TO TOP
+// Create a new Discord client with necessary intents
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -26,6 +26,9 @@ client.db = null;
 client.auth = null;
 client.appId = null;
 client.googleApiKey = null;
+
+// Create a collection to store commands - MOVED HERE
+client.commands = new Collection();
 
 
 // Import helper functions
@@ -78,7 +81,7 @@ app.post('/api/token', async (req, res) => {
     }
 
     try {
-        const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
+        const tokenResponse = await axios.post('[https://discord.com/api/oauth2/token](https://discord.com/api/oauth2/token)', new URLSearchParams({
             client_id: DISCORD_CLIENT_ID,
             client_secret: DISCORD_CLIENT_SECRET,
             grant_type: 'authorization_code',
@@ -107,7 +110,7 @@ const verifyDiscordToken = async (req, res, next) => {
     const accessToken = authHeader.split(' ')[1];
 
     try {
-        const userResponse = await axios.get('https://discord.com/api/users/@me', {
+        const userResponse = await axios.get('[https://discord.com/api/users/@me](https://discord.com/api/users/@me)', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         req.discordUser = userResponse.data; // axios puts response data in .data
@@ -127,7 +130,7 @@ app.get('/api/user', verifyDiscordToken, (req, res) => {
 // API route to get guilds where the bot is present and the user has admin permissions
 app.get('/api/guilds', verifyDiscordToken, async (req, res) => {
     try {
-        const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
+        const guildsResponse = await axios.get('[https://discord.com/api/users/@me/guilds](https://discord.com/api/users/@me/guilds)', {
             headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
         });
         const userGuilds = guildsResponse.data; // axios puts response data in .data
@@ -532,7 +535,7 @@ client.on('interactionCreate', async interaction => {
                         modPingRole = roles.first();
                     } else if (m.content.toLowerCase() === 'none') {
                         // User explicitly said 'none'
-                    } else if (channels.size === 0 && roles.size === 0) {
+                    } else {
                         await interaction.followUp({ content: 'Please mention the channel and role correctly or type `none`.', flags: [MessageFlags.Ephemeral] });
                         return;
                     }
