@@ -45,7 +45,9 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
         const targetMember = await guild.members.fetch(message.author.id).catch(() => null);
         if (!targetMember) {
             console.log(`Could not fetch target member ${message.author.id}.`);
-            return reaction.users.remove(user.id).catch(console.error);
+            // Attempt to remove reaction even if target member cannot be fetched
+            reaction.users.remove(user.id).catch(console.error);
+            return;
         }
 
         // Check if the target user is exempt for moderation actions (warn, timeout, kick)
@@ -75,8 +77,8 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
 
         // Handle manual flagging (🔗)
         if (reaction.emoji.name === '🔗') {
-            if (guildConfig.modAlertChannelId && guildConfig.modPingRoleId) { // Only send alert if channels/roles are set up
-                const sendModAlert = require('../automoderation/autoModeration').sendModAlert; // Import here to avoid circular dependency
+            if (guildConfig.modAlertChannelId && guildConfig.modPingRoleId) {
+                const sendModAlert = require('../automoderation/autoModeration').sendModAlert;
                 await sendModAlert(guild, message, `Manually flagged by ${reactorMember.tag}`, reactorMember.user, messageLink, guildConfig.modPingRoleId, getGuildConfig);
                 console.log(`Message from ${targetMember.tag} manually flagged by ${reactorMember.tag}.`);
                 actionTaken = true;
@@ -93,6 +95,7 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
                     try {
                         const warnCommand = client.commands.get('warn');
                         if (warnCommand) {
+                            // Pass getGuildConfig, db, appId to logModerationAction via the context object
                             await warnCommand.executeEmoji(message, targetMember, reasonContent, reactorMember, caseNumber, { logModerationAction, logMessage });
                             actionTaken = true;
                         }
@@ -105,6 +108,7 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
                         const timeoutCommand = client.commands.get('timeout');
                         if (timeoutCommand) {
                             const duration = '1h';
+                            // Pass getGuildConfig, db, appId to logModerationAction via the context object
                             await timeoutCommand.executeEmoji(message, targetMember, 60, reasonContent, reactorMember, caseNumber, { logModerationAction, logMessage, duration });
                             actionTaken = true;
                         }
@@ -116,6 +120,7 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
                     try {
                         const kickCommand = client.commands.get('kick');
                         if (kickCommand) {
+                            // Pass getGuildConfig, db, appId to logModerationAction via the context object
                             await kickCommand.executeEmoji(message, targetMember, reasonContent, reactorMember, caseNumber, { logModerationAction, logMessage });
                             actionTaken = true;
                         }
@@ -126,17 +131,34 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
             }
         }
 
-        // If an action was taken (moderation or flagging), delete the original message (if applicable) AND the reaction
+        // If an action was taken (moderation or flagging), remove the reaction FIRST, then delete message (if applicable)
         if (actionTaken) {
             try {
+                // Always remove the user's reaction first
+                await reaction.users.remove(user.id).catch(error => {
+                    // Catch DiscordAPIError[10008] here specifically if message was already deleted by another process
+                    if (error.code === 10008) {
+                        console.warn(`DiscordAPIError[10008]: Cannot remove reaction from unknown message ${message.id}. Message likely already deleted.`);
+                    } else {
+                        console.error(`Failed to remove reaction from message ${message.id}:`, error);
+                    }
+                });
+
+                // Then delete the original message if it was a moderation action (warn, timeout, kick)
                 if (['⚠️', '⏰', '👢'].includes(reaction.emoji.name) && message.deletable) {
-                    await message.delete();
+                    await message.delete().catch(error => {
+                        // Catch DiscordAPIError[10008] here specifically if message was already deleted by another process
+                        if (error.code === 10008) {
+                            console.warn(`DiscordAPIError[10008]: Cannot delete unknown message ${message.id}. Message likely already deleted.`);
+                        } else {
+                            console.error(`Failed to delete message ${message.id}:`, error);
+                        }
+                    });
                     console.log(`Message deleted after emoji moderation: ${message.id}`);
-                    await logMessage(guild, message, user, 'Deleted (Emoji Mod)', getGuildConfig); // Pass getGuildConfig
+                    await logMessage(guild, message, user, 'Deleted (Emoji Mod)', getGuildConfig);
                 }
-                await reaction.users.remove(user.id).catch(console.error);
             } catch (error) {
-                console.error(`Failed to delete message ${message.id} or reaction:`, error);
+                console.error(`An unexpected error occurred during post-moderation cleanup for message ${message.id}:`, error);
             }
         }
     }
