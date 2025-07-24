@@ -1000,6 +1000,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
     // Safely get channel ID and name for reason
     let channelIdForReason = 'Unknown Channel ID';
+    let channelNameForReason = 'Unknown Channel'; // Added channel name for reason
     if (message.channel) {
         let resolvedChannelForReason = message.channel;
         if (resolvedChannelForReason.partial) {
@@ -1012,9 +1013,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
         }
         if (resolvedChannelForReason) {
             channelIdForReason = resolvedChannelForReason.id;
+            channelNameForReason = resolvedChannelForReason.name; // Get channel name
         }
     }
-    const reason = `Emoji moderation: "${message.content || 'No message content'}" from channel <#${channelIdForReason}>`;
+    const reason = `Emoji moderation: "${message.content || 'No message content'}" from channel <#${channelIdForReason}> (${channelNameForReason})`; // Use channel name in reason
 
 
     let actionTaken = false;
