@@ -21,16 +21,16 @@ Karma is a powerful and intuitive Discord moderation bot designed to help server
     * React to a message with ⚠️ (warning emoji) to warn the author and delete the message.
     * React to a message with ⏰ (alarm clock emoji) to timeout the author for 1 hour and delete the message.
     * React to a message with 👢 (boot emoji) to kick the author and delete the message.
-    * React to a message with 🔗 (link emoji) to manually flag a message for moderator review.
+    * React to a message with 🔗 (link emoji) to manually flag a message for moderator review (sends to mod-alert channel).
 * **Auto-Moderation**:
-    * Automatically detects and flags messages containing hate speech, racial slurs, homophobia, and other severely offensive language using a combination of LLM analysis, predefined regex patterns, and specific keywords.
+    * Automatically detects and flags messages containing hate speech, racial slurs, homophobia, and other severely offensive language using LLM analysis and specific keywords. (Regex patterns were removed due to persistent parsing errors in Node.js v22).
     * **Immediate Punishment**: For the worst offenses, the bot will automatically apply a short timeout (default: 10 minutes) to the author and delete the offensive message.
     * **Moderator Alerts**: If the bot detects potentially problematic content but isn't entirely "sure," it will repost the message content, author, and a link to the original message in a designated `mod-alert` channel. This alert will also ping a configurable generic moderator role.
-* **Automated Logging**: All moderation actions are logged to a designated moderation log channel with detailed embeds, including case numbers. Deleted messages (especially those from kicks/bans) are logged to a separate message log channel.
+* **Automated Logging**: All moderation actions are logged to a designated moderation log channel with detailed embeds, including case numbers. Deleted messages (especially those from kicks/bans) are logged to a separate message log channel with a clear embed format.
 * **Configurable Roles & Channels**: Use the `/setup` command to easily configure moderator roles, admin roles, and logging channels directly within Discord, including the new `mod-alert` channel and moderator ping role.
 * **Message Deletion on Kick/Ban**: When a user is kicked or banned, their messages from the last 24 hours are automatically deleted and logged, helping to clean up disruptive content.
 * **Firestore Integration**: All bot configurations (moderator/admin roles, logging channels, case numbers) are persistently stored in Google Firestore, ensuring data is saved across restarts and accessible from any host.
-* **LLM-Powered Sentiment Analysis**: The bot now uses a Large Language Model (LLM) to analyze the sentiment of replies. Negative replies will prevent karma gain for the replied-to user.
+* **LLM-Powered Sentiment Analysis**: The bot uses a Large Language Model (LLM) to analyze the sentiment of replies. Negative replies will prevent karma gain for the replied-to user.
 
 Karma is designed to be efficient, user-friendly, and highly effective in maintaining a healthy Discord server. It's the ultimate tool for a harmonious community!
 
