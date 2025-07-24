@@ -402,6 +402,9 @@ const checkMessageForModeration = async (message) => {
 
                 await authorMember.timeout(timeoutDurationMinutes * 60 * 1000, timeoutReason);
                 await message.delete().catch(console.error); // Delete the offensive message
+                // Log the deleted message to the message log channel
+                await logMessage(guild, message, client.user, 'Auto-Deleted');
+
 
                 // DM the user
                 const dmEmbed = new EmbedBuilder()
@@ -534,15 +537,14 @@ const logMessage = async (guild, message, moderator, actionType) => {
     }
 
     const embed = new EmbedBuilder()
-        .setTitle(`Message ${actionType}`)
-        .setDescription(`**Content:**\n\`\`\`\n${message.content || 'No content (e.g., embed, attachment only)'}\n\`\`\``)
-        .addFields(
-            { name: 'Author', value: `${message.author ? message.author.tag : 'Unknown User'} (${message.author ? message.author.id : 'Unknown ID'})`, inline: true },
-            { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
-            { name: 'Sent At', value: `<t:${Math.floor(message.createdTimestamp / 1000)}:F>`, inline: true },
-            { name: 'Moderated By', value: `${moderatorTag}`, inline: true }
+        .setTitle('Message Moderated') // Updated title
+        .setDescription(
+            `**Author:** <@${message.author.id}>\n` +
+            `**Channel:** <#${message.channel.id}>\n` +
+            `**Message:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``
         )
-        .setTimestamp()
+        .setFooter({ text: `Author ID: ${message.author.id}` }) // Updated footer
+        .setTimestamp(message.createdTimestamp) // Set timestamp to message creation time
         .setColor(0xADD8E6); // Light blue for message logs
 
     await logChannel.send({ embeds: [embed] });
@@ -1006,6 +1008,8 @@ client.on('messageReactionAdd', async (reaction, user) => {
             if (['⚠️', '⏰', '👢'].includes(reaction.emoji.name) && message.deletable) {
                 await message.delete();
                 console.log(`Message deleted after emoji moderation: ${message.id}`);
+                // Log the deleted message to the message log channel
+                await logMessage(guild, message, user, 'Deleted (Emoji Mod)');
             }
             // Always remove the user's reaction after successful processing
             await reaction.users.remove(user.id).catch(console.error);
