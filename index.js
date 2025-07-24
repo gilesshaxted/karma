@@ -92,8 +92,6 @@ const getGuildConfig = async (guildId) => {
             adminRoleId: null,
             moderationLogChannelId: null,
             messageLogChannelId: null,
-            modAlertChannelId: null, // New: Channel for auto-mod alerts
-            modPingRoleId: null, // New: Role to ping for auto-mod alerts
             caseNumber: 0
         };
         await setDoc(configRef, defaultConfig);
@@ -374,7 +372,7 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
 };
 
 // Helper function to log deleted messages
-const logMessage = async (guild, message, flaggedBy, actionType) => { // Renamed 'moderator' to 'flaggedBy' for clarity
+const logMessage = async (guild, message, flaggedBy, actionType) => {
     const guildConfig = await getGuildConfig(guild.id);
     const logChannelId = guildConfig.messageLogChannelId;
 
@@ -389,58 +387,24 @@ const logMessage = async (guild, message, flaggedBy, actionType) => { // Renamed
         return;
     }
 
-    // Safely get author ID and tag using optional chaining and fallbacks
-    let authorId = 'Unknown ID';
-    let authorTag = 'Unknown User';
-
-    if (message.author) { // Check if message.author exists before trying to fetch/access
-        let resolvedAuthor = message.author;
-        if (resolvedAuthor.partial) {
-            try {
-                resolvedAuthor = await resolvedAuthor.fetch();
-            } catch (err) {
-                console.warn(`Could not fetch partial author for message ${message.id}:`, err);
-                resolvedAuthor = null; // Set to null if fetch fails or author is truly gone
-            }
-        }
-        // After potential fetch, if resolvedAuthor is still valid
-        if (resolvedAuthor) {
-            authorId = resolvedAuthor.id;
-            authorTag = resolvedAuthor.tag;
-        }
-    }
+    // Safely get author ID and tag
+    let authorId = message.author ? message.author.id : 'Unknown ID';
+    let authorTag = message.author ? message.author.tag : 'Unknown User';
 
     // Safely get channel ID and name
-    let channelId = 'Unknown Channel ID';
-    let channelName = 'Unknown Channel';
-    if (message.channel) {
-        let resolvedChannel = message.channel;
-        // Check if message.channel is partial and fetch if necessary
-        if (resolvedChannel.partial) {
-            try {
-                resolvedChannel = await resolvedChannel.fetch();
-            } catch (err) {
-                console.warn(`Could not fetch partial channel for message ${message.id}:`, err);
-                resolvedChannel = null; // Set to null if fetch fails or channel is truly gone
-            }
-        }
-        if (resolvedChannel) {
-            channelId = resolvedChannel.id;
-            channelName = resolvedChannel.name;
-        }
-    }
-
+    let channelId = message.channel ? message.channel.id : 'Unknown Channel ID';
+    let channelName = message.channel ? message.channel.name : 'Unknown Channel';
 
     const embed = new EmbedBuilder()
         .setTitle('Message Moderated')
         .setDescription(
             `**Author:** <@${authorId}>\n` +
-            `**Channel:** <#${channelId}> (${channelName})\n` + // Use safely obtained channelId and name
+            `**Channel:** <#${channelId}> (${channelName})\n` +
             `**Message:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``
         )
         .setFooter({ text: `Author ID: ${authorId}` })
-        .setTimestamp(message.createdTimestamp || Date.now()) // Fallback for message.createdTimestamp
-        .setColor(0xADD8E6); // Light blue for message logs
+        .setTimestamp(message.createdTimestamp || Date.now())
+        .setColor(0xADD8E6);
 
     await logChannel.send({ embeds: [embed] });
 };
@@ -751,15 +715,6 @@ client.on('interactionCreate', async interaction => {
 
 // Event: Message reaction added (for emoji moderation)
 client.on('messageReactionAdd', async (reaction, user) => {
-    // IMMEDIATE CHECK: If user is null or doesn't have an ID, something is wrong.
-    if (!user || !user.id) {
-        console.error('messageReactionAdd event received with null or invalid user object:', user);
-        return; // Abort processing if user is invalid
-    }
-
-    // Ignore bot reactions or DMs
-    if (user.bot || !reaction.message.guild) return;
-
     // When a reaction is received, check if the structure is partial
     if (reaction.partial) {
         // If the message this reaction belongs to was removed from the cache,
@@ -772,20 +727,25 @@ client.on('messageReactionAdd', async (reaction, user) => {
         }
     }
 
+    // Ignore reactions from bots
+    if (user.bot) return;
+
     const message = reaction.message;
     const guild = message.guild;
+    if (!guild) return; // Ignore DMs
+
     const reactorMember = await guild.members.fetch(user.id);
     const guildConfig = await getGuildConfig(guild.id);
 
     // Check if the reactor has permission
     if (!hasPermission(reactorMember, guildConfig)) {
-        return reaction.users.remove(user.id).catch(console.error); // User is not a moderator or admin
+        return; // User is not a moderator or admin
     }
 
     const targetMember = await guild.members.fetch(message.author.id).catch(() => null);
     if (!targetMember) {
         console.log(`Could not fetch target member ${message.author.id}.`);
-        return reaction.users.remove(user.id).catch(console.error);
+        return;
     }
 
     // Check if the target user is exempt
@@ -793,7 +753,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
         return reaction.users.remove(user.id).catch(console.error); // Remove the reaction if target is exempt
     }
 
-    const reason = `Emoji moderation: "${message.content || 'No message content'}" from channel <#${message.channel?.id || 'Unknown Channel ID'}>`;
+    const reason = `Emoji moderation: "${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
     let actionTaken = false;
 
     // Increment case number and save before action
@@ -838,32 +798,22 @@ client.on('messageReactionAdd', async (reaction, user) => {
             break;
     }
 
-    // If an action was taken, delete the original message AND the reaction
+    // If an action was taken, delete the original message
     if (actionTaken) {
         try {
             // Ensure the message is not already deleted
             if (message.deletable) {
                 await message.delete();
                 console.log(`Message deleted after emoji moderation: ${message.id}`);
-                // Log the deleted message to the message log channel
-                await logMessage(guild, message, user, 'Deleted (Emoji Mod)');
             }
-            // Always remove the user's reaction after successful processing
-            await reaction.users.remove(user.id).catch(console.error);
         } catch (error) {
-            console.error(`Failed to delete message ${message.id} or reaction:`, error);
+            console.error(`Failed to delete message ${message.id}:`, error);
         }
     }
 });
 
 // Event: Message Reaction Added (for Karma system)
 client.on('messageReactionAdd', async (reaction, user) => {
-    // IMMEDIATE CHECK: If user is null or doesn't have an ID, something is wrong.
-    if (!user || !user.id) {
-        console.error('messageReactionAdd event received with null or invalid user object in karma section:', user);
-        return; // Abort processing if user is invalid
-    }
-
     // Ignore bot reactions, DMs, or reactions from the message author themselves
     if (user.bot || !reaction.message.guild || reaction.message.author.id === user.id) return;
 
