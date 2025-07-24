@@ -41,18 +41,21 @@ let userId; // To store the authenticated authenticated user ID for Firestore ru
 // Create a collection to store commands
 client.commands = new Collection();
 
-// Dynamically load command files from the 'moderation' folder
+// Dynamically load command files from the 'moderation' and 'karma' folders
 const moderationCommandFiles = [
     'warn.js',
     'timeout.js',
     'kick.js',
-    'ban.js'
-    // 'warnings.js', 'warning.js', 'clearwarnings.js', 'clearwarning.js' are NOT included in 0.2.3
+    'ban.js',
+    'warnings.js', // Re-introduced
+    'warning.js', // Re-introduced
+    'clearwarnings.js', // Re-introduced
+    'clearwarning.js' // Re-introduced
 ];
 
-// Karma commands are not explicitly mentioned in 0.2.3 context, but keeping the structure for future if needed.
 const karmaCommandFiles = [
-    // 'karma.js', 'leaderboard.js' are NOT included in 0.2.3
+    'karma.js', // Re-introduced
+    'leaderboard.js' // Re-introduced
 ];
 
 for (const file of moderationCommandFiles) {
@@ -89,6 +92,8 @@ const getGuildConfig = async (guildId) => {
             adminRoleId: null,
             moderationLogChannelId: null,
             messageLogChannelId: null,
+            modAlertChannelId: null, // Re-introduced
+            modPingRoleId: null, // Re-introduced
             caseNumber: 0
         };
         await setDoc(configRef, defaultConfig);
@@ -103,8 +108,7 @@ const saveGuildConfig = async (guildId, newConfig) => {
     await setDoc(configRef, newConfig, { merge: true }); // Use merge to update existing fields
 };
 
-// --- Karma System functions (from 0.2.3, simplified from later versions) ---
-// These were present but might not have had full LLM integration or advanced tracking
+// Helper function to get or create a user's karma document
 const getOrCreateUserKarma = async (guildId, userId) => {
     const karmaRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/karma_users`, userId);
     const karmaSnap = await getDoc(karmaRef);
@@ -134,54 +138,332 @@ const getOrCreateUserKarma = async (guildId, userId) => {
     }
 };
 
+// Helper function to update user karma data
 const updateUserKarmaData = async (guildId, userId, data) => {
     const karmaRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/karma_users`, userId);
     await updateDoc(karmaRef, data);
 };
 
+// Helper function to check if a user has any moderation actions in the last 24 hours
 const hasRecentModeration = async (guildId, userIdToCheck) => {
-    // This function might not have been fully implemented or used in 0.2.3 for karma
-    return false; // Placeholder for 0.2.3 behavior
+    const twentyFourHoursAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
+    const moderationRecordsRef = collection(db, `artifacts/${appId}/public/data/guilds/${guildId}/moderation_records`);
+    const q = query(
+        moderationRecordsRef,
+        where("targetUserId", "==", userIdToCheck),
+        where("timestamp", ">=", twentyFourHoursAgo),
+        limit(1) // Just need to find one to know if they have recent moderation
+    );
+    const querySnapshot = await getDocs(q);
+    return !querySnapshot.empty;
 };
 
+
+// Helper function to calculate and award karma
 const calculateAndAwardKarma = async (guild, user, karmaData) => {
-    // Simplified karma calculation for 0.2.3
-    // This version might not have had the full daily reset or complex interaction tracking
     let karmaAwarded = 0;
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0); // Normalize to start of day
 
+    // Ensure lastKarmaCalculationDate is a Date object
     const lastCalcDate = karmaData.lastKarmaCalculationDate instanceof Date ? karmaData.lastKarmaCalculationDate : new Date(karmaData.lastKarmaCalculationDate);
     lastCalcDate.setHours(0, 0, 0, 0);
 
-    if (today.getTime() > lastCalcDate.getTime()) {
-        // Basic activity karma
-        if (karmaData.messagesToday > 0) {
-            karmaAwarded += 1; // Award 1 karma for any activity
+    // Check for recent moderation actions for this user
+    const hasModerationRecently = await hasRecentModeration(guild.id, user.id);
+    if (hasModerationRecently) {
+        console.log(`${user.tag} has recent moderation, skipping karma gain.`);
+        // Reset daily counters even if no karma is awarded due to moderation
+        if (today.getTime() > lastCalcDate.getTime()) {
+            await updateUserKarmaData(guild.id, user.id, {
+                messagesToday: 0,
+                repliesReceivedToday: 0,
+                reactionsReceivedToday: 0,
+                lastKarmaCalculationDate: new Date()
+            });
         }
+        return 0; // No karma awarded if recently moderated
+    }
+
+    // Only calculate if a new day has passed since last calculation
+    if (today.getTime() > lastCalcDate.getTime()) {
+        // Activity Karma
+        if (karmaData.messagesToday >= 100) {
+            karmaAwarded += 2; // Hyper active
+            console.log(`Awarded 2 karma to ${user.tag} for hyper activity.`);
+        } else if (karmaData.messagesToday >= 20) {
+            karmaAwarded += 1; // Active
+            console.log(`Awarded 1 karma to ${user.tag} for activity.`);
+        }
+
+        // Interaction Karma
+        if (karmaData.repliesReceivedToday >= 10) {
+            karmaAwarded += Math.floor(karmaData.repliesReceivedToday / 10);
+            console.log(`Awarded ${Math.floor(karmaData.repliesReceivedToday / 10)} karma to ${user.tag} for replies.`);
+        }
+        if (karmaData.reactionsReceivedToday >= 10) {
+            karmaAwarded += Math.floor(karmaData.reactionsReceivedToday / 10);
+            console.log(`Awarded ${Math.floor(karmaData.reactionsReceivedToday / 10)} karma to ${user.tag} for reactions.`);
+        }
+
+        // Reset daily counters and update karma points
         await updateUserKarmaData(guild.id, user.id, {
             karmaPoints: karmaData.karmaPoints + karmaAwarded,
             messagesToday: 0,
             repliesReceivedToday: 0,
             reactionsReceivedToday: 0,
-            lastKarmaCalculationDate: new Date()
+            lastKarmaCalculationDate: new Date() // Update last calculation date to today
         });
+        console.log(`Karma for ${user.tag} updated. Total: ${karmaData.karmaPoints + karmaAwarded}`);
+    } else {
+        console.log(`No new karma calculation for ${user.tag} today.`);
     }
     return karmaAwarded;
 };
 
-// LLM-powered sentiment analysis (was a placeholder in 0.2.3)
+// LLM-powered sentiment analysis for general replies (Re-introduced)
 const analyzeSentiment = async (text) => {
-    // This was a placeholder in 0.2.3, not actively using LLM yet.
-    return 'positive'; // Always return positive as a placeholder
+    try {
+        let chatHistory = [];
+        chatHistory.push({ role: "user", parts: [{ text: `Analyze the sentiment of the following text and return only one word: "positive", "neutral", or "negative".\n\nText: "${text}"` }] });
+        const payload = { contents: chatHistory };
+        const apiKey = process.env.GOOGLE_API_KEY || "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Gemini API sentiment error: ${response.status} - ${errorText}`);
+            return 'neutral'; // Fallback to neutral on API error
+        }
+
+        const result = await response.json();
+
+        if (result.candidates && result.candidates.length > 0 &&
+            result.candidates[0].content && result.candidates[0].content.parts &&
+            result.candidates[0].content.parts.length > 0) {
+            const sentiment = result.candidates[0].content.parts[0].text.toLowerCase().trim();
+            if (['positive', 'neutral', 'negative'].includes(sentiment)) {
+                return sentiment;
+            } else {
+                console.warn(`Gemini API returned unexpected sentiment: "${sentiment}". Falling back to neutral.`);
+                return 'neutral';
+            }
+        } else {
+            console.warn('Gemini API sentiment response structure unexpected or content missing. Falling back to neutral.');
+            return 'neutral';
+        }
+    } catch (error) {
+        console.error('Error calling Gemini API for sentiment analysis:', error);
+        return 'neutral'; // Fallback to neutral on fetch/parsing error
+    }
 };
 
-// Auto-moderation related functions are NOT present in 0.2.3
-const isContentOffensive = async (text) => { return 'no'; };
+// LLM-powered check for offensive content (for auto-moderation) (Re-introduced)
+const isContentOffensive = async (text) => {
+    try {
+        const chatHistory = [{ role: "user", parts: [{ text: `Is the following text hate speech, a racial slur, homophobic, or otherwise severely offensive? Respond with "yes" or "no".\n\nText: "${text}"` }] }];
+        const payload = { contents: chatHistory };
+        const apiKey = process.env.GOOGLE_API_KEY || "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Gemini API offensive content check error: ${response.status} - ${errorText}`);
+            return 'no'; // Default to no if API error
+        }
+
+        const result = await response.json();
+        if (result.candidates && result.candidates.length > 0 &&
+            result.candidates[0].content && result.candidates[0].content.parts &&
+            result.candidates[0].content.parts.length > 0) {
+            const decision = result.candidates[0].content.parts[0].text.toLowerCase().trim();
+            return decision === 'yes' ? 'yes' : 'no';
+        }
+        console.warn('Gemini API offensive content check response structure unexpected or content missing. Falling back to no.');
+        return 'no'; // Default to no if unexpected response
+    } catch (error) {
+        console.error('Error calling Gemini API for offensive content check:', error);
+        return 'no'; // Default to no on error
+    }
+};
+
+// Regex patterns for specific hate speech/slurs (EMPTY - relying on LLM and keywords) (Re-introduced empty)
 const hateSpeechRegexes = [];
-const hateSpeechKeywords = [];
-const sendModAlert = async () => {};
-const checkMessageForModeration = async () => {};
+
+// Specific keywords for hate speech/slurs (Re-introduced)
+const hateSpeechKeywords = [
+    'fag', 'faggot', 'gypsy', 'homo', 'kike', 'nigg', 'nigger', 'retard', 'spic', 'spick', 'yn', 'yns'
+];
+
+// Helper function to send a moderation alert to the designated channel (Re-introduced)
+const sendModAlert = async (guild, message, reason, flaggedBy, messageLink, pingRoleId) => {
+    const guildConfig = await getGuildConfig(guild.id);
+    const alertChannelId = guildConfig.modAlertChannelId;
+
+    if (!alertChannelId) {
+        console.log(`Mod alert channel not set for guild ${guild.name}. Cannot send alert.`);
+        return;
+    }
+
+    const alertChannel = guild.channels.cache.get(alertChannelId);
+    if (!alertChannel) {
+        console.error(`Mod alert channel with ID ${alertChannelId} not found in guild ${guild.name}. Cannot send alert.`);
+        return;
+    }
+
+    // Safely get author ID and tag
+    let resolvedAuthor = message.author;
+    if (resolvedAuthor && resolvedAuthor.partial) {
+        try {
+            resolvedAuthor = await resolvedAuthor.fetch();
+        } catch (err) {
+            console.warn(`Could not fetch partial author for message ${message.id} in sendModAlert:`, err);
+            resolvedAuthor = null;
+        }
+    }
+    const authorId = resolvedAuthor?.id || 'Unknown ID';
+    const authorTag = resolvedAuthor?.tag || 'Unknown User';
+
+    // Safely get channel ID and name
+    let resolvedChannel = message.channel;
+    if (resolvedChannel && resolvedChannel.partial) {
+        try {
+            resolvedChannel = await resolvedChannel.fetch();
+        } catch (err) {
+            console.warn(`Could not fetch partial channel for message ${message.id} in sendModAlert:`, err);
+            resolvedChannel = null;
+        }
+    }
+    const channelId = resolvedChannel?.id || 'Unknown Channel ID';
+    const channelName = resolvedChannel?.name || 'Unknown Channel';
+
+
+    const embed = new EmbedBuilder()
+        .setTitle('Message Flagged')
+        .setDescription(
+            `**Channel:** <#${channelId}> (${channelName})\n` +
+            `**Author:** <@${authorId}>\n` +
+            `**Flag Reason:** ${reason}\n\n[Jump to Message](${messageLink})\n\n**Message Content:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``
+        )
+        .setColor(0xFFFF00) // Yellow for alert
+        .setTimestamp();
+
+    // Set footer based on who flagged
+    const flaggedById = flaggedBy?.id || 'Unknown ID';
+    const flaggedByName = flaggedBy?.tag || flaggedBy?.username || 'Unknown User';
+    embed.setFooter({ text: `Who Flagged ID: ${flaggedByName} (${flaggedById})` });
+
+    let pingMessage = '';
+    if (pingRoleId) {
+        const pingRole = guild.roles.cache.get(pingRoleId);
+        if (pingRole) {
+            pingMessage = `<@&${pingRoleId}>`;
+        } else {
+            console.warn(`Mod ping role with ID ${pingRoleId} not found in guild ${guild.name}.`);
+        }
+    } else {
+        console.log(`Mod ping role not set for guild ${guild.name}.`);
+    }
+
+    await alertChannel.send({ content: pingMessage, embeds: [embed] });
+};
+
+
+// Main auto-moderation logic function (Re-introduced)
+const checkMessageForModeration = async (message) => {
+    const guild = message.guild;
+    const guildConfig = await getGuildConfig(guild.id);
+    const author = message.author;
+
+    // Don't moderate bots or exempt users
+    const authorMember = await guild.members.fetch(author.id).catch(() => null);
+    if (!authorMember || isExempt(authorMember, guildConfig)) {
+        return;
+    }
+
+    const content = message.content;
+    let flaggedReason = null;
+    let autoPunish = false; // Flag for immediate punishment
+
+    // 1. Keyword Checks (for definite offenses)
+    for (const keyword of hateSpeechKeywords) {
+        // Use word boundaries for keywords to avoid partial matches
+        const keywordRegex = new RegExp(`\\b${keyword}\\b`, 'i');
+        if (keywordRegex.test(content)) {
+            flaggedReason = `Matched keyword: \`${keyword}\``;
+            autoPunish = true; // Severe offense, auto-punish
+            break;
+        }
+    }
+
+    // 2. LLM Check (for general bad language / unsure cases)
+    // Only run LLM if not already flagged by keywords for auto-punishment
+    if (!autoPunish) {
+        const llmOffensive = await isContentOffensive(content);
+        if (llmOffensive === 'yes') {
+            flaggedReason = flaggedReason ? `${flaggedReason} & LLM deemed offensive` : 'LLM deemed offensive';
+            autoPunish = true; // If LLM says 'yes', it's considered a worst offense for auto-punishment
+        }
+    }
+
+    if (flaggedReason) {
+        const messageLink = `https://discord.com/channels/${guild.id}/${message.channel?.id || 'Unknown Channel ID'}/${message.id}`; // Safely get channel ID for link
+
+        if (autoPunish) {
+            // Apply automatic punishment (e.g., a short timeout)
+            const timeoutDurationMinutes = 10; // Default 10-minute timeout for auto-moderation
+            const timeoutReason = `Auto-moderation: ${flaggedReason}`;
+
+            try {
+                guildConfig.caseNumber++;
+                await saveGuildConfig(guild.id, guildConfig);
+                const caseNumber = guildConfig.caseNumber;
+
+                await authorMember.timeout(timeoutDurationMinutes * 60 * 1000, timeoutReason);
+                await message.delete().catch(console.error); // Delete the offensive message
+                // Log the deleted message to the message log channel
+                await logMessage(guild, message, client.user, 'Auto-Deleted');
+
+
+                // DM the user
+                const dmEmbed = new EmbedBuilder()
+                    .setTitle('You have been automatically timed out!')
+                    .setDescription(`Your message in **${guild.name}** was flagged by auto-moderation for violating server rules.`)
+                    .addFields(
+                        { name: 'Reason', value: timeoutReason },
+                        { name: 'Duration', value: `${timeoutDurationMinutes} minutes` }
+                    )
+                    .setColor(0xFF0000) // Red for punishment
+                    .setTimestamp();
+                await author.send({ embeds: [dmEmbed] }).catch(console.error);
+
+                await logModerationAction(guild, `Auto-Timeout (${timeoutDurationMinutes}m)`, author, timeoutReason, client.user, caseNumber, `${timeoutDurationMinutes}m`, messageLink);
+                console.log(`Auto-timed out ${author.tag} for: ${timeoutReason}`);
+            } catch (error) {
+                console.error(`Error during auto-timeout for ${author.tag}:`, error);
+                // If auto-punishment fails, still send an alert to mods
+                await sendModAlert(guild, message, `Failed auto-punishment: ${flaggedReason}`, client.user, messageLink, guildConfig.modPingRoleId);
+            }
+        } else {
+            // Send to mod-alert channel if not a severe auto-punish case (e.g., LLM was 'no' or no regex/keyword match)
+            // This path might be less likely now that LLM 'yes' triggers auto-punish.
+            // But it's good to keep for potential future nuanced flagging.
+            await sendModAlert(guild, message, flaggedReason, client.user, messageLink, guildConfig.modPingRoleId);
+        }
+    }
+};
 
 
 // Helper function to check if a member has a moderator or admin role
@@ -212,19 +494,22 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
     const guildConfig = await getGuildConfig(guild.id); // Fetch latest config
     const logChannelId = guildConfig.moderationLogChannelId;
 
-    // Determine moderator tag correctly
-    const moderatorTag = moderator.user ? moderator.user.tag : moderator.username; // Use .tag for User, .username for ClientUser (bot itself)
+    // Safely get targetUser and moderator details
+    const targetUserId = targetUser?.id || 'Unknown ID';
+    const targetUserTag = targetUser?.tag || 'Unknown User';
+    const moderatorId = moderator?.id || 'Unknown ID';
+    const moderatorTag = moderator?.tag || moderator?.username || 'Unknown User'; // Use tag for User, username for ClientUser (bot itself)
 
     // Log to Discord channel
     if (logChannelId) {
         const logChannel = guild.channels.cache.get(logChannelId);
         if (logChannel) {
             const embed = new EmbedBuilder()
-                .setTitle(`${targetUser.username} - Case #${caseNumber}`)
+                .setTitle(`${targetUserTag} - Case #${caseNumber}`) // Use safely obtained targetUserTag
                 .setDescription(`**Action:** ${actionType}\n**Reason:** ${reason || 'No reason provided.'}`)
                 .addFields(
-                    { name: 'User', value: `${targetUser.tag} (${targetUser.id})`, inline: true },
-                    { name: 'Moderator', value: `${moderatorTag} (${moderator.id})`, inline: true }
+                    { name: 'User', value: `${targetUserTag} (${targetUserId})`, inline: true }, // Use safely obtained values
+                    { name: 'Moderator', value: `${moderatorTag} (${moderatorId})`, inline: true } // Use safely obtained values
                 )
                 .setTimestamp()
                 .setColor(0xFFA500); // Orange color for moderation logs
@@ -250,11 +535,11 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
         const moderationRecordsRef = collection(db, `artifacts/${appId}/public/data/guilds/${guild.id}/moderation_records`);
         await addDoc(moderationRecordsRef, {
             caseNumber: caseNumber,
-            actionType: actionType.replace(' (Emoji)', ''), // Clean actionType for DB
-            targetUserId: targetUser.id,
-            targetUserTag: targetUser.tag,
-            moderatorId: moderator.id,
-            moderatorTag: moderatorTag,
+            actionType: actionType.replace(' (Emoji)', '').replace(' (Auto)', ''), // Clean actionType for DB
+            targetUserId: targetUserId, // Use safely obtained ID
+            targetUserTag: targetUserTag, // Use safely obtained tag
+            moderatorId: moderatorId, // Use safely obtained ID
+            moderatorTag: moderatorTag, // Use safely obtained tag
             reason: reason,
             duration: duration,
             timestamp: new Date(), // Store as Firestore Timestamp
@@ -266,8 +551,8 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
     }
 };
 
-// Helper function to log deleted messages (from 0.2.3, with basic null checks)
-const logMessage = async (guild, message, moderator, actionType) => {
+// Helper function to log deleted messages
+const logMessage = async (guild, message, flaggedBy, actionType) => { // Renamed 'moderator' to 'flaggedBy' for clarity
     const guildConfig = await getGuildConfig(guild.id);
     const logChannelId = guildConfig.messageLogChannelId;
 
@@ -282,21 +567,43 @@ const logMessage = async (guild, message, moderator, actionType) => {
         return;
     }
 
-    // Safely get author ID and tag
-    const authorId = message.author?.id || 'Unknown ID';
-    const authorTag = message.author?.tag || 'Unknown User';
-    const channelId = message.channel?.id || 'Unknown Channel ID';
+    // Safely get author ID and tag using optional chaining and fallbacks
+    let resolvedAuthor = message.author;
+    if (resolvedAuthor && resolvedAuthor.partial) {
+        try {
+            resolvedAuthor = await resolvedAuthor.fetch();
+        } catch (err) {
+            console.warn(`Could not fetch partial author for message ${message.id}:`, err);
+            resolvedAuthor = null; // Set to null if fetch fails or author is truly gone
+        }
+    }
+
+    const authorId = resolvedAuthor?.id || 'Unknown ID';
+    const authorTag = resolvedAuthor?.tag || 'Unknown User';
+    
+    // Safely get channel ID and name
+    let resolvedChannel = message.channel;
+    if (resolvedChannel && resolvedChannel.partial) {
+        try {
+            resolvedChannel = await resolvedChannel.fetch();
+        } catch (err) {
+            console.warn(`Could not fetch partial channel for message ${message.id}:`, err);
+            resolvedChannel = null;
+        }
+    }
+    const channelId = resolvedChannel?.id || 'Unknown Channel ID';
+    const channelName = resolvedChannel?.name || 'Unknown Channel';
+
 
     const embed = new EmbedBuilder()
-        .setTitle(`Message ${actionType}`)
-        .setDescription(`**Content:**\n\`\`\`\n${message.content || 'No content (e.g., embed, attachment only)'}\n\`\`\``)
-        .addFields(
-            { name: 'Author', value: `${authorTag} (${authorId})`, inline: true },
-            { name: 'Channel', value: `<#${channelId}>`, inline: true },
-            { name: 'Sent At', value: `<t:${Math.floor(message.createdTimestamp / 1000)}:F>`, inline: true },
-            { name: 'Moderated By', value: `${moderator?.tag || moderator?.username || 'System'}`, inline: true } // Use optional chaining
+        .setTitle('Message Moderated')
+        .setDescription(
+            `**Author:** <@${authorId}>\n` +
+            `**Channel:** <#${channelId}> (${channelName})\n` + // Use safely obtained channelId and name
+            `**Message:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``
         )
-        .setTimestamp()
+        .setFooter({ text: `Author ID: ${authorId}` })
+        .setTimestamp(message.createdTimestamp || Date.now()) // Fallback for message.createdTimestamp
         .setColor(0xADD8E6); // Light blue for message logs
 
     await logChannel.send({ embeds: [embed] });
