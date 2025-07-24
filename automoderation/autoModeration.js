@@ -1,5 +1,6 @@
 // automoderation/autoModeration.js
 const { EmbedBuilder } = require('discord.js');
+const axios = require('axios'); // Use axios for API calls
 
 /**
  * LLM-powered check for offensive content.
@@ -14,19 +15,16 @@ const isContentOffensive = async (text, googleApiKey) => {
         const apiKey = googleApiKey || "";
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
-        const response = await fetch(apiUrl, {
-            method: 'POST',
+        const response = await axios.post(apiUrl, payload, { // Use axios.post
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`Gemini API offensive content check error: ${response.status} - ${errorText}`);
+        if (response.status !== 200) { // Check response status
+            console.error(`Gemini API offensive content check error: ${response.status} - ${response.data}`);
             return 'no';
         }
 
-        const result = await response.json();
+        const result = response.data; // axios puts response data in .data
         if (result.candidates && result.candidates.length > 0 &&
             result.candidates[0].content && result.candidates[0].content.parts &&
             result.candidates[0].content.parts.length > 0) {
@@ -36,7 +34,7 @@ const isContentOffensive = async (text, googleApiKey) => {
         console.warn('Gemini API offensive content check response structure unexpected or content missing. Falling back to no.');
         return 'no';
     } catch (error) {
-        console.error('Error calling Gemini API for offensive content check:', error);
+        console.error('Error calling Gemini API for offensive content check:', error.response ? error.response.data : error.message);
         return 'no';
     }
 };
@@ -190,7 +188,7 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
 
                 await authorMember.timeout(timeoutDurationMinutes * 60 * 1000, timeoutReason);
                 await message.delete().catch(console.error);
-                await logMessage(guild, message, client.user, 'Auto-Deleted', getGuildConfig); // Pass getGuildConfig
+                await logMessage(guild, message, client.user, 'Auto-Deleted', getGuildConfig);
 
                 const dmEmbed = new EmbedBuilder()
                     .setTitle('You have been automatically timed out!')
@@ -203,14 +201,14 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                     .setTimestamp();
                 await author.send({ embeds: [dmEmbed] }).catch(console.error);
 
-                await logModerationAction(guild, `Auto-Timeout (${timeoutDurationMinutes}m)`, author, timeoutReason, client.user, caseNumber, `${timeoutDurationMinutes}m`, messageLink, getGuildConfig, client.db, client.appId); // Pass db, appId
+                await logModerationAction(guild, `Auto-Timeout (${timeoutDurationMinutes}m)`, author, timeoutReason, client.user, caseNumber, `${timeoutDurationMinutes}m`, messageLink, getGuildConfig, client.db, client.appId);
                 console.log(`Auto-timed out ${author.tag} for: ${timeoutReason}`);
             } catch (error) {
                 console.error(`Error during auto-timeout for ${author.tag}:`, error);
-                await sendModAlert(guild, message, `Failed auto-punishment: ${flaggedReason}`, client.user, messageLink, guildConfig.modPingRoleId, getGuildConfig); // Pass getGuildConfig
+                await sendModAlert(guild, message, `Failed auto-punishment: ${flaggedReason}`, client.user, messageLink, guildConfig.modPingRoleId, getGuildConfig);
             }
         } else {
-            await sendModAlert(guild, message, flaggedReason, client.user, messageLink, guildConfig.modPingRoleId, getGuildConfig); // Pass getGuildConfig
+            await sendModAlert(guild, message, flaggedReason, client.user, messageLink, guildConfig.modPingRoleId, getGuildConfig);
         }
     }
 };
