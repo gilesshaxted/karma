@@ -7,7 +7,7 @@ const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, signInWithCustomToken } = require('firebase/auth');
 const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, limit, getDocs } = require('firebase/firestore');
 const express = require('express');
-const fetch = require('node-fetch'); // Required for OAuth calls
+const axios = require('axios'); // Changed from node-fetch to axios
 
 // Import helper functions
 const { hasPermission, isExempt } = require('./helpers/permissions');
@@ -59,31 +59,23 @@ app.post('/api/token', async (req, res) => {
     }
 
     try {
-        const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
-            method: 'POST',
+        const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
+            client_id: DISCORD_CLIENT_ID,
+            client_secret: DISCORD_CLIENT_SECRET,
+            grant_type: 'authorization_code',
+            code: code,
+            redirect_uri: DISCORD_REDIRECT_URI,
+            scope: DISCORD_OAUTH_SCOPES,
+        }), {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
-            body: new URLSearchParams({
-                client_id: DISCORD_CLIENT_ID,
-                client_secret: DISCORD_CLIENT_SECRET,
-                grant_type: 'authorization_code',
-                code: code,
-                redirect_uri: DISCORD_REDIRECT_URI,
-                scope: DISCORD_OAUTH_SCOPES,
-            }).toString(),
         });
 
-        const tokenData = await tokenResponse.json();
-        if (!tokenResponse.ok) {
-            console.error('Discord API Token Error:', tokenData);
-            return res.status(tokenResponse.status).json({ message: tokenData.error_description || 'Failed to exchange code for token.' });
-        }
-
-        res.json(tokenData); // Send access_token, refresh_token etc. to frontend
+        res.json(tokenResponse.data); // axios puts response data in .data
     } catch (error) {
-        console.error('Error exchanging Discord OAuth code:', error);
-        res.status(500).json({ message: 'Internal server error during OAuth.' });
+        console.error('Error exchanging Discord OAuth code:', error.response ? error.response.data : error.message);
+        res.status(error.response?.status || 500).json({ message: error.response?.data?.error_description || 'Internal server error during OAuth.' });
     }
 });
 
@@ -96,20 +88,15 @@ const verifyDiscordToken = async (req, res, next) => {
     const accessToken = authHeader.split(' ')[1];
 
     try {
-        const userResponse = await fetch('https://discord.com/api/users/@me', {
+        const userResponse = await axios.get('https://discord.com/api/users/@me', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
-        const userData = await userResponse.json();
-        if (!userResponse.ok) {
-            console.error('Discord API User Fetch Error:', userData);
-            return res.status(userResponse.status).json({ message: 'Invalid or expired access token.' });
-        }
-        req.discordUser = userData; // Attach Discord user info to request
-        req.discordAccessToken = accessToken; // Attach token for later use if needed
+        req.discordUser = userResponse.data; // axios puts response data in .data
+        req.discordAccessToken = accessToken;
         next();
     } catch (error) {
-        console.error('Error verifying Discord token:', error);
-        res.status(500).json({ message: 'Internal server error during token verification.' });
+        console.error('Error verifying Discord token:', error.response ? error.response.data : error.message);
+        res.status(error.response?.status || 500).json({ message: 'Invalid or expired access token.' });
     }
 };
 
@@ -121,15 +108,10 @@ app.get('/api/user', verifyDiscordToken, (req, res) => {
 // API route to get guilds where the bot is present and the user has admin permissions
 app.get('/api/guilds', verifyDiscordToken, async (req, res) => {
     try {
-        const guildsResponse = await fetch('https://discord.com/api/users/@me/guilds', {
+        const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
             headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
         });
-        const userGuilds = await guildsResponse.json();
-
-        if (!guildsResponse.ok) {
-            console.error('Discord API Guilds Fetch Error:', userGuilds);
-            return res.status(guildsResponse.status).json({ message: 'Failed to fetch user guilds.' });
-        }
+        const userGuilds = guildsResponse.data; // axios puts response data in .data
 
         const botGuilds = client.guilds.cache; // Get guilds where the bot is currently in
 
@@ -141,8 +123,8 @@ app.get('/api/guilds', verifyDiscordToken, async (req, res) => {
 
         res.json(manageableGuilds);
     } catch (error) {
-        console.error('Error fetching user guilds:', error);
-        res.status(500).json({ message: 'Internal server error fetching guilds.' });
+        console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
+        res.status(error.response?.status || 500).json({ message: 'Internal server error fetching guilds.' });
     }
 });
 
@@ -187,8 +169,8 @@ app.get('/api/guild-config', verifyDiscordToken, async (req, res) => {
         });
 
     } catch (error) {
-        console.error(`Error fetching config for guild ${guildId}:`, error);
-        res.status(500).json({ message: 'Internal server error fetching guild config.' });
+        console.error(`Error fetching config for guild ${guildId}:`, error.response ? error.response.data : error.message);
+        res.status(error.response?.status || 500).json({ message: 'Internal server error fetching guild config.' });
     }
 });
 
@@ -226,8 +208,8 @@ app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
         res.json({ message: 'Configuration saved successfully!' });
 
     } catch (error) {
-        console.error(`Error saving config for guild ${guildId}:`, error);
-        res.status(500).json({ message: 'Internal server error saving config.' });
+        console.error(`Error saving config for guild ${guildId}:`, error.response ? error.response.data : error.message);
+        res.status(error.response?.status || 500).json({ message: 'Internal server error saving config.' });
     }
 });
 
@@ -324,13 +306,6 @@ client.once('ready', async () => {
     client.commands.forEach(command => {
         commands.push(command.data.toJSON());
     });
-
-    // Removed the in-Discord /setup command as it's replaced by the web dashboard
-    // commands.push({
-    //     name: 'setup',
-    //     description: 'Set up Karma bot roles and logging channels.',
-    //     default_member_permissions: PermissionsBitField.Flags.Administrator.toString(),
-    // });
 
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
 
@@ -446,9 +421,6 @@ client.on('interactionCreate', async interaction => {
 
             const { commandName } = interaction;
 
-            // Removed the in-Discord /setup command handling
-            // if (commandName === 'setup') { ... }
-
             const command = client.commands.get(commandName);
 
             if (!command) {
@@ -496,10 +468,118 @@ client.on('interactionCreate', async interaction => {
                 return;
             }
 
-            // Removed the in-Discord /setup button handling
-            // if (customId === 'setup_roles') { ... }
-            // else if (customId === 'setup_channels') { ... }
-            // else if (customId === 'setup_auto_mod_channels') { ... }
+            if (customId === 'setup_roles') {
+                await interaction.followUp({ content: 'Please mention the Moderator role and then the Administrator role (e.g., `@Moderator @Administrator`). Type `none` if you don\'t have one of them.', flags: [MessageFlags.Ephemeral] });
+
+                const filter = m => m.author.id === interaction.user.id;
+                const collector = interaction.channel.createMessageCollector({ filter, time: 60000 });
+
+                collector.on('collect', async m => {
+                    const roles = m.mentions.roles;
+                    let modRole = null;
+                    let adminRole = null;
+
+                    if (roles.size >= 1) {
+                        modRole = roles.first();
+                        if (roles.size >= 2) {
+                            adminRole = roles.last();
+                        }
+                    } else if (m.content.toLowerCase() === 'none') {
+                        // User explicitly said 'none' for both
+                    } else {
+                        await interaction.followUp({ content: 'Please mention the roles correctly or type `none`.', flags: [MessageFlags.Ephemeral] });
+                        return;
+                    }
+
+                    guildConfig.modRoleId = modRole ? modRole.id : null;
+                    guildConfig.adminRoleId = adminRole ? adminRole.id : null;
+                    await saveGuildConfig(interaction.guildId, guildConfig);
+
+                    await interaction.followUp({ content: `Moderator role set to: ${modRole ? modRole.name : 'None'}\nAdministrator role set to: ${adminRole ? adminRole.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
+                    collector.stop();
+                    m.delete().catch(console.error);
+                });
+
+                collector.on('end', collected => {
+                    if (collected.size === 0) {
+                        interaction.followUp({ content: 'You did not respond in time. Role setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
+                    }
+                });
+
+            } else if (customId === 'setup_channels') {
+                await interaction.followUp({ content: 'Please mention the Moderation Log Channel and then the Message Log Channel (e.g., `#mod-logs #message-logs`).', flags: [MessageFlags.Ephemeral] });
+
+                const filter = m => m.author.id === interaction.user.id;
+                const collector = interaction.channel.createMessageCollector({ filter, time: 60000 });
+
+                collector.on('collect', async m => {
+                    const channels = m.mentions.channels;
+                    let modLogChannel = null;
+                    let msgLogChannel = null;
+
+                    if (channels.size >= 1) {
+                        modLogChannel = channels.first();
+                        if (channels.size >= 2) {
+                            msgLogChannel = channels.last();
+                        }
+                    } else {
+                        await interaction.followUp({ content: 'Please mention the channels correctly.', flags: [MessageFlags.Ephemeral] });
+                        return;
+                    }
+
+                    guildConfig.moderationLogChannelId = modLogChannel ? modLogChannel.id : null;
+                    guildConfig.messageLogChannelId = msgLogChannel ? msgLogChannel.id : null;
+                    await saveGuildConfig(interaction.guildId, guildConfig);
+
+                    await interaction.followUp({ content: `Moderation Log Channel set to: ${modLogChannel ? modLogChannel.name : 'None'}\nMessage Log Channel set to: ${msgLogChannel ? msgLogChannel.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
+                    collector.stop();
+                    m.delete().catch(console.error);
+                });
+
+                collector.on('end', collected => {
+                    if (collected.size === 0) {
+                        interaction.followUp({ content: 'You did not respond in time. Channel setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
+                    }
+                });
+            } else if (customId === 'setup_auto_mod_channels') {
+                await interaction.followUp({ content: 'Please mention the Auto-Moderation Alert Channel and then the Role to ping (e.g., `#mod-alerts @Moderators`). Type `none` if you don\'t have one of them.', flags: [MessageFlags.Ephemeral] });
+
+                const filter = m => m.author.id === interaction.user.id;
+                const collector = interaction.channel.createMessageCollector({ filter, time: 60000 });
+
+                collector.on('collect', async m => {
+                    const channels = m.mentions.channels;
+                    const roles = m.mentions.roles;
+                    let modAlertChannel = null;
+                    let modPingRole = null;
+
+                    if (channels.size >= 1) {
+                        modAlertChannel = channels.first();
+                    }
+                    if (roles.size >= 1) {
+                        modPingRole = roles.first();
+                    } else if (m.content.toLowerCase() === 'none') {
+                        // User explicitly said 'none'
+                    } else if (channels.size === 0 && roles.size === 0) {
+                        await interaction.followUp({ content: 'Please mention the channel and role correctly or type `none`.', flags: [MessageFlags.Ephemeral] });
+                        return;
+                    }
+
+                    guildConfig.modAlertChannelId = modAlertChannel ? modAlertChannel.id : null;
+                    guildConfig.modPingRoleId = modPingRole ? modPingRole.id : null;
+                    await saveGuildConfig(interaction.guildId, guildConfig);
+
+                    await interaction.followUp({ content: `Auto-Moderation Alert Channel set to: ${modAlertChannel ? modAlertChannel.name : 'None'}\nModerator Ping Role set to: ${modPingRole ? modPingRole.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
+                    collector.stop();
+                    m.delete().catch(console.error);
+                });
+
+                collector.on('end', collected => {
+                    if (collected.size === 0) {
+                        interaction.followUp({ content: 'You did not respond in time. Auto-moderation channel setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
+                    }
+                });
+            }
         }
     } catch (error) {
         console.error('Error during interaction processing:', error);
