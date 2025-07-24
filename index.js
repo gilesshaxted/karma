@@ -534,8 +534,19 @@ const logMessage = async (guild, message, flaggedBy, actionType) => { // Renamed
     }
 
     // Safely get author ID and tag
-    const authorId = message.author ? message.author.id : 'Unknown ID';
-    const authorTag = message.author ? message.author.tag : 'Unknown User';
+    let resolvedAuthor = message.author;
+    if (resolvedAuthor && resolvedAuthor.partial) {
+        try {
+            resolvedAuthor = await resolvedAuthor.fetch();
+        } catch (err) {
+            console.warn(`Could not fetch partial author for message ${message.id}:`, err);
+            // Fallback if fetch fails or author is truly gone
+            resolvedAuthor = null;
+        }
+    }
+
+    const authorId = resolvedAuthor ? resolvedAuthor.id : 'Unknown ID';
+    const authorTag = resolvedAuthor ? resolvedAuthor.tag : 'Unknown User';
 
     const embed = new EmbedBuilder()
         .setTitle('Message Moderated')
@@ -952,14 +963,8 @@ client.on('messageReactionAdd', async (reaction, user) => {
     const messageLink = `https://discord.com/channels/${guild.id}/${message.channel.id}/${message.id}`;
     let actionTaken = false;
 
-    // Use Unicode escape sequences for emojis
-    const EMOJI_LINK = '\u{1F517}'; // 🔗
-    const EMOJI_WARNING = '\u{26A0}\u{FE0F}'; // ⚠️
-    const EMOJI_ALARM_CLOCK = '\u{23F0}'; // ⏰
-    const EMOJI_BOOT = '\u{1F462}'; // 👢
-
     // Handle manual flagging first, as it doesn't necessarily lead to immediate punishment
-    if (reaction.emoji.name === EMOJI_LINK) { // Link emoji for manual flagging
+    if (reaction.emoji.name === '🔗') { // Link emoji for manual flagging
         if (isTargetExempt) {
             // Allow flagging exempt users for review, but don't log as a moderation action
             await sendModAlert(guild, message, `Manually flagged by ${reactorMember.tag} (Exempt User)`, reactorMember.user, messageLink, guildConfig.modPingRoleId);
@@ -977,7 +982,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
         const caseNumber = guildConfig.caseNumber;
 
         switch (reaction.emoji.name) {
-            case EMOJI_WARNING: // Warning emoji
+            case '⚠️': // Warning emoji
                 try {
                     const warnCommand = client.commands.get('warn');
                     if (warnCommand) {
@@ -988,7 +993,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
                     console.error('Error during emoji warn:', error);
                 }
                 break;
-            case EMOJI_ALARM_CLOCK: // Alarm clock emoji (default timeout 1 hour)
+            case '⏰': // Alarm clock emoji (default timeout 1 hour)
                 try {
                     const timeoutCommand = client.commands.get('timeout');
                     if (timeoutCommand) {
@@ -1000,7 +1005,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
                     console.error('Error during emoji timeout:', error);
                 }
                 break;
-            case EMOJI_BOOT: // Boot emoji (kick)
+            case '👢': // Boot emoji (kick)
                 try {
                     const kickCommand = client.commands.get('kick');
                     if (kickCommand) {
@@ -1019,7 +1024,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
         try {
             // Delete the original message only if it was a moderation action (warn, timeout, kick)
             // For manual flagging (🔗), the message is usually not deleted automatically.
-            if ([EMOJI_WARNING, EMOJI_ALARM_CLOCK, EMOJI_BOOT].includes(reaction.emoji.name) && message.deletable) {
+            if (['⚠️', '⏰', '👢'].includes(reaction.emoji.name) && message.deletable) {
                 await message.delete();
                 console.log(`Message deleted after emoji moderation: ${message.id}`);
                 // Log the deleted message to the message log channel
@@ -1044,14 +1049,8 @@ client.on('messageReactionAdd', async (reaction, user) => {
     // Ignore bot reactions, DMs, or reactions from the message author themselves
     if (user.bot || !reaction.message.guild || reaction.message.author.id === user.id) return;
 
-    // Use Unicode escape sequences for emojis
-    const EMOJI_WARNING = '\u{26A0}\u{FE0F}'; // ⚠️
-    const EMOJI_ALARM_CLOCK = '\u{23F0}'; // ⏰
-    const EMOJI_BOOT = '\u{1F462}'; // 👢
-    const EMOJI_LINK = '\u{1F517}'; // 🔗
-
     // Ignore if it's one of the moderation emojis, as they are handled above
-    if ([EMOJI_WARNING, EMOJI_ALARM_CLOCK, EMOJI_BOOT, EMOJI_LINK].includes(reaction.emoji.name)) return;
+    if (['⚠️', '⏰', '👢', '🔗'].includes(reaction.emoji.name)) return;
 
     // Fetch full reaction if partial
     if (reaction.partial) {
