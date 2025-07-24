@@ -41,21 +41,18 @@ let userId; // To store the authenticated authenticated user ID for Firestore ru
 // Create a collection to store commands
 client.commands = new Collection();
 
-// Dynamically load command files from the 'moderation' and 'karma' folders
+// Dynamically load command files from the 'moderation' folder
 const moderationCommandFiles = [
     'warn.js',
     'timeout.js',
     'kick.js',
-    'ban.js',
-    'warnings.js', // New command
-    'warning.js', // New command
-    'clearwarnings.js', // New command
-    'clearwarning.js' // New command
+    'ban.js'
+    // 'warnings.js', 'warning.js', 'clearwarnings.js', 'clearwarning.js' are NOT included in 0.2.3
 ];
 
+// Karma commands are not explicitly mentioned in 0.2.3 context, but keeping the structure for future if needed.
 const karmaCommandFiles = [
-    'karma.js', // New karma command
-    'leaderboard.js' // New leaderboard command
+    // 'karma.js', 'leaderboard.js' are NOT included in 0.2.3
 ];
 
 for (const file of moderationCommandFiles) {
@@ -106,7 +103,8 @@ const saveGuildConfig = async (guildId, newConfig) => {
     await setDoc(configRef, newConfig, { merge: true }); // Use merge to update existing fields
 };
 
-// Helper function to get or create a user's karma document
+// --- Karma System functions (from 0.2.3, simplified from later versions) ---
+// These were present but might not have had full LLM integration or advanced tracking
 const getOrCreateUserKarma = async (guildId, userId) => {
     const karmaRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/karma_users`, userId);
     const karmaSnap = await getDoc(karmaRef);
@@ -136,157 +134,54 @@ const getOrCreateUserKarma = async (guildId, userId) => {
     }
 };
 
-// Helper function to update user karma data
 const updateUserKarmaData = async (guildId, userId, data) => {
     const karmaRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/karma_users`, userId);
     await updateDoc(karmaRef, data);
 };
 
-// Helper function to check if a user has any moderation actions in the last 24 hours
 const hasRecentModeration = async (guildId, userIdToCheck) => {
-    const twentyFourHoursAgo = new Date(Date.now() - (24 * 60 * 60 * 1000));
-    const moderationRecordsRef = collection(db, `artifacts/${appId}/public/data/guilds/${guildId}/moderation_records`);
-    const q = query(
-        moderationRecordsRef,
-        where("targetUserId", "==", userIdToCheck),
-        where("timestamp", ">=", twentyFourHoursAgo),
-        limit(1) // Just need to find one to know if they have recent moderation
-    );
-    const querySnapshot = await getDocs(q);
-    return !querySnapshot.empty;
+    // This function might not have been fully implemented or used in 0.2.3 for karma
+    return false; // Placeholder for 0.2.3 behavior
 };
 
-
-// Helper function to calculate and award karma
 const calculateAndAwardKarma = async (guild, user, karmaData) => {
+    // Simplified karma calculation for 0.2.3
+    // This version might not have had the full daily reset or complex interaction tracking
     let karmaAwarded = 0;
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize to start of day
+    today.setHours(0, 0, 0, 0);
 
-    // Ensure lastKarmaCalculationDate is a Date object
     const lastCalcDate = karmaData.lastKarmaCalculationDate instanceof Date ? karmaData.lastKarmaCalculationDate : new Date(karmaData.lastKarmaCalculationDate);
     lastCalcDate.setHours(0, 0, 0, 0);
 
-    // Check for recent moderation actions for this user
-    const hasModerationRecently = await hasRecentModeration(guild.id, user.id);
-    if (hasModerationRecently) {
-        console.log(`${user.tag} has recent moderation, skipping karma gain.`);
-        // Reset daily counters even if no karma is awarded due to moderation
-        if (today.getTime() > lastCalcDate.getTime()) {
-            await updateUserKarmaData(guild.id, user.id, {
-                messagesToday: 0,
-                repliesReceivedToday: 0,
-                reactionsReceivedToday: 0,
-                lastKarmaCalculationDate: new Date()
-            });
-        }
-        return 0; // No karma awarded if recently moderated
-    }
-
-    // Only calculate if a new day has passed since last calculation
     if (today.getTime() > lastCalcDate.getTime()) {
-        // Activity Karma
-        if (karmaData.messagesToday >= 100) {
-            karmaAwarded += 2; // Hyper active
-            console.log(`Awarded 2 karma to ${user.tag} for hyper activity.`);
-        } else if (karmaData.messagesToday >= 20) {
-            karmaAwarded += 1; // Active
-            console.log(`Awarded 1 karma to ${user.tag} for activity.`);
+        // Basic activity karma
+        if (karmaData.messagesToday > 0) {
+            karmaAwarded += 1; // Award 1 karma for any activity
         }
-
-        // Interaction Karma
-        if (karmaData.repliesReceivedToday >= 10) {
-            karmaAwarded += Math.floor(karmaData.repliesReceivedToday / 10);
-            console.log(`Awarded ${Math.floor(karmaData.repliesReceivedToday / 10)} karma to ${user.tag} for replies.`);
-        }
-        if (karmaData.reactionsReceivedToday >= 10) {
-            karmaAwarded += Math.floor(karmaData.reactionsReceivedToday / 10);
-            console.log(`Awarded ${Math.floor(karmaData.reactionsReceivedToday / 10)} karma to ${user.tag} for reactions.`);
-        }
-
-        // Reset daily counters and update karma points
         await updateUserKarmaData(guild.id, user.id, {
             karmaPoints: karmaData.karmaPoints + karmaAwarded,
             messagesToday: 0,
             repliesReceivedToday: 0,
             reactionsReceivedToday: 0,
-            lastKarmaCalculationDate: new Date() // Update last calculation date to today
+            lastKarmaCalculationDate: new Date()
         });
-        console.log(`Karma for ${user.tag} updated. Total: ${karmaData.karmaPoints + karmaAwarded}`);
-    } else {
-        console.log(`No new karma calculation for ${user.tag} today.`);
     }
     return karmaAwarded;
 };
 
-// LLM-powered sentiment analysis for general replies
+// LLM-powered sentiment analysis (was a placeholder in 0.2.3)
 const analyzeSentiment = async (text) => {
-    try {
-        let chatHistory = [];
-        chatHistory.push({ role: "user", parts: [{ text: `Analyze the sentiment of the following text and return only one word: "positive", "neutral", or "negative".\n\nText: "${text}"` }] });
-        const payload = { contents: chatHistory };
-        const apiKey = process.env.GOOGLE_API_KEY || "";
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`Gemini API sentiment error: ${response.status} - ${errorText}`);
-            return 'neutral'; // Fallback to neutral on API error
-        }
-
-        const result = await response.json();
-
-        if (result.candidates && result.candidates.length > 0 &&
-            result.candidates[0].content && result.candidates[0].content.parts &&
-            result.candidates[0].content.parts.length > 0) {
-            const sentiment = result.candidates[0].content.parts[0].text.toLowerCase().trim();
-            if (['positive', 'neutral', 'negative'].includes(sentiment)) {
-                return sentiment;
-            } else {
-                console.warn(`Gemini API returned unexpected sentiment: "${sentiment}". Falling back to neutral.`);
-                return 'neutral';
-            }
-        } else {
-            console.warn('Gemini API sentiment response structure unexpected or content missing. Falling back to neutral.');
-            return 'neutral';
-        }
-    } catch (error) {
-        console.error('Error calling Gemini API for sentiment analysis:', error);
-        return 'neutral'; // Fallback to neutral on fetch/parsing error
-    }
+    // This was a placeholder in 0.2.3, not actively using LLM yet.
+    return 'positive'; // Always return positive as a placeholder
 };
 
-// LLM-powered check for offensive content (for auto-moderation) - NOT USED IN THIS VERSION
-const isContentOffensive = async (text) => {
-    // This function is not used in this version, but kept for future reference.
-    return 'no'; // Always return 'no' as a placeholder
-};
-
-// Regex patterns for specific hate speech/slurs (EMPTY - not used in this version)
+// Auto-moderation related functions are NOT present in 0.2.3
+const isContentOffensive = async (text) => { return 'no'; };
 const hateSpeechRegexes = [];
-
-// Specific keywords for hate speech/slurs (NOT USED FOR AUTO-MOD IN THIS VERSION)
 const hateSpeechKeywords = [];
-
-
-// Helper function to send a moderation alert to the designated channel (NOT USED IN THIS VERSION)
-const sendModAlert = async (guild, message, reason, flaggedBy, messageLink, pingRoleId) => {
-    console.log("sendModAlert is not active in this version.");
-    return;
-};
-
-
-// Main auto-moderation logic function (NOT USED IN THIS VERSION)
-const checkMessageForModeration = async (message) => {
-    // Auto-moderation logic is disabled in this version.
-    return;
-};
+const sendModAlert = async () => {};
+const checkMessageForModeration = async () => {};
 
 
 // Helper function to check if a member has a moderator or admin role
@@ -355,7 +250,7 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
         const moderationRecordsRef = collection(db, `artifacts/${appId}/public/data/guilds/${guild.id}/moderation_records`);
         await addDoc(moderationRecordsRef, {
             caseNumber: caseNumber,
-            actionType: actionType.replace(' (Emoji)', '').replace(' (Auto)', ''), // Clean actionType for DB
+            actionType: actionType.replace(' (Emoji)', ''), // Clean actionType for DB
             targetUserId: targetUser.id,
             targetUserTag: targetUser.tag,
             moderatorId: moderator.id,
@@ -371,8 +266,8 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
     }
 };
 
-// Helper function to log deleted messages
-const logMessage = async (guild, message, flaggedBy, actionType) => {
+// Helper function to log deleted messages (from 0.2.3, with basic null checks)
+const logMessage = async (guild, message, moderator, actionType) => {
     const guildConfig = await getGuildConfig(guild.id);
     const logChannelId = guildConfig.messageLogChannelId;
 
@@ -388,23 +283,21 @@ const logMessage = async (guild, message, flaggedBy, actionType) => {
     }
 
     // Safely get author ID and tag
-    let authorId = message.author ? message.author.id : 'Unknown ID';
-    let authorTag = message.author ? message.author.tag : 'Unknown User';
-
-    // Safely get channel ID and name
-    let channelId = message.channel ? message.channel.id : 'Unknown Channel ID';
-    let channelName = message.channel ? message.channel.name : 'Unknown Channel';
+    const authorId = message.author?.id || 'Unknown ID';
+    const authorTag = message.author?.tag || 'Unknown User';
+    const channelId = message.channel?.id || 'Unknown Channel ID';
 
     const embed = new EmbedBuilder()
-        .setTitle('Message Moderated')
-        .setDescription(
-            `**Author:** <@${authorId}>\n` +
-            `**Channel:** <#${channelId}> (${channelName})\n` +
-            `**Message:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``
+        .setTitle(`Message ${actionType}`)
+        .setDescription(`**Content:**\n\`\`\`\n${message.content || 'No content (e.g., embed, attachment only)'}\n\`\`\``)
+        .addFields(
+            { name: 'Author', value: `${authorTag} (${authorId})`, inline: true },
+            { name: 'Channel', value: `<#${channelId}>`, inline: true },
+            { name: 'Sent At', value: `<t:${Math.floor(message.createdTimestamp / 1000)}:F>`, inline: true },
+            { name: 'Moderated By', value: `${moderator?.tag || moderator?.username || 'System'}`, inline: true } // Use optional chaining
         )
-        .setFooter({ text: `Author ID: ${authorId}` })
-        .setTimestamp(message.createdTimestamp || Date.now())
-        .setColor(0xADD8E6);
+        .setTimestamp()
+        .setColor(0xADD8E6); // Light blue for message logs
 
     await logChannel.send({ embeds: [embed] });
 };
@@ -514,17 +407,15 @@ client.on('messageCreate', async message => {
                 const repliedToAuthor = repliedToMessage.author;
                 const repliedToKarmaData = await getOrCreateUserKarma(guild.id, repliedToAuthor.id);
 
-                // Sentiment analysis for replies
-                const sentiment = await analyzeSentiment(message.content);
-                if (sentiment === 'negative') {
-                    console.log(`Negative reply sentiment detected for message from ${author.tag} to ${repliedToAuthor.tag}. Skipping karma gain for reply.`);
-                } else {
-                    await updateUserKarmaData(guild.id, repliedToAuthor.id, {
-                        repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1,
-                        lastActivityDate: new Date()
-                    });
-                    await calculateAndAwardKarma(guild, repliedToAuthor, { ...repliedToKarmaData, repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1 });
-                }
+                // Sentiment analysis for replies (placeholder in 0.2.3)
+                const sentiment = await analyzeSentiment(message.content); // This will return 'positive'
+                // No conditional karma logic based on sentiment in 0.2.3
+                
+                await updateUserKarmaData(guild.id, repliedToAuthor.id, {
+                    repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1,
+                    lastActivityDate: new Date()
+                });
+                await calculateAndAwardKarma(guild, repliedToAuthor, { ...repliedToKarmaData, repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1 });
             }
         }
     } catch (error) {
@@ -603,7 +494,7 @@ client.on('interactionCreate', async interaction => {
                 getOrCreateUserKarma, // Pass karma helpers
                 updateUserKarmaData,
                 calculateAndAwardKarma,
-                analyzeSentiment,
+                analyzeSentiment, // Pass placeholder analyzeSentiment
                 client // Pass client to access users for clearwarning
             });
         } else if (interaction.isButton()) {
@@ -613,18 +504,7 @@ client.on('interactionCreate', async interaction => {
             // Defer reply for buttons as well, if they might take time
             await interaction.deferUpdate(); // Use deferUpdate for buttons that don't need a new message
 
-            // Handle pagination buttons for /warnings command
-            if (customId.startsWith('warnings_page_')) {
-                const [_, action, targetUserId, currentPageStr] = customId.split('_');
-                const currentPage = parseInt(currentPageStr);
-                const targetUser = await client.users.fetch(targetUserId);
-
-                const warningsCommand = client.commands.get('warnings');
-                if (warningsCommand) {
-                    await warningsCommand.handlePagination(interaction, targetUser, action, currentPage, { db, appId, MessageFlags });
-                }
-                return;
-            }
+            // Pagination for /warnings is not in this version, so no handler here.
 
 
             if (customId === 'setup_roles') {
@@ -715,6 +595,15 @@ client.on('interactionCreate', async interaction => {
 
 // Event: Message reaction added (for emoji moderation)
 client.on('messageReactionAdd', async (reaction, user) => {
+    // IMMEDIATE CHECK: If user is null or doesn't have an ID, something is wrong.
+    if (!user || !user.id) {
+        console.error('messageReactionAdd event received with null or invalid user object:', user);
+        return; // Abort processing if user is invalid
+    }
+
+    // Ignore bot reactions or DMs
+    if (user.bot || !reaction.message.guild) return;
+
     // When a reaction is received, check if the structure is partial
     if (reaction.partial) {
         // If the message this reaction belongs to was removed from the cache,
@@ -727,25 +616,20 @@ client.on('messageReactionAdd', async (reaction, user) => {
         }
     }
 
-    // Ignore reactions from bots
-    if (user.bot) return;
-
     const message = reaction.message;
     const guild = message.guild;
-    if (!guild) return; // Ignore DMs
-
     const reactorMember = await guild.members.fetch(user.id);
     const guildConfig = await getGuildConfig(guild.id);
 
     // Check if the reactor has permission
     if (!hasPermission(reactorMember, guildConfig)) {
-        return; // User is not a moderator or admin
+        return reaction.users.remove(user.id).catch(console.error); // User is not a moderator or admin
     }
 
     const targetMember = await guild.members.fetch(message.author.id).catch(() => null);
     if (!targetMember) {
         console.log(`Could not fetch target member ${message.author.id}.`);
-        return;
+        return reaction.users.remove(user.id).catch(console.error);
     }
 
     // Check if the target user is exempt
@@ -753,7 +637,25 @@ client.on('messageReactionAdd', async (reaction, user) => {
         return reaction.users.remove(user.id).catch(console.error); // Remove the reaction if target is exempt
     }
 
-    const reason = `Emoji moderation: "${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
+    // Safely get channel ID and name for reason
+    let channelIdForReason = 'Unknown Channel ID';
+    if (message.channel) {
+        let resolvedChannelForReason = message.channel;
+        if (resolvedChannelForReason.partial) {
+            try {
+                resolvedChannelForReason = await resolvedChannelForReason.fetch();
+            } catch (err) {
+                console.warn(`Could not fetch partial channel for message ${message.id} in reason construction:`, err);
+                resolvedChannelForReason = null;
+            }
+        }
+        if (resolvedChannelForReason) {
+            channelIdForReason = resolvedChannelForReason.id;
+        }
+    }
+    const reason = `Emoji moderation: "${message.content || 'No message content'}" from channel <#${channelIdForReason}>`;
+
+
     let actionTaken = false;
 
     // Increment case number and save before action
@@ -798,22 +700,32 @@ client.on('messageReactionAdd', async (reaction, user) => {
             break;
     }
 
-    // If an action was taken, delete the original message
+    // If an action was taken, delete the original message AND the reaction
     if (actionTaken) {
         try {
             // Ensure the message is not already deleted
             if (message.deletable) {
                 await message.delete();
                 console.log(`Message deleted after emoji moderation: ${message.id}`);
+                // Log the deleted message to the message log channel
+                await logMessage(guild, message, user, 'Deleted (Emoji Mod)');
             }
+            // Always remove the user's reaction after successful processing
+            await reaction.users.remove(user.id).catch(console.error);
         } catch (error) {
-            console.error(`Failed to delete message ${message.id}:`, error);
+            console.error(`Failed to delete message ${message.id} or reaction:`, error);
         }
     }
 });
 
 // Event: Message Reaction Added (for Karma system)
 client.on('messageReactionAdd', async (reaction, user) => {
+    // IMMEDIATE CHECK: If user is null or doesn't have an ID, something is wrong.
+    if (!user || !user.id) {
+        console.error('messageReactionAdd event received with null or invalid user object in karma section:', user);
+        return; // Abort processing if user is invalid
+    }
+
     // Ignore bot reactions, DMs, or reactions from the message author themselves
     if (user.bot || !reaction.message.guild || reaction.message.author.id === user.id) return;
 
