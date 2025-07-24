@@ -59,7 +59,7 @@ module.exports = {
     },
 
     // Execute function for emoji-based moderation
-    async executeEmoji(message, targetMember, reason, moderator, caseNumber, { logModerationAction, logMessage }) {
+    async executeEmoji(message, targetMember, reason, moderator, caseNumber, { logModerationAction, logMessage, getGuildConfig, db, appId }) { // Added getGuildConfig, db, appId
         const guild = message.guild;
         const targetUser = targetMember.user;
 
@@ -72,8 +72,8 @@ module.exports = {
                 .setTimestamp();
             await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
 
-            // Log the moderation action (passing getGuildConfig, db, appId from index.js via message.client context)
-            await logModerationAction(guild, 'Warning (Emoji)', targetUser, reason, moderator, caseNumber, null, message.url, message.client.getGuildConfig, message.client.db, message.client.appId);
+            // Log the moderation action (passing getGuildConfig, db, appId)
+            await logModerationAction(guild, 'Warning (Emoji)', targetUser, reason, moderator, caseNumber, null, message.url, getGuildConfig, db, appId);
 
             console.log(`Successfully warned ${targetUser.tag} via emoji for: ${reason} (Case #${caseNumber})`);
         } catch (error) {
