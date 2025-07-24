@@ -14,35 +14,35 @@ Karma is a powerful and intuitive Discord moderation bot designed to help server
 
 * **Slash Commands**:
 
-  * `/warn <user> <reason>`: Issues a warning to a user.
+    * `/warn <user> <reason>`: Issues a warning to a user.
 
-  * `/timeout <duration> <user> <reason>`: Puts a user in timeout for a specified duration (default: 1 hour).
+    * `/timeout <duration> <user> <reason>`: Puts a user in timeout for a specified duration (default: 1 hour).
 
-  * `/kick <user> <reason>`: Removes a user from the server.
+    * `/kick <user> <reason>`: Removes a user from the server.
 
-  * `/ban` <duration_or_forever> <user>` <reason>`: Permanently or temporarily bans a user from the server.
+    * `/ban` <duration_or_forever> <user>` <reason>`: Permanently or temporarily bans a user from the server.
 
-  * `/clearwarnings <user>`: Clears all warnings for a specific user.
+    * `/clearwarnings <user>`: Clears all warnings for a specific user.
 
-  * `/clearwarning <case_number> [user]`: Clears a specific warning by its case number.
+    * `/clearwarning <case_number> [user]`: Clears a specific warning by its case number.
 
 * **Emoji-Based Moderation**:
 
-  * React to a message with ⚠️ (warning emoji) to warn the author and delete the message.
+    * React to a message with ⚠️ (warning emoji) to warn the author and delete the message.
 
-  * React to a message with ⏰ (alarm clock emoji) to timeout the author for 1 hour and delete the message.
+    * React to a message with ⏰ (alarm clock emoji) to timeout the author for 1 hour and delete the message.
 
-  * React to a message with 👢 (boot emoji) to kick the author and delete the message.
+    * React to a message with 👢 (boot emoji) to kick the author and delete the message.
 
-  * React to a message with 🔗 (link emoji) to manually flag a message for moderator review (sends to mod-alert channel).
+    * React to a message with 🔗 (link emoji) to manually flag a message for moderator review (sends to mod-alert channel).
 
 * **Auto-Moderation**:
 
-  * Automatically detects and flags messages containing hate speech, racial slurs, homophobia, and other severely offensive language using LLM analysis and specific keywords. (Regex patterns were removed due to persistent parsing errors in Node.js v22).
+    * Automatically detects and flags messages containing hate speech, racial slurs, homophobia, and other severely offensive language using LLM analysis and specific keywords. (Regex patterns were removed due to persistent parsing errors in Node.js v22).
 
-  * **Immediate Punishment**: For the worst offenses, the bot will automatically apply a short timeout (default: 10 minutes) to the author and delete the offensive message.
+    * **Immediate Punishment**: For the worst offenses, the bot will automatically apply a short timeout (default: 10 minutes) to the author and delete the offensive message.
 
-  * **Moderator Alerts**: If the bot detects potentially problematic content but isn't entirely "sure," it will repost the message content, author, and a link to the original message in a designated `mod-alert` channel. This alert will also ping a configurable generic moderator role.
+    * **Moderator Alerts**: If the bot detects potentially problematic content but isn't entirely "sure," it will repost the message content, author, and a link to the original message in a designated `mod-alert` channel. This alert will also ping a configurable generic moderator role.
 
 * **Automated Logging**: All moderation actions are logged to a designated moderation log channel with detailed embeds, including case numbers. Deleted messages (especially those from kicks/bans) are logged to a separate message log channel with a clear embed format.
 
@@ -82,21 +82,21 @@ Karma is designed to be efficient, user-friendly, and highly effective in mainta
 
     * Under "Bot Permissions", grant the following permissions:
 
-      * `Manage Channels`
+        * `Manage Channels`
 
-      * `Manage Roles`
+        * `Manage Roles`
 
-      * `Kick Members`
+        * `Kick Members`
 
-      * `Ban Members`
+        * `Ban Members`
 
-      * `Timeout Members`
+        * `Timeout Members`
 
-      * `Read Message History`
+        * `Read Message History`
 
-      * `Send Messages`
+        * `Send Messages`
 
-      * `Manage Messages`
+        * `Manage Messages`
 
     * Copy the generated URL and paste it into your browser to invite the bot to your server.
 
@@ -147,7 +147,7 @@ Karma is designed to be efficient, user-friendly, and highly effective in mainta
 7.  **Install Dependencies**: Open your terminal in the bot's root directory and run:
 
     ```bash
-    npm install discord.js dotenv firebase express node-fetch
+    npm install discord.js dotenv firebase express axios
     ```
 
 8.  **Run the Bot**:
