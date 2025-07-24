@@ -1,5 +1,5 @@
 // moderation/ban.js
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js'); // Added MessageFlags
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
     // Slash command data
@@ -20,13 +20,13 @@ module.exports = {
                 .setRequired(false)),
 
     // Execute function for slash command
-    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, logMessage, MessageFlags }) { // Received MessageFlags
+    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, logMessage }) {
         const targetUser = interaction.options.getUser('target');
         const durationInput = interaction.options.getString('duration') || 'forever'; // Default to forever
         const reason = interaction.options.getString('reason') || 'No reason provided.';
         const moderator = interaction.user;
         const guild = interaction.guild;
-        const guildConfig = await getGuildConfig(guild.id); // Await config fetch
+        const guildConfig = await getGuildConfig(guild.id);
 
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
@@ -48,7 +48,7 @@ module.exports = {
         }
 
         guildConfig.caseNumber++;
-        await saveGuildConfig(guild.id, guildConfig); // Await save
+        await saveGuildConfig(guild.id, guildConfig);
         const caseNumber = guildConfig.caseNumber;
 
         try {
@@ -69,7 +69,8 @@ module.exports = {
                     );
 
                     for (const msg of messagesFromTargetInChannel.values()) {
-                        await logMessage(guild, msg, moderator, 'Deleted (Ban)');
+                        // Pass getGuildConfig to logMessage
+                        await logMessage(guild, msg, moderator, 'Deleted (Ban)', getGuildConfig);
                         messagesLoggedCount++;
                     }
                 } catch (channelError) {
@@ -92,8 +93,8 @@ module.exports = {
                 reason: reason
             });
 
-            // Log the moderation action
-            await logModerationAction(guild, `Ban (${banDurationText})`, targetUser, reason, moderator, caseNumber);
+            // Log the moderation action (passing getGuildConfig, db, appId from index.js via interaction.client context)
+            await logModerationAction(guild, `Ban (${banDurationText})`, targetUser, reason, moderator, caseNumber, banDurationText, null, getGuildConfig, interaction.client.db, interaction.client.appId);
 
             await interaction.editReply({ content: `Successfully banned ${targetUser.tag} for ${banDurationText} for: ${reason} (Case #${caseNumber})` });
         } catch (error) {
