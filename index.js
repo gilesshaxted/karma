@@ -11,10 +11,10 @@ const axios = require('axios'); // Changed from node-fetch to axios
 
 // Import helper functions
 const { hasPermission, isExempt } = require('./helpers/permissions');
-const logging = require('./logging/logging');
-const karmaSystem = require('./karma/karmaSystem');
-const autoModeration = require('./automoderation/autoModeration');
-const handleMessageReactionAdd = require('./events/messageReactionAdd');
+const logging = require('./logging/logging'); // Import the entire logging module
+const karmaSystem = require('./karma/karmaSystem'); // Import the entire karmaSystem module
+const autoModeration = require('./automoderation/autoModeration'); // Import the entire autoModeration module
+const handleMessageReactionAdd = require('./events/messageReactionAdd'); // Import the event handler
 
 // --- Discord OAuth Configuration ---
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
@@ -30,7 +30,7 @@ const DISCORD_BOT_PERMISSIONS = [ // Bot permissions for the invite link
     PermissionsBitField.Flags.ReadMessageHistory,
     PermissionsBitField.Flags.SendMessages,
     PermissionsBitField.Flags.ManageMessages
-].reduce((acc, perm) => acc | perm, 0).toString(); // Convert to bitfield string
+].reduce((acc, perm) => acc | perm, 0n).toString(); // Changed 0 to 0n for BigInt compatibility
 
 // --- Express Web Server for Dashboard ---
 const app = express();
