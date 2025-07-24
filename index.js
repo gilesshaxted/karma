@@ -301,22 +301,20 @@ const isContentOffensive = async (text) => {
 
 // Regex patterns for specific hate speech/slurs
 const hateSpeechRegexes = [
-    // N-word variations
-    /(?i)\b(?:n[\s]*(?:i|1|!)[\s]*g[\s]*(?:g|6)[\s]*(?:e|3|@|a)[\s]*r?)\b/,
-    // Fag variations
-    /(?i)\b(?:f[\s]*(?:a|@)[\s]*g)\b/,
-    // Combined regex from user input, modified to use non-capturing groups
-    /(?i)^(?:.*\n)?\b(?:(?:f\s?)(?:a|@)(?:\s?)+g)\b|\b(?:(?:q\s?)(?:u|@)(?:e|3)+(?:\s?)+r)\b/,
-    // Queer variations
-    /(?i)\b(?:q[\s]*(?:u|@)[\s]*(?:e|3)[\s]*r)\b/,
-    // Kike variations
-    /(?i)\b(?:k[\s]*(?:i|1|!)[\s]*k[\s]*(?:e|3|@))\b/,
-    // Chink variations
-    /(?i)\b(?:ch[\s]*(?:i|1|!|e|3|a)[\s]*k)\b/,
-    // Spic variations
-    /(?i)\b(?:sp[\s]*a[\s]*c[\s]*)\b/,
-    // Wetback variations
-    /(?i)\b(?:wet[\s]*b[\s]*)\b/
+    // N-word variations (simplified)
+    /(?i)\b(?:n\s*i\s*g\s*g\s*e\s*r|n\s*1\s*g\s*6\s*e\s*r|n\s*!\s*g\s*g\s*@\s*r?)\b/,
+    // Fag variations (simplified)
+    /(?i)\b(?:f\s*a\s*g|f\s*@\s*g)\b/,
+    // Combined regex from user input, simplified
+    /(?i)\b(?:f\s*a\s*g|f\s*@\s*g|q\s*u\s*e\s*r|q\s*@\s*e\s*r|q\s*u\s*3\s*r|q\s*@\s*3\s*r)\b/,
+    // Kike variations (simplified)
+    /(?i)\b(?:k\s*i\s*k\s*e|k\s*1\s*k\s*e|k\s*!\s*k\s*@)\b/,
+    // Chink variations (simplified)
+    /(?i)\b(?:ch\s*i\s*n\s*k|ch\s*1\s*n\s*k|ch\s*!\s*n\s*k|ch\s*e\s*n\s*k|ch\s*3\s*n\s*k|ch\s*a\s*n\s*k)\b/,
+    // Spic variations (simplified)
+    /(?i)\b(?:sp\s*i\s*c|sp\s*a\s*c|sp\s*@\s*c)\b/,
+    // Wetback variations (simplified)
+    /(?i)\b(?:wet\s*b\s*a\s*c\s*k)\b/
 ];
 
 // Specific keywords for hate speech/slurs
