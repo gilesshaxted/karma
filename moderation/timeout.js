@@ -98,7 +98,7 @@ module.exports = {
     },
 
     // Execute function for emoji-based moderation
-    async executeEmoji(message, targetMember, durationMinutes, reason, moderator, caseNumber, { logModerationAction, logMessage }) {
+    async executeEmoji(message, targetMember, durationMinutes, reason, moderator, caseNumber, { logModerationAction, logMessage, getGuildConfig, db, appId }) { // Added getGuildConfig, db, appId
         const guild = message.guild;
         const targetUser = targetMember.user;
         const durationMs = durationMinutes * 60 * 1000;
@@ -114,8 +114,8 @@ module.exports = {
                 .setTimestamp();
             await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
 
-            // Log the moderation action (passing getGuildConfig, db, appId from index.js via message.client context)
-            await logModerationAction(guild, `Timeout (Emoji - ${durationMinutes}m)`, targetUser, reason, moderator, caseNumber, `${durationMinutes}m`, message.url, message.client.getGuildConfig, message.client.db, message.client.appId);
+            // Log the moderation action (passing getGuildConfig, db, appId)
+            await logModerationAction(guild, `Timeout (Emoji - ${durationMinutes}m)`, targetUser, reason, moderator, caseNumber, `${durationMinutes}m`, message.url, getGuildConfig, db, appId);
 
             console.log(`Successfully timed out ${targetUser.tag} via emoji for ${durationMinutes} minutes for: ${reason} (Case #${caseNumber})`);
         } catch (error) {
