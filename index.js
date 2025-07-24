@@ -415,12 +415,13 @@ const logMessage = async (guild, message, flaggedBy, actionType) => { // Renamed
     let channelName = 'Unknown Channel';
     if (message.channel) {
         let resolvedChannel = message.channel;
+        // Check if message.channel is partial and fetch if necessary
         if (resolvedChannel.partial) {
             try {
                 resolvedChannel = await resolvedChannel.fetch();
             } catch (err) {
                 console.warn(`Could not fetch partial channel for message ${message.id}:`, err);
-                resolvedChannel = null;
+                resolvedChannel = null; // Set to null if fetch fails or channel is truly gone
             }
         }
         if (resolvedChannel) {
