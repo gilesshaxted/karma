@@ -1,6 +1,6 @@
 // moderation/clearwarning.js
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { collection, query, where, getDocs, deleteDoc, doc, writeBatch } = require('firebase/firestore');
+const { collection, query, where, getDocs, deleteDoc, doc } = require('firebase/firestore');
 
 module.exports = {
     // Slash command data
@@ -17,7 +17,7 @@ module.exports = {
                 .setRequired(false)),
 
     // Execute function for slash command
-    async execute(interaction, { db, appId, getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, MessageFlags, client }) { // Added 'client' here
+    async execute(interaction, { db, appId, getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, client }) { // Added 'client' here
         const caseNumberToClear = interaction.options.getInteger('casenumber');
         const targetUserOption = interaction.options.getUser('target'); // Optional target user
         const moderator = interaction.user;
@@ -66,7 +66,8 @@ module.exports = {
             const newCaseNumber = guildConfig.caseNumber;
 
             const reason = `Cleared warning #${caseNumberToClear} for ${targetUser.tag}. Original reason: "${warningData.reason}"`;
-            await logModerationAction(guild, 'Warning Cleared (Specific)', targetUser, reason, moderator, newCaseNumber);
+            // Pass getGuildConfig, db, appId from index.js via interaction.client context
+            await logModerationAction(guild, 'Warning Cleared (Specific)', targetUser, reason, moderator, newCaseNumber, null, null, getGuildConfig, interaction.client.db, interaction.client.appId);
 
             await interaction.editReply({ content: `Successfully cleared warning #${caseNumberToClear} for ${targetUser.tag}. (Action Logged as Case #${newCaseNumber})` });
 
