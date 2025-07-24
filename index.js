@@ -92,6 +92,8 @@ const getGuildConfig = async (guildId) => {
             adminRoleId: null,
             moderationLogChannelId: null,
             messageLogChannelId: null,
+            modAlertChannelId: null, // New: Channel for auto-mod alerts
+            modPingRoleId: null, // New: Role to ping for auto-mod alerts
             caseNumber: 0
         };
         await setDoc(configRef, defaultConfig);
@@ -219,13 +221,12 @@ const calculateAndAwardKarma = async (guild, user, karmaData) => {
     return karmaAwarded;
 };
 
-// LLM-powered sentiment analysis
+// LLM-powered sentiment analysis for general replies
 const analyzeSentiment = async (text) => {
     try {
         let chatHistory = [];
         chatHistory.push({ role: "user", parts: [{ text: `Analyze the sentiment of the following text and return only one word: "positive", "neutral", or "negative".\n\nText: "${text}"` }] });
         const payload = { contents: chatHistory };
-        // Use the GOOGLE_API_KEY environment variable
         const apiKey = process.env.GOOGLE_API_KEY || "";
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
@@ -237,7 +238,7 @@ const analyzeSentiment = async (text) => {
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`Gemini API error: ${response.status} - ${errorText}`);
+            console.error(`Gemini API sentiment error: ${response.status} - ${errorText}`);
             return 'neutral'; // Fallback to neutral on API error
         }
 
@@ -247,7 +248,6 @@ const analyzeSentiment = async (text) => {
             result.candidates[0].content && result.candidates[0].content.parts &&
             result.candidates[0].content.parts.length > 0) {
             const sentiment = result.candidates[0].content.parts[0].text.toLowerCase().trim();
-            // Basic validation for expected output
             if (['positive', 'neutral', 'negative'].includes(sentiment)) {
                 return sentiment;
             } else {
@@ -255,12 +255,205 @@ const analyzeSentiment = async (text) => {
                 return 'neutral';
             }
         } else {
-            console.warn('Gemini API response structure unexpected or content missing. Falling back to neutral.');
+            console.warn('Gemini API sentiment response structure unexpected or content missing. Falling back to neutral.');
             return 'neutral';
         }
     } catch (error) {
         console.error('Error calling Gemini API for sentiment analysis:', error);
         return 'neutral'; // Fallback to neutral on fetch/parsing error
+    }
+};
+
+// LLM-powered check for offensive content (for auto-moderation)
+const isContentOffensive = async (text) => {
+    try {
+        const chatHistory = [{ role: "user", parts: [{ text: `Is the following text hate speech, a racial slur, homophobic, or otherwise severely offensive? Respond with "yes" or "no".\n\nText: "${text}"` }] }];
+        const payload = { contents: chatHistory };
+        const apiKey = process.env.GOOGLE_API_KEY || "";
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Gemini API offensive content check error: ${response.status} - ${errorText}`);
+            return 'no'; // Default to no if API error
+        }
+
+        const result = await response.json();
+        if (result.candidates && result.candidates.length > 0 &&
+            result.candidates[0].content && result.candidates[0].content.parts &&
+            result.candidates[0].content.parts.length > 0) {
+            const decision = result.candidates[0].content.parts[0].text.toLowerCase().trim();
+            return decision === 'yes' ? 'yes' : 'no';
+        }
+        console.warn('Gemini API offensive content check response structure unexpected or content missing. Falling back to no.');
+        return 'no'; // Default to no if unexpected response
+    } catch (error) {
+        console.error('Error calling Gemini API for offensive content check:', error);
+        return 'no'; // Default to no on error
+    }
+};
+
+// Regex patterns for specific hate speech/slurs
+const hateSpeechRegexes = [
+    // N-word variations
+    /(?i)\b(n[\s]*(i|1|!)[\s]*g[\s]*(g|6)[\s]*(e|3|@|a)[\s]*r?)\b/,
+    // Fag variations
+    /(?i)\b(f[\s]*(a|@)[\s]*g)\b/,
+    /(?i)^(.*\n)?\b((f\s?)(a|@)(\s?)+g\b)|\b((q\s?)(u|@)(e|3)+(\s?)+r)\b/, // Combined from user input
+    // Queer variations
+    /(?i)\b(q[\s]*(u|@)[\s]*(e|3)[\s]*r)\b/,
+    // Kike variations
+    /(?i)\b(k[\s]*(i|1|!)[\s]*k[\s]*(e|3|@))\b/,
+    // Chink variations
+    /(?i)\b(ch[\s]*(i|1|!|e|3|a)[\s]*k)\b/,
+    // Spic variations
+    /(?i)\b(sp[\s]*a[\s]*c[\s]*)\b/,
+    // Wetback variations
+    /(?i)\b(wet[\s]*b[\s]*)\b/
+];
+
+// Specific keywords for hate speech/slurs
+const hateSpeechKeywords = [
+    'fag', 'faggot', 'gypsy', 'homo', 'kike', 'nigg', 'nigger', 'retard', 'spic', 'spick', 'yn', 'yns'
+];
+
+// Helper function to send a moderation alert to the designated channel
+const sendModAlert = async (guild, message, reason, flaggedBy, messageLink, pingRoleId) => {
+    const guildConfig = await getGuildConfig(guild.id);
+    const alertChannelId = guildConfig.modAlertChannelId;
+
+    if (!alertChannelId) {
+        console.log(`Mod alert channel not set for guild ${guild.name}. Cannot send alert.`);
+        return;
+    }
+
+    const alertChannel = guild.channels.cache.get(alertChannelId);
+    if (!alertChannel) {
+        console.error(`Mod alert channel with ID ${alertChannelId} not found in guild ${guild.name}. Cannot send alert.`);
+        return;
+    }
+
+    const embed = new EmbedBuilder()
+        .setTitle('Message Flagged')
+        .setDescription(`**Channel:** <#${message.channel.id}>\n**Author:** <@${message.author.id}>\n**Flag Reason:** ${reason}\n\n[Jump to Message](${messageLink})\n\n**Message Content:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``)
+        .setColor(0xFFFF00) // Yellow for alert
+        .setTimestamp();
+
+    // Set footer based on who flagged
+    const flaggedById = flaggedBy.id;
+    const flaggedByName = flaggedBy.tag || flaggedBy.username; // Use tag for users, username for bot
+    embed.setFooter({ text: `Who Flagged ID: ${flaggedByName} (${flaggedById})` });
+
+    let pingMessage = '';
+    if (pingRoleId) {
+        const pingRole = guild.roles.cache.get(pingRoleId);
+        if (pingRole) {
+            pingMessage = `<@&${pingRoleId}>`;
+        } else {
+            console.warn(`Mod ping role with ID ${pingRoleId} not found in guild ${guild.name}.`);
+        }
+    } else {
+        console.log(`Mod ping role not set for guild ${guild.name}.`);
+    }
+
+    await alertChannel.send({ content: pingMessage, embeds: [embed] });
+};
+
+
+// Main auto-moderation logic function
+const checkMessageForModeration = async (message) => {
+    const guild = message.guild;
+    const guildConfig = await getGuildConfig(guild.id);
+    const author = message.author;
+
+    // Don't moderate bots or exempt users
+    const authorMember = await guild.members.fetch(author.id).catch(() => null);
+    if (!authorMember || isExempt(authorMember, guildConfig)) {
+        return;
+    }
+
+    const content = message.content;
+    let flaggedReason = null;
+    let autoPunish = false; // Flag for immediate punishment
+
+    // 1. Regex and Keyword Checks (for definite offenses)
+    for (const regex of hateSpeechRegexes) {
+        if (regex.test(content)) {
+            flaggedReason = `Matched regex: \`${regex.source}\``;
+            autoPunish = true; // Severe offense, auto-punish
+            break;
+        }
+    }
+
+    if (!flaggedReason) { // If no regex match, check keywords
+        for (const keyword of hateSpeechKeywords) {
+            // Use word boundaries for keywords to avoid partial matches
+            const keywordRegex = new RegExp(`\\b${keyword}\\b`, 'i');
+            if (keywordRegex.test(content)) {
+                flaggedReason = `Matched keyword: \`${keyword}\``;
+                autoPunish = true; // Severe offense, auto-punish
+                break;
+            }
+        }
+    }
+
+    // 2. LLM Check (for general bad language / unsure cases)
+    // Only run LLM if not already flagged by regex/keywords for auto-punishment
+    if (!autoPunish) {
+        const llmOffensive = await isContentOffensive(content);
+        if (llmOffensive === 'yes') {
+            flaggedReason = flaggedReason ? `${flaggedReason} & LLM deemed offensive` : 'LLM deemed offensive';
+            autoPunish = true; // If LLM says 'yes', it's considered a worst offense for auto-punishment
+        }
+    }
+
+    if (flaggedReason) {
+        const messageLink = `https://discord.com/channels/${guild.id}/${message.channel.id}/${message.id}`;
+
+        if (autoPunish) {
+            // Apply automatic punishment (e.g., a short timeout)
+            const timeoutDurationMinutes = 10; // Default 10-minute timeout for auto-moderation
+            const timeoutReason = `Auto-moderation: ${flaggedReason}`;
+
+            try {
+                guildConfig.caseNumber++;
+                await saveGuildConfig(guild.id, guildConfig);
+                const caseNumber = guildConfig.caseNumber;
+
+                await authorMember.timeout(timeoutDurationMinutes * 60 * 1000, timeoutReason);
+                await message.delete().catch(console.error); // Delete the offensive message
+
+                // DM the user
+                const dmEmbed = new EmbedBuilder()
+                    .setTitle('You have been automatically timed out!')
+                    .setDescription(`Your message in **${guild.name}** was flagged by auto-moderation for violating server rules.`)
+                    .addFields(
+                        { name: 'Reason', value: timeoutReason },
+                        { name: 'Duration', value: `${timeoutDurationMinutes} minutes` }
+                    )
+                    .setColor(0xFF0000) // Red for punishment
+                    .setTimestamp();
+                await author.send({ embeds: [dmEmbed] }).catch(console.error);
+
+                await logModerationAction(guild, `Auto-Timeout (${timeoutDurationMinutes}m)`, author, timeoutReason, client.user, caseNumber, `${timeoutDurationMinutes}m`, messageLink);
+                console.log(`Auto-timed out ${author.tag} for: ${timeoutReason}`);
+            } catch (error) {
+                console.error(`Error during auto-timeout for ${author.tag}:`, error);
+                // If auto-punishment fails, still send an alert to mods
+                await sendModAlert(guild, message, `Failed auto-punishment: ${flaggedReason}`, client.user, messageLink, guildConfig.modPingRoleId);
+            }
+        } else {
+            // Send to mod-alert channel if not a severe auto-punish case (e.g., LLM was 'no' or no regex/keyword match)
+            // This path might be less likely now that LLM 'yes' triggers auto-punish.
+            // But it's good to keep for potential future nuanced flagging.
+            await sendModAlert(guild, message, flaggedReason, client.user, messageLink, guildConfig.modPingRoleId);
+        }
     }
 };
 
@@ -294,7 +487,7 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
     const logChannelId = guildConfig.moderationLogChannelId;
 
     // Determine moderator tag correctly
-    const moderatorTag = moderator.user ? moderator.user.tag : moderator.tag;
+    const moderatorTag = moderator.user ? moderator.user.tag : moderator.tag; // Use .tag for User, .username for ClientUser
 
     // Log to Discord channel
     if (logChannelId) {
@@ -305,7 +498,7 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
                 .setDescription(`**Action:** ${actionType}\n**Reason:** ${reason || 'No reason provided.'}`)
                 .addFields(
                     { name: 'User', value: `${targetUser.tag} (${targetUser.id})`, inline: true },
-                    { name: 'Moderator', value: `${moderatorTag} (${moderator.id})`, inline: true } // Corrected moderator tag access
+                    { name: 'Moderator', value: `${moderatorTag} (${moderator.id})`, inline: true }
                 )
                 .setTimestamp()
                 .setColor(0xFFA500); // Orange color for moderation logs
@@ -331,11 +524,11 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
         const moderationRecordsRef = collection(db, `artifacts/${appId}/public/data/guilds/${guild.id}/moderation_records`);
         await addDoc(moderationRecordsRef, {
             caseNumber: caseNumber,
-            actionType: actionType.replace(' (Emoji)', ''), // Remove (Emoji) from actionType for database storage
+            actionType: actionType.replace(' (Emoji)', '').replace(' (Auto)', ''), // Clean actionType for DB
             targetUserId: targetUser.id,
             targetUserTag: targetUser.tag,
             moderatorId: moderator.id,
-            moderatorTag: moderatorTag, // Corrected moderator tag storage
+            moderatorTag: moderatorTag,
             reason: reason,
             duration: duration,
             timestamp: new Date(), // Store as Firestore Timestamp
@@ -373,7 +566,7 @@ const logMessage = async (guild, message, moderator, actionType) => {
             { name: 'Author', value: `${message.author ? message.author.tag : 'Unknown User'} (${message.author ? message.author.id : 'Unknown ID'})`, inline: true },
             { name: 'Channel', value: `<#${message.channel.id}>`, inline: true },
             { name: 'Sent At', value: `<t:${Math.floor(message.createdTimestamp / 1000)}:F>`, inline: true },
-            { name: 'Moderated By', value: `${moderatorTag}`, inline: true } // Corrected moderator tag access
+            { name: 'Moderated By', value: `${moderatorTag}`, inline: true }
         )
         .setTimestamp()
         .setColor(0xADD8E6); // Light blue for message logs
@@ -461,7 +654,7 @@ client.once('ready', async () => {
     }
 });
 
-// Event: Message Creation (for Karma system)
+// Event: Message Creation (for Karma system and Auto-Moderation)
 client.on('messageCreate', async message => {
     // Ignore bot messages and DMs
     if (message.author.bot || !message.guild) return;
@@ -469,6 +662,10 @@ client.on('messageCreate', async message => {
     const guild = message.guild;
     const author = message.author;
 
+    // --- Auto-Moderation Check ---
+    await checkMessageForModeration(message);
+
+    // --- Karma System Update ---
     try {
         // Update author's message count and last activity
         const authorKarmaData = await getOrCreateUserKarma(guild.id, author.id);
@@ -527,7 +724,8 @@ client.on('interactionCreate', async interaction => {
                     .setDescription('Welcome to Karma Bot setup! Use the buttons below to configure your server\'s moderation settings.')
                     .addFields(
                         { name: '1. Set Moderator & Admin Roles', value: 'Define which roles can use moderation commands and are exempt from moderation.' },
-                        { name: '2. Set Moderation Channels', value: 'Specify channels for moderation logs and deleted message logs.' }
+                        { name: '2. Set Moderation Channels', value: 'Specify channels for moderation logs and deleted message logs.' },
+                        { name: '3. Set Auto-Moderation Channels & Role', value: 'Designate a channel for auto-moderation alerts and a role to ping.' } // New setup step
                     )
                     .setColor(0x0099FF);
 
@@ -539,7 +737,11 @@ client.on('interactionCreate', async interaction => {
                             .setStyle(ButtonStyle.Primary),
                         new ButtonBuilder()
                             .setCustomId('setup_channels')
-                            .setLabel('Set Channels')
+                            .setLabel('Set Log Channels') // Renamed for clarity
+                            .setStyle(ButtonStyle.Primary),
+                        new ButtonBuilder() // New button for auto-mod setup
+                            .setCustomId('setup_auto_mod_channels')
+                            .setLabel('Set Auto-Mod Channels')
                             .setStyle(ButtonStyle.Primary),
                     );
 
@@ -671,6 +873,44 @@ client.on('interactionCreate', async interaction => {
                         interaction.followUp({ content: 'You did not respond in time. Channel setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
                     }
                 });
+            } else if (customId === 'setup_auto_mod_channels') { // New setup for auto-mod channels
+                await interaction.followUp({ content: 'Please mention the Auto-Moderation Alert Channel and then the Role to ping (e.g., `#mod-alerts @Moderators`). Type `none` if you don\'t have one of them.', flags: [MessageFlags.Ephemeral] });
+
+                const filter = m => m.author.id === interaction.user.id;
+                const collector = interaction.channel.createMessageCollector({ filter, time: 60000 });
+
+                collector.on('collect', async m => {
+                    const channels = m.mentions.channels;
+                    const roles = m.mentions.roles;
+                    let modAlertChannel = null;
+                    let modPingRole = null;
+
+                    if (channels.size >= 1) {
+                        modAlertChannel = channels.first();
+                    }
+                    if (roles.size >= 1) {
+                        modPingRole = roles.first();
+                    } else if (m.content.toLowerCase() === 'none') {
+                        // User explicitly said 'none'
+                    } else if (channels.size === 0 && roles.size === 0) {
+                        await interaction.followUp({ content: 'Please mention the channel and role correctly or type `none`.', flags: [MessageFlags.Ephemeral] });
+                        return;
+                    }
+
+                    guildConfig.modAlertChannelId = modAlertChannel ? modAlertChannel.id : null;
+                    guildConfig.modPingRoleId = modPingRole ? modPingRole.id : null;
+                    await saveGuildConfig(interaction.guildId, guildConfig);
+
+                    await interaction.followUp({ content: `Auto-Moderation Alert Channel set to: ${modAlertChannel ? modAlertChannel.name : 'None'}\nModerator Ping Role set to: ${modPingRole ? modPingRole.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
+                    collector.stop();
+                    m.delete().catch(console.error);
+                });
+
+                collector.on('end', collected => {
+                    if (collected.size === 0) {
+                        interaction.followUp({ content: 'You did not respond in time. Auto-moderation channel setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
+                    }
+                });
             }
         }
     } catch (error) {
@@ -684,7 +924,7 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// Event: Message reaction added (for emoji moderation)
+// Event: Message reaction added (for emoji moderation and manual flagging)
 client.on('messageReactionAdd', async (reaction, user) => {
     // Ignore bot reactions, DMs, or reactions from the message author themselves
     if (user.bot || !reaction.message.guild) return;
@@ -706,7 +946,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
     const reactorMember = await guild.members.fetch(user.id);
     const guildConfig = await getGuildConfig(guild.id);
 
-    // Check if the reactor has permission
+    // Check if the reactor has permission for moderation/flagging
     if (!hasPermission(reactorMember, guildConfig)) {
         // If user doesn't have permission, remove their reaction
         return reaction.users.remove(user.id).catch(console.error);
@@ -719,74 +959,81 @@ client.on('messageReactionAdd', async (reaction, user) => {
         return reaction.users.remove(user.id).catch(console.error);
     }
 
-    // Check if the target user is exempt
-    if (isExempt(targetMember, guildConfig)) {
-        // If target is exempt, remove the reaction
-        return reaction.users.remove(user.id).catch(console.error);
-    }
+    // Check if the target user is exempt for moderation actions (warn, timeout, kick)
+    // Manual flagging (🔗) can still apply to exempt users for review purposes,
+    // but actual moderation actions should not.
+    const isTargetExempt = isExempt(targetMember, guildConfig);
 
-    // Reason should simply be the message content
-    const reason = `"${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
-    let actionTypeForDB = ''; // To store the action type without " (Emoji)"
-    let actionTaken = false;
-    let duration = null; // For timeout/ban records
+    const reasonContent = `"${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
     const messageLink = `https://discord.com/channels/${guild.id}/${message.channel.id}/${message.id}`;
+    let actionTaken = false;
 
-    // Increment case number and save before action
-    guildConfig.caseNumber++;
-    await saveGuildConfig(guild.id, guildConfig);
-    const caseNumber = guildConfig.caseNumber;
+    // Handle manual flagging first, as it doesn't necessarily lead to immediate punishment
+    if (reaction.emoji.name === '🔗') { // Link emoji for manual flagging
+        if (isTargetExempt) {
+            // Allow flagging exempt users for review, but don't log as a moderation action
+            await sendModAlert(guild, message, `Manually flagged by ${reactorMember.tag} (Exempt User)`, reactorMember.user, messageLink, guildConfig.modPingRoleId);
+            console.log(`Message from exempt user ${targetMember.tag} manually flagged by ${reactorMember.tag}.`);
+        } else {
+            // For non-exempt users, we can consider this a "soft" warning or just an alert
+            await sendModAlert(guild, message, `Manually flagged by ${reactorMember.tag}`, reactorMember.user, messageLink, guildConfig.modPingRoleId);
+            console.log(`Message from ${targetMember.tag} manually flagged by ${reactorMember.tag}.`);
+        }
+        actionTaken = true; // Consider flagging an action, so reaction is removed
+    } else if (!isTargetExempt) { // Proceed with moderation actions only if target is not exempt
+        // Increment case number and save before action for moderation actions
+        guildConfig.caseNumber++;
+        await saveGuildConfig(guild.id, guildConfig);
+        const caseNumber = guildConfig.caseNumber;
 
-    switch (reaction.emoji.name) {
-        case '⚠️': // Warning emoji
-            try {
-                const warnCommand = client.commands.get('warn');
-                if (warnCommand) {
-                    actionTypeForDB = 'Warning';
-                    await warnCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
-                    actionTaken = true;
+        switch (reaction.emoji.name) {
+            case '⚠️': // Warning emoji
+                try {
+                    const warnCommand = client.commands.get('warn');
+                    if (warnCommand) {
+                        await warnCommand.executeEmoji(message, targetMember, reasonContent, reactorMember, caseNumber, { logModerationAction, logMessage, messageLink });
+                        actionTaken = true;
+                    }
+                } catch (error) {
+                    console.error('Error during emoji warn:', error);
                 }
-            } catch (error) {
-                console.error('Error during emoji warn:', error);
-            }
-            break;
-        case '⏰': // Alarm clock emoji (default timeout 1 hour)
-            try {
-                const timeoutCommand = client.commands.get('timeout');
-                if (timeoutCommand) {
-                    actionTypeForDB = 'Timeout';
-                    duration = '1h'; // Default timeout duration
-                    // Pass 60 minutes for default timeout
-                    await timeoutCommand.executeEmoji(message, targetMember, 60, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
-                    actionTaken = true;
+                break;
+            case '⏰': // Alarm clock emoji (default timeout 1 hour)
+                try {
+                    const timeoutCommand = client.commands.get('timeout');
+                    if (timeoutCommand) {
+                        const duration = '1h'; // Default timeout duration
+                        await timeoutCommand.executeEmoji(message, targetMember, 60, reasonContent, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink });
+                        actionTaken = true;
+                    }
+                } catch (error) {
+                    console.error('Error during emoji timeout:', error);
                 }
-            } catch (error) {
-                console.error('Error during emoji timeout:', error);
-            }
-            break;
-        case '👢': // Boot emoji (kick)
-            try {
-                const kickCommand = client.commands.get('kick');
-                if (kickCommand) {
-                    actionTypeForDB = 'Kick';
-                    await kickCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
-                    actionTaken = true;
+                break;
+            case '👢': // Boot emoji (kick)
+                try {
+                    const kickCommand = client.commands.get('kick');
+                    if (kickCommand) {
+                        await kickCommand.executeEmoji(message, targetMember, reasonContent, reactorMember, caseNumber, { logModerationAction, logMessage, messageLink });
+                        actionTaken = true;
+                    }
+                } catch (error) {
+                    console.error('Error during emoji kick:', error);
                 }
-            } catch (error) {
-                console.error('Error during emoji kick:', error);
-            }
-            break;
+                break;
+        }
     }
 
-    // If an action was taken, delete the original message AND the reaction
+    // If an action was taken (moderation or flagging), delete the original message (if applicable) AND the reaction
     if (actionTaken) {
         try {
-            // Ensure the message is not already deleted
-            if (message.deletable) {
+            // Delete the original message only if it was a moderation action (warn, timeout, kick)
+            // For manual flagging (🔗), the message is usually not deleted automatically.
+            if (['⚠️', '⏰', '👢'].includes(reaction.emoji.name) && message.deletable) {
                 await message.delete();
                 console.log(`Message deleted after emoji moderation: ${message.id}`);
             }
-            // Remove the user's reaction after successful moderation
+            // Always remove the user's reaction after successful processing
             await reaction.users.remove(user.id).catch(console.error);
         } catch (error) {
             console.error(`Failed to delete message ${message.id} or reaction:`, error);
@@ -798,6 +1045,9 @@ client.on('messageReactionAdd', async (reaction, user) => {
 client.on('messageReactionAdd', async (reaction, user) => {
     // Ignore bot reactions, DMs, or reactions from the message author themselves
     if (user.bot || !reaction.message.guild || reaction.message.author.id === user.id) return;
+
+    // Ignore if it's one of the moderation emojis, as they are handled above
+    if (['⚠️', '⏰', '👢', '🔗'].includes(reaction.emoji.name)) return;
 
     // Fetch full reaction if partial
     if (reaction.partial) {
