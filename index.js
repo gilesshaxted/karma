@@ -1,44 +1,238 @@
 // index.js
 require('dotenv').config();
-const { Client, Collection, GatewayIntentBits, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionsBitField, MessageFlags } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, Partials, PermissionsBitField } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const { initializeApp } = require('firebase/app');
-const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = require('firebase/auth');
-const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, orderBy, limit, startAfter, getDocs } = require('firebase/firestore');
+const { getAuth, signInAnonymously, signInWithCustomToken } = require('firebase/auth');
+const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, limit, getDocs } = require('firebase/firestore');
 const express = require('express');
+const fetch = require('node-fetch'); // Required for OAuth calls
 
 // Import helper functions
 const { hasPermission, isExempt } = require('./helpers/permissions');
-const logging = require('./logging/logging'); // Import the entire logging module
-const karmaSystem = require('./karma/karmaSystem'); // Import the entire karmaSystem module
-const autoModeration = require('./automoderation/autoModeration'); // Import the entire autoModeration module
-const handleMessageReactionAdd = require('./events/messageReactionAdd'); // Import the event handler
+const logging = require('./logging/logging');
+const karmaSystem = require('./karma/karmaSystem');
+const autoModeration = require('./automoderation/autoModeration');
+const handleMessageReactionAdd = require('./events/messageReactionAdd');
 
-// --- Web Server for Hosting Platforms (e.g., Render) ---
+// --- Discord OAuth Configuration ---
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
+const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI;
+const DISCORD_OAUTH_SCOPES = 'identify guilds'; // Scopes for user identification and guild list
+const DISCORD_BOT_PERMISSIONS = [ // Bot permissions for the invite link
+    PermissionsBitField.Flags.ManageChannels,
+    PermissionsBitField.Flags.ManageRoles,
+    PermissionsBitField.Flags.KickMembers,
+    PermissionsBitField.Flags.BanMembers,
+    PermissionsBitField.Flags.ModerateMembers, // For timeout
+    PermissionsBitField.Flags.ReadMessageHistory,
+    PermissionsBitField.Flags.SendMessages,
+    PermissionsBitField.Flags.ManageMessages
+].reduce((acc, perm) => acc | perm, 0).toString(); // Convert to bitfield string
+
+// --- Express Web Server for Dashboard ---
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(express.json()); // For parsing application/json
+app.use(express.static('public')); // Serve static files from the 'public' directory
+
+// Basic health check endpoint
 app.get('/', (req, res) => {
-    res.send('Karma bot is running and listening for commands!');
+    // If user navigates to root, serve the dashboard HTML
+    res.sendFile(__dirname + '/public/index.html');
 });
 
-app.listen(PORT, () => {
-    console.log(`Web server listening on port ${PORT}`);
+// Discord OAuth Login Route
+app.get('/api/login', (req, res) => {
+    const authorizeUrl = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(DISCORD_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(DISCORD_OAUTH_SCOPES)}&permissions=${DISCORD_BOT_PERMISSIONS}`;
+    res.redirect(authorizeUrl);
 });
 
-// Create a new Discord client with necessary intents
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMessageReactions
-    ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+// Discord OAuth Callback Route
+app.post('/api/token', async (req, res) => {
+    const { code } = req.body;
+    if (!code) {
+        return res.status(400).json({ message: 'No code provided.' });
+    }
+
+    try {
+        const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                client_id: DISCORD_CLIENT_ID,
+                client_secret: DISCORD_CLIENT_SECRET,
+                grant_type: 'authorization_code',
+                code: code,
+                redirect_uri: DISCORD_REDIRECT_URI,
+                scope: DISCORD_OAUTH_SCOPES,
+            }).toString(),
+        });
+
+        const tokenData = await tokenResponse.json();
+        if (!tokenResponse.ok) {
+            console.error('Discord API Token Error:', tokenData);
+            return res.status(tokenResponse.status).json({ message: tokenData.error_description || 'Failed to exchange code for token.' });
+        }
+
+        res.json(tokenData); // Send access_token, refresh_token etc. to frontend
+    } catch (error) {
+        console.error('Error exchanging Discord OAuth code:', error);
+        res.status(500).json({ message: 'Internal server error during OAuth.' });
+    }
 });
 
+// Middleware to verify Discord access token for API routes
+const verifyDiscordToken = async (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'Authorization token required.' });
+    }
+    const accessToken = authHeader.split(' ')[1];
+
+    try {
+        const userResponse = await fetch('https://discord.com/api/users/@me', {
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        const userData = await userResponse.json();
+        if (!userResponse.ok) {
+            console.error('Discord API User Fetch Error:', userData);
+            return res.status(userResponse.status).json({ message: 'Invalid or expired access token.' });
+        }
+        req.discordUser = userData; // Attach Discord user info to request
+        req.discordAccessToken = accessToken; // Attach token for later use if needed
+        next();
+    } catch (error) {
+        console.error('Error verifying Discord token:', error);
+        res.status(500).json({ message: 'Internal server error during token verification.' });
+    }
+};
+
+// API route to get current Discord user info
+app.get('/api/user', verifyDiscordToken, (req, res) => {
+    res.json(req.discordUser);
+});
+
+// API route to get guilds where the bot is present and the user has admin permissions
+app.get('/api/guilds', verifyDiscordToken, async (req, res) => {
+    try {
+        const guildsResponse = await fetch('https://discord.com/api/users/@me/guilds', {
+            headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
+        });
+        const userGuilds = await guildsResponse.json();
+
+        if (!guildsResponse.ok) {
+            console.error('Discord API Guilds Fetch Error:', userGuilds);
+            return res.status(guildsResponse.status).json({ message: 'Failed to fetch user guilds.' });
+        }
+
+        const botGuilds = client.guilds.cache; // Get guilds where the bot is currently in
+
+        // Filter guilds: bot is in it AND user has Administrator permission in that guild
+        const manageableGuilds = userGuilds.filter(userGuild => {
+            const hasAdminPerms = (parseInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
+            return botGuilds.has(userGuild.id) && hasAdminPerms;
+        });
+
+        res.json(manageableGuilds);
+    } catch (error) {
+        console.error('Error fetching user guilds:', error);
+        res.status(500).json({ message: 'Internal server error fetching guilds.' });
+    }
+});
+
+// API route to get a specific guild's roles and channels, and bot's current config
+app.get('/api/guild-config', verifyDiscordToken, async (req, res) => {
+    const guildId = req.query.guildId;
+    if (!guildId) {
+        return res.status(400).json({ message: 'Guild ID is required.' });
+    }
+
+    try {
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) {
+            return res.status(404).json({ message: 'Bot is not in this guild or guild not found.' });
+        }
+
+        // Ensure the logged-in user is actually an admin in this guild
+        const member = await guild.members.fetch(req.discordUser.id).catch(() => null);
+        if (!member || !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return res.status(403).json({ message: 'You do not have administrator permissions in this guild.' });
+        }
+
+        // Fetch roles
+        const roles = guild.roles.cache.map(role => ({ id: role.id, name: role.name }));
+
+        // Fetch channels (only text channels for now, as per setup needs)
+        const channels = guild.channels.cache
+            .filter(channel => channel.isTextBased())
+            .map(channel => ({ id: channel.id, name: channel.name, type: channel.type }));
+
+        // Get current bot config from Firestore
+        const currentConfig = await getGuildConfig(guildId);
+
+        res.json({
+            guildData: {
+                id: guild.id,
+                name: guild.name,
+                roles: roles,
+                channels: channels
+            },
+            currentConfig: currentConfig
+        });
+
+    } catch (error) {
+        console.error(`Error fetching config for guild ${guildId}:`, error);
+        res.status(500).json({ message: 'Internal server error fetching guild config.' });
+    }
+});
+
+// API route to save guild configuration
+app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
+    const guildId = req.query.guildId;
+    const newConfig = req.body;
+
+    if (!guildId || !newConfig) {
+        return res.status(400).json({ message: 'Guild ID and config data are required.' });
+    }
+
+    try {
+        const guild = client.guilds.cache.get(guildId);
+        if (!guild) {
+            return res.status(404).json({ message: 'Bot is not in this guild or guild not found.' });
+        }
+
+        // Ensure the logged-in user is actually an admin in this guild
+        const member = await guild.members.fetch(req.discordUser.id).catch(() => null);
+        if (!member || !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return res.status(403).json({ message: 'You do not have administrator permissions in this guild to save settings.' });
+        }
+
+        // Validate incoming config (basic validation)
+        const validConfig = {};
+        if (newConfig.modRoleId) validConfig.modRoleId = newConfig.modRoleId;
+        if (newConfig.adminRoleId) validConfig.adminRoleId = newConfig.adminRoleId;
+        if (newConfig.moderationLogChannelId) validConfig.moderationLogChannelId = newConfig.moderationLogChannelId;
+        if (newConfig.messageLogChannelId) validConfig.messageLogChannelId = newConfig.messageLogChannelId;
+        if (newConfig.modAlertChannelId) validConfig.modAlertChannelId = newConfig.modAlertChannelId;
+        if (newConfig.modPingRoleId) validConfig.modPingRoleId = newConfig.modPingRoleId;
+
+        await saveGuildConfig(guildId, validConfig);
+        res.json({ message: 'Configuration saved successfully!' });
+
+    } catch (error) {
+        console.error(`Error saving config for guild ${guildId}:`, error);
+        res.status(500).json({ message: 'Internal server error saving config.' });
+    }
+});
+
+
+// --- Discord Bot Client Setup ---
 // Firebase and Google API variables - Initialize them early to prevent 'null' errors
 client.db = null;
 client.auth = null;
@@ -85,45 +279,6 @@ for (const file of karmaCommandFiles) {
 }
 
 
-// Helper function to get guild-specific config from Firestore
-const getGuildConfig = async (guildId) => {
-    // Ensure client.db and client.appId are initialized before use
-    if (!client.db || !client.appId) {
-        console.error('Firestore not initialized yet when getGuildConfig was called.');
-        return null; // Or throw an error, depending on desired behavior
-    }
-    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    const configSnap = await getDoc(configRef);
-
-    if (configSnap.exists()) {
-        return configSnap.data();
-    } else {
-        const defaultConfig = {
-            modRoleId: null,
-            adminRoleId: null,
-            moderationLogChannelId: null,
-            messageLogChannelId: null,
-            modAlertChannelId: null,
-            modPingRoleId: null,
-            caseNumber: 0
-        };
-        await setDoc(configRef, defaultConfig);
-        return defaultConfig;
-    }
-};
-
-// Helper function to save guild-specific config to Firestore
-const saveGuildConfig = async (guildId, newConfig) => {
-    // Ensure client.db and client.appId are initialized before use
-    if (!client.db || !client.appId) {
-        console.error('Firestore not initialized yet when saveGuildConfig was called.');
-        return;
-    }
-    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    await setDoc(configRef, newConfig, { merge: true });
-};
-
-
 // Event: Bot is ready
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
@@ -148,15 +303,15 @@ client.once('ready', async () => {
         }
 
         const firebaseApp = initializeApp(firebaseConfig);
-        client.db = getFirestore(firebaseApp); // Assign directly to client.db
-        client.auth = getAuth(firebaseApp); // Assign directly to client.auth
+        client.db = getFirestore(firebaseApp);
+        client.auth = getAuth(firebaseApp);
 
         if (typeof __initial_auth_token !== 'undefined') {
             await signInWithCustomToken(client.auth, __initial_auth_token);
         } else {
             await signInAnonymously(client.auth);
         }
-        client.userId = client.auth.currentUser?.uid || crypto.randomUUID(); // Assign to client.userId
+        client.userId = client.auth.currentUser?.uid || crypto.randomUUID();
         console.log(`Firebase initialized. User ID: ${client.userId}. App ID for Firestore: ${client.appId}`);
 
     } catch (firebaseError) {
@@ -170,12 +325,12 @@ client.once('ready', async () => {
         commands.push(command.data.toJSON());
     });
 
-    // Add the /setup command
-    commands.push({
-        name: 'setup',
-        description: 'Set up Karma bot roles and logging channels.',
-        default_member_permissions: PermissionsBitField.Flags.Administrator.toString(),
-    });
+    // Removed the in-Discord /setup command as it's replaced by the web dashboard
+    // commands.push({
+    //     name: 'setup',
+    //     description: 'Set up Karma bot roles and logging channels.',
+    //     default_member_permissions: PermissionsBitField.Flags.Administrator.toString(),
+    // });
 
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
 
@@ -215,7 +370,7 @@ client.on('messageCreate', async message => {
     // --- Auto-Moderation Check ---
     await autoModeration.checkMessageForModeration(
         message,
-        client, // Pass client directly
+        client,
         getGuildConfig,
         saveGuildConfig,
         isExempt,
@@ -277,7 +432,6 @@ client.on('interactionCreate', async interaction => {
     // Crucial check: Ensure Firebase and essential services are initialized
     if (!client.db || !client.appId) {
         console.warn('Skipping interaction processing: Firebase not fully initialized yet.');
-        // Attempt to reply if deferred/replied, otherwise just log
         if (interaction.deferred || interaction.replied) {
             await interaction.editReply({ content: 'Bot is still starting up, please try again in a moment.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
         } else {
@@ -292,40 +446,8 @@ client.on('interactionCreate', async interaction => {
 
             const { commandName } = interaction;
 
-            if (commandName === 'setup') {
-                if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                    return interaction.editReply({ content: 'You must have Administrator permissions to use the `/setup` command.' });
-                }
-
-                const embed = new EmbedBuilder()
-                    .setTitle('Karma Bot Setup')
-                    .setDescription('Welcome to Karma Bot setup! Use the buttons below to configure your server\'s moderation settings.')
-                    .addFields(
-                        { name: '1. Set Moderator & Admin Roles', value: 'Define which roles can use moderation commands and are exempt from moderation.' },
-                        { name: '2. Set Moderation Channels', value: 'Specify channels for moderation logs and deleted message logs.' },
-                        { name: '3. Set Auto-Moderation Channels & Role', value: 'Designate a channel for auto-moderation alerts and a role to ping.' }
-                    )
-                    .setColor(0x0099FF);
-
-                const row = new ActionRowBuilder()
-                    .addComponents(
-                        new ButtonBuilder()
-                            .setCustomId('setup_roles')
-                            .setLabel('Set Roles')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('setup_channels')
-                            .setLabel('Set Log Channels')
-                            .setStyle(ButtonStyle.Primary),
-                        new ButtonBuilder()
-                            .setCustomId('setup_auto_mod_channels')
-                            .setLabel('Set Auto-Mod Channels')
-                            .setStyle(ButtonStyle.Primary),
-                    );
-
-                await interaction.editReply({ embeds: [embed], components: [row] });
-                return;
-            }
+            // Removed the in-Discord /setup command handling
+            // if (commandName === 'setup') { ... }
 
             const command = client.commands.get(commandName);
 
@@ -374,118 +496,10 @@ client.on('interactionCreate', async interaction => {
                 return;
             }
 
-            if (customId === 'setup_roles') {
-                await interaction.followUp({ content: 'Please mention the Moderator role and then the Administrator role (e.g., `@Moderator @Administrator`). Type `none` if you don\'t have one of them.', flags: [MessageFlags.Ephemeral] });
-
-                const filter = m => m.author.id === interaction.user.id;
-                const collector = interaction.channel.createMessageCollector({ filter, time: 60000 });
-
-                collector.on('collect', async m => {
-                    const roles = m.mentions.roles;
-                    let modRole = null;
-                    let adminRole = null;
-
-                    if (roles.size >= 1) {
-                        modRole = roles.first();
-                        if (roles.size >= 2) {
-                            adminRole = roles.last();
-                        }
-                    } else if (m.content.toLowerCase() === 'none') {
-                        // User explicitly said 'none' for both
-                    } else {
-                        await interaction.followUp({ content: 'Please mention the roles correctly or type `none`.', flags: [MessageFlags.Ephemeral] });
-                        return;
-                    }
-
-                    guildConfig.modRoleId = modRole ? modRole.id : null;
-                    guildConfig.adminRoleId = adminRole ? adminRole.id : null;
-                    await saveGuildConfig(interaction.guildId, guildConfig);
-
-                    await interaction.followUp({ content: `Moderator role set to: ${modRole ? modRole.name : 'None'}\nAdministrator role set to: ${adminRole ? adminRole.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
-                    collector.stop();
-                    m.delete().catch(console.error);
-                });
-
-                collector.on('end', collected => {
-                    if (collected.size === 0) {
-                        interaction.followUp({ content: 'You did not respond in time. Role setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
-                    }
-                });
-
-            } else if (customId === 'setup_channels') {
-                await interaction.followUp({ content: 'Please mention the Moderation Log Channel and then the Message Log Channel (e.g., `#mod-logs #message-logs`).', flags: [MessageFlags.Ephemeral] });
-
-                const filter = m => m.author.id === interaction.user.id;
-                const collector = interaction.channel.createMessageCollector({ filter, time: 60000 });
-
-                collector.on('collect', async m => {
-                    const channels = m.mentions.channels;
-                    let modLogChannel = null;
-                    let msgLogChannel = null;
-
-                    if (channels.size >= 1) {
-                        modLogChannel = channels.first();
-                        if (channels.size >= 2) {
-                            msgLogChannel = channels.last();
-                        }
-                    } else {
-                        await interaction.followUp({ content: 'Please mention the channels correctly.', flags: [MessageFlags.Ephemeral] });
-                        return;
-                    }
-
-                    guildConfig.moderationLogChannelId = modLogChannel ? modLogChannel.id : null;
-                    guildConfig.messageLogChannelId = msgLogChannel ? msgLogChannel.id : null;
-                    await saveGuildConfig(interaction.guildId, guildConfig);
-
-                    await interaction.followUp({ content: `Moderation Log Channel set to: ${modLogChannel ? modLogChannel.name : 'None'}\nMessage Log Channel set to: ${msgLogChannel ? msgLogChannel.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
-                    collector.stop();
-                    m.delete().catch(console.error);
-                });
-
-                collector.on('end', collected => {
-                    if (collected.size === 0) {
-                        interaction.followUp({ content: 'You did not respond in time. Channel setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
-                    }
-                });
-            } else if (customId === 'setup_auto_mod_channels') {
-                await interaction.followUp({ content: 'Please mention the Auto-Moderation Alert Channel and then the Role to ping (e.g., `#mod-alerts @Moderators`). Type `none` if you don\'t have one of them.', flags: [MessageFlags.Ephemeral] });
-
-                const filter = m => m.author.id === interaction.user.id;
-                const collector = interaction.channel.createMessageCollector({ filter, time: 60000 });
-
-                collector.on('collect', async m => {
-                    const channels = m.mentions.channels;
-                    const roles = m.mentions.roles;
-                    let modAlertChannel = null;
-                    let modPingRole = null;
-
-                    if (channels.size >= 1) {
-                        modAlertChannel = channels.first();
-                    }
-                    if (roles.size >= 1) {
-                        modPingRole = roles.first();
-                    } else if (m.content.toLowerCase() === 'none') {
-                        // User explicitly said 'none'
-                    } else if (channels.size === 0 && roles.size === 0) {
-                        await interaction.followUp({ content: 'Please mention the channel and role correctly or type `none`.', flags: [MessageFlags.Ephemeral] });
-                        return;
-                    }
-
-                    guildConfig.modAlertChannelId = modAlertChannel ? modAlertChannel.id : null;
-                    guildConfig.modPingRoleId = modPingRole ? modPingRole.id : null;
-                    await saveGuildConfig(interaction.guildId, guildConfig);
-
-                    await interaction.followUp({ content: `Auto-Moderation Alert Channel set to: ${modAlertChannel ? modAlertChannel.name : 'None'}\nModerator Ping Role set to: ${modPingRole ? modPingRole.name : 'None'}`, flags: [MessageFlags.Ephemeral] });
-                    collector.stop();
-                    m.delete().catch(console.error);
-                });
-
-                collector.on('end', collected => {
-                    if (collected.size === 0) {
-                        interaction.followUp({ content: 'You did not respond in time. Auto-moderation channel setup cancelled.', flags: [MessageFlags.Ephemeral] }).catch(console.error);
-                    }
-                });
-            }
+            // Removed the in-Discord /setup button handling
+            // if (customId === 'setup_roles') { ... }
+            // else if (customId === 'setup_channels') { ... }
+            // else if (customId === 'setup_auto_mod_channels') { ... }
         }
     } catch (error) {
         console.error('Error during interaction processing:', error);
@@ -502,7 +516,6 @@ client.on('messageReactionAdd', async (reaction, user) => {
     // Crucial check: Ensure Firebase and essential services are initialized
     if (!client.db || !client.appId || !client.googleApiKey) {
         console.warn('Skipping reaction processing: Firebase or API keys not fully initialized yet.');
-        // Attempt to remove reaction if bot is not ready, to avoid confusion
         reaction.users.remove(user.id).catch(e => console.error('Failed to remove reaction for uninitialized bot:', e));
         return;
     }
@@ -511,7 +524,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
     await handleMessageReactionAdd(
         reaction,
         user,
-        client, // Pass client directly
+        client,
         getGuildConfig,
         saveGuildConfig,
         hasPermission,
