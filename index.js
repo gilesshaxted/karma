@@ -518,12 +518,9 @@ const logModerationAction = async (guild, actionType, targetUser, reason, modera
 };
 
 // Helper function to log deleted messages
-const logMessage = async (guild, message, moderator, actionType) => {
-    const guildConfig = await getGuildConfig(guild.id); // Fetch latest config
+const logMessage = async (guild, message, flaggedBy, actionType) => { // Renamed 'moderator' to 'flaggedBy' for clarity
+    const guildConfig = await getGuildConfig(guild.id);
     const logChannelId = guildConfig.messageLogChannelId;
-
-    // Determine moderator tag correctly
-    const moderatorTag = moderator.user ? moderator.user.tag : moderator.username;
 
     if (!logChannelId) {
         console.log(`Message log channel not set for guild ${guild.name}.`);
@@ -537,14 +534,14 @@ const logMessage = async (guild, message, moderator, actionType) => {
     }
 
     const embed = new EmbedBuilder()
-        .setTitle('Message Moderated') // Updated title
+        .setTitle('Message Moderated')
         .setDescription(
             `**Author:** <@${message.author.id}>\n` +
             `**Channel:** <#${message.channel.id}>\n` +
             `**Message:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``
         )
-        .setFooter({ text: `Author ID: ${message.author.id}` }) // Updated footer
-        .setTimestamp(message.createdTimestamp) // Set timestamp to message creation time
+        .setFooter({ text: `Author ID: ${message.author.id}` }) // Footer as per latest explicit request
+        .setTimestamp(message.createdTimestamp) // Timestamp of original message
         .setColor(0xADD8E6); // Light blue for message logs
 
     await logChannel.send({ embeds: [embed] });
@@ -902,6 +899,13 @@ client.on('interactionCreate', async interaction => {
 
 // Event: Message reaction added (for emoji moderation and manual flagging)
 client.on('messageReactionAdd', async (reaction, user) => {
+    // IMMEDIATE CHECK: If user is null or doesn't have an ID, something is wrong.
+    // This guard prevents the TypeError: Cannot read properties of null (reading 'id')
+    if (!user || !user.id) {
+        console.error('messageReactionAdd event received with null or invalid user object:', user);
+        return; // Abort processing if user is invalid
+    }
+
     // Ignore bot reactions, DMs, or reactions from the message author themselves
     if (user.bot || !reaction.message.guild) return;
 
@@ -1009,7 +1013,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
                 await message.delete();
                 console.log(`Message deleted after emoji moderation: ${message.id}`);
                 // Log the deleted message to the message log channel
-                await logMessage(guild, message, user, 'Deleted (Emoji Mod)');
+                await logMessage(guild, message, user, 'Deleted (Emoji Mod)'); // Pass 'user' (the reactor) as flaggedBy
             }
             // Always remove the user's reaction after successful processing
             await reaction.users.remove(user.id).catch(console.error);
@@ -1021,6 +1025,12 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
 // Event: Message Reaction Added (for Karma system)
 client.on('messageReactionAdd', async (reaction, user) => {
+    // IMMEDIATE CHECK: If user is null or doesn't have an ID, something is wrong.
+    if (!user || !user.id) {
+        console.error('messageReactionAdd event received with null or invalid user object in karma section:', user);
+        return; // Abort processing if user is invalid
+    }
+
     // Ignore bot reactions, DMs, or reactions from the message author themselves
     if (user.bot || !reaction.message.guild || reaction.message.author.id === user.id) return;
 
