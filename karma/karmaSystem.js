@@ -1,5 +1,6 @@
 // karma/karmaSystem.js
 const { doc, getDoc, setDoc, updateDoc, collection, query, where, limit, getDocs } = require('firebase/firestore');
+const axios = require('axios'); // Use axios for API calls
 
 /**
  * Helper function to get or create a user's karma document in Firestore.
@@ -80,25 +81,21 @@ const hasRecentModeration = async (guildId, userIdToCheck, db, appId) => {
  */
 const analyzeSentiment = async (text, googleApiKey) => {
     try {
-        let chatHistory = [];
-        chatHistory.push({ role: "user", parts: [{ text: `Analyze the sentiment of the following text and return only one word: "positive", "neutral", or "negative".\n\nText: "${text}"` }] });
+        const chatHistory = [{ role: "user", parts: [{ text: `Analyze the sentiment of the following text and return only one word: "positive", "neutral", or "negative".\n\nText: "${text}"` }] }];
         const payload = { contents: chatHistory };
         const apiKey = googleApiKey || "";
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
-        const response = await fetch(apiUrl, {
-            method: 'POST',
+        const response = await axios.post(apiUrl, payload, { // Use axios.post
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`Gemini API sentiment error: ${response.status} - ${errorText}`);
+        if (response.status !== 200) { // Check response status
+            console.error(`Gemini API sentiment error: ${response.status} - ${response.data}`);
             return 'neutral';
         }
 
-        const result = await response.json();
+        const result = response.data; // axios puts response data in .data
 
         if (result.candidates && result.candidates.length > 0 &&
             result.candidates[0].content && result.candidates[0].content.parts &&
@@ -115,7 +112,7 @@ const analyzeSentiment = async (text, googleApiKey) => {
             return 'neutral';
         }
     } catch (error) {
-        console.error('Error calling Gemini API for sentiment analysis:', error);
+        console.error('Error calling Gemini API for sentiment analysis:', error.response ? error.response.data : error.message);
         return 'neutral';
     }
 };
