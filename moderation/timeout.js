@@ -1,5 +1,5 @@
 // moderation/timeout.js
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js'); // Added MessageFlags
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 // Function to parse duration string (e.g., "1h", "30m", "2d") to milliseconds
 function parseDuration(durationString) {
@@ -41,13 +41,13 @@ module.exports = {
                 .setRequired(false)),
 
     // Execute function for slash command
-    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, MessageFlags }) { // Received MessageFlags
+    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction }) {
         const targetUser = interaction.options.getUser('target');
         const durationString = interaction.options.getString('duration') || '1h'; // Default to 1 hour
         const reason = interaction.options.getString('reason') || 'No reason provided.';
         const moderator = interaction.user;
         const guild = interaction.guild;
-        const guildConfig = await getGuildConfig(guild.id); // Await config fetch
+        const guildConfig = await getGuildConfig(guild.id);
 
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
@@ -73,7 +73,7 @@ module.exports = {
         }
 
         guildConfig.caseNumber++;
-        await saveGuildConfig(guild.id, guildConfig); // Await save
+        await saveGuildConfig(guild.id, guildConfig);
         const caseNumber = guildConfig.caseNumber;
 
         try {
@@ -87,8 +87,8 @@ module.exports = {
                 .setTimestamp();
             await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
 
-            // Log the moderation action
-            await logModerationAction(guild, `Timeout (${durationString})`, targetUser, reason, moderator, caseNumber);
+            // Log the moderation action (passing getGuildConfig, db, appId from index.js via interaction.client context)
+            await logModerationAction(guild, `Timeout (${durationString})`, targetUser, reason, moderator, caseNumber, durationString, null, getGuildConfig, interaction.client.db, interaction.client.appId);
 
             await interaction.editReply({ content: `Successfully timed out ${targetUser.tag} for ${durationString} for: ${reason} (Case #${caseNumber})` });
         } catch (error) {
@@ -101,7 +101,7 @@ module.exports = {
     async executeEmoji(message, targetMember, durationMinutes, reason, moderator, caseNumber, { logModerationAction, logMessage }) {
         const guild = message.guild;
         const targetUser = targetMember.user;
-        const durationMs = durationMinutes * 60 * 1000; // Convert minutes to milliseconds
+        const durationMs = durationMinutes * 60 * 1000;
 
         try {
             await targetMember.timeout(durationMs, reason);
@@ -114,8 +114,8 @@ module.exports = {
                 .setTimestamp();
             await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
 
-            // Log the moderation action
-            await logModerationAction(guild, `Timeout (Emoji - ${durationMinutes}m)`, targetUser, reason, moderator, caseNumber);
+            // Log the moderation action (passing getGuildConfig, db, appId from index.js via message.client context)
+            await logModerationAction(guild, `Timeout (Emoji - ${durationMinutes}m)`, targetUser, reason, moderator, caseNumber, `${durationMinutes}m`, message.url, message.client.getGuildConfig, message.client.db, message.client.appId);
 
             console.log(`Successfully timed out ${targetUser.tag} via emoji for ${durationMinutes} minutes for: ${reason} (Case #${caseNumber})`);
         } catch (error) {
