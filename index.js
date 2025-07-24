@@ -533,14 +533,18 @@ const logMessage = async (guild, message, flaggedBy, actionType) => { // Renamed
         return;
     }
 
+    // Safely get author ID and tag
+    const authorId = message.author ? message.author.id : 'Unknown ID';
+    const authorTag = message.author ? message.author.tag : 'Unknown User';
+
     const embed = new EmbedBuilder()
         .setTitle('Message Moderated')
         .setDescription(
-            `**Author:** <@${message.author.id}>\n` +
+            `**Author:** <@${authorId}>\n` + // Use safely obtained authorId
             `**Channel:** <#${message.channel.id}>\n` +
             `**Message:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``
         )
-        .setFooter({ text: `Author ID: ${message.author.id}` }) // Footer as per latest explicit request
+        .setFooter({ text: `Author ID: ${authorId}` }) // Use safely obtained authorId
         .setTimestamp(message.createdTimestamp) // Timestamp of original message
         .setColor(0xADD8E6); // Light blue for message logs
 
@@ -1008,7 +1012,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
     if (actionTaken) {
         try {
             // Delete the original message only if it was a moderation action (warn, timeout, kick)
-            // For manual flagging (🔗), the message is usually not deleted automatically.
+            // For manual flagging (�), the message is usually not deleted automatically.
             if (['⚠️', '⏰', '👢'].includes(reaction.emoji.name) && message.deletable) {
                 await message.delete();
                 console.log(`Message deleted after emoji moderation: ${message.id}`);
@@ -1066,3 +1070,4 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
 // Log in to Discord with your client's token
 client.login(process.env.DISCORD_BOT_TOKEN);
+�
