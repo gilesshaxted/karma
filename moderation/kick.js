@@ -78,7 +78,7 @@ module.exports = {
     },
 
     // Execute function for emoji-based moderation
-    async executeEmoji(message, targetMember, reason, moderator, caseNumber, { logModerationAction, logMessage }) {
+    async executeEmoji(message, targetMember, reason, moderator, caseNumber, { logModerationAction, logMessage, getGuildConfig, db, appId }) { // Added getGuildConfig, db, appId
         const guild = message.guild;
         const targetUser = targetMember.user;
 
@@ -95,7 +95,7 @@ module.exports = {
                     if (msg.deletable) {
                         await msg.delete().catch(console.error);
                         // Pass getGuildConfig to logMessage
-                        await logMessage(guild, msg, moderator, 'Deleted (Emoji Kick)', message.client.getGuildConfig);
+                        await logMessage(guild, msg, moderator, 'Deleted (Emoji Kick)', getGuildConfig);
                     }
                 }
                 console.log(`Deleted ${messagesFromTarget.size} messages from ${targetUser.tag} for emoji kick.`);
@@ -109,8 +109,8 @@ module.exports = {
                 .setTimestamp();
             await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
 
-            // Log the moderation action (passing getGuildConfig, db, appId from index.js via message.client context)
-            await logModerationAction(guild, 'Kick (Emoji)', targetUser, reason, moderator, caseNumber, null, message.url, message.client.getGuildConfig, message.client.db, message.client.appId);
+            // Log the moderation action (passing getGuildConfig, db, appId)
+            await logModerationAction(guild, 'Kick (Emoji)', targetUser, reason, moderator, caseNumber, null, message.url, getGuildConfig, db, appId);
 
             console.log(`Successfully kicked ${targetUser.tag} via emoji for: ${reason} (Case #${caseNumber})`);
         } catch (error) {
