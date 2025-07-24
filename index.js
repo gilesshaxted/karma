@@ -21,7 +21,7 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
-// Create a collection to store commands - MOVED TO TOP AND INITIALIZED HERE
+// Create a collection to store commands
 client.commands = new Collection();
 
 // Firebase and Google API variables - Initialize them early to prevent 'null' errors
