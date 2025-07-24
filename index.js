@@ -48,7 +48,9 @@ const moderationCommandFiles = [
     'kick.js',
     'ban.js',
     'warnings.js', // New command
-    'warning.js' // New command
+    'warning.js', // New command
+    'clearwarnings.js', // New command
+    'clearwarning.js' // New command
 ];
 
 const karmaCommandFiles = [
@@ -560,7 +562,8 @@ client.on('interactionCreate', async interaction => {
                 getOrCreateUserKarma, // Pass karma helpers
                 updateUserKarmaData,
                 calculateAndAwardKarma,
-                analyzeSentiment
+                analyzeSentiment,
+                client // Pass client to access users for clearwarning
             });
         } else if (interaction.isButton()) {
             const { customId } = interaction;
@@ -671,7 +674,7 @@ client.on('interactionCreate', async interaction => {
 
 // Event: Message reaction added (for emoji moderation)
 client.on('messageReactionAdd', async (reaction, user) => {
-    // Ignore bot reactions and DMs
+    // Ignore bot reactions, DMs, or reactions from the message author themselves
     if (user.bot || !reaction.message.guild) return;
 
     // When a reaction is received, check if the structure is partial
@@ -708,108 +711,4 @@ client.on('messageReactionAdd', async (reaction, user) => {
     if (isExempt(targetMember, guildConfig)) {
         // If target is exempt, remove the reaction
         return reaction.users.remove(user.id).catch(console.error);
-    }
-
-    // Reason should simply be the message content
-    const reason = `"${message.content || 'No message content'}" from channel <#${message.channel.id}>`;
-    let actionTypeForDB = ''; // To store the action type without " (Emoji)"
-    let actionTaken = false;
-    let duration = null; // For timeout/ban records
-    const messageLink = `https://discord.com/channels/${guild.id}/${message.channel.id}/${message.id}`;
-
-    // Increment case number and save before action
-    guildConfig.caseNumber++;
-    await saveGuildConfig(guild.id, guildConfig);
-    const caseNumber = guildConfig.caseNumber;
-
-    switch (reaction.emoji.name) {
-        case '⚠️': // Warning emoji
-            try {
-                const warnCommand = client.commands.get('warn');
-                if (warnCommand) {
-                    actionTypeForDB = 'Warning';
-                    await warnCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
-                    actionTaken = true;
-                }
-            } catch (error) {
-                console.error('Error during emoji warn:', error);
-            }
-            break;
-        case '⏰': // Alarm clock emoji (default timeout 1 hour)
-            try {
-                const timeoutCommand = client.commands.get('timeout');
-                if (timeoutCommand) {
-                    actionTypeForDB = 'Timeout';
-                    duration = '1h'; // Default timeout duration
-                    // Pass 60 minutes for default timeout
-                    await timeoutCommand.executeEmoji(message, targetMember, 60, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
-                    actionTaken = true;
-                }
-            } catch (error) {
-                console.error('Error during emoji timeout:', error);
-            }
-            break;
-        case '👢': // Boot emoji (kick)
-            try {
-                const kickCommand = client.commands.get('kick');
-                if (kickCommand) {
-                    actionTypeForDB = 'Kick';
-                    await kickCommand.executeEmoji(message, targetMember, reason, reactorMember, caseNumber, { logModerationAction, logMessage, duration, messageLink }); // Pass duration and messageLink
-                    actionTaken = true;
-                }
-            } catch (error) {
-                console.error('Error during emoji kick:', error);
-            }
-            break;
-    }
-
-    // If an action was taken, delete the original message AND the reaction
-    if (actionTaken) {
-        try {
-            // Ensure the message is not already deleted
-            if (message.deletable) {
-                await message.delete();
-                console.log(`Message deleted after emoji moderation: ${message.id}`);
-            }
-            // Remove the user's reaction after successful moderation
-            await reaction.users.remove(user.id).catch(console.error);
-        } catch (error) {
-            console.error(`Failed to delete message ${message.id} or reaction:`, error);
-        }
-    }
-});
-
-// Event: Message Reaction Added (for Karma system)
-client.on('messageReactionAdd', async (reaction, user) => {
-    // Ignore bot reactions, DMs, or reactions from the message author themselves
-    if (user.bot || !reaction.message.guild || reaction.message.author.id === user.id) return;
-
-    // Fetch full reaction if partial
-    if (reaction.partial) {
-        try {
-            await reaction.fetch();
-        } catch (error) {
-            console.error('Something went wrong when fetching the reaction:', error);
-            return;
-        }
-    }
-
-    const message = reaction.message;
-    const guild = message.guild;
-    const originalAuthor = message.author;
-
-    try {
-        const originalAuthorKarmaData = await getOrCreateUserKarma(guild.id, originalAuthor.id);
-        await updateUserKarmaData(guild.id, originalAuthor.id, {
-            reactionsReceivedToday: (originalAuthorKarmaData.reactionsReceivedToday || 0) + 1,
-            lastActivityDate: new Date()
-        });
-        await calculateAndAwardKarma(guild, originalAuthor, { ...originalAuthorKarmaData, reactionsReceivedToday: (originalAuthorKarmaData.reactionsReceivedToday || 0) + 1 });
-    } catch (error) {
-        console.error(`Error in messageReactionAdd karma tracking for ${originalAuthor.tag}:`, error);
-    }
-});
-
-
-// Log in to Discord with your client's token
-client.login(process.env.DISCORD_BOT_TOKEN);
+  
