@@ -299,23 +299,8 @@ const isContentOffensive = async (text) => {
     }
 };
 
-// Regex patterns for specific hate speech/slurs
-const hateSpeechRegexes = [
-    // N-word variations (simplified, explicit)
-    /(?i)\b(?:nigger|niggar|niggur|niga|nigga|nigg|n1gger|n!gger|n1gg@r|n!gg@r|n i g g e r|n 1 g g e r|n ! g g e r)\b/,
-    // Fag variations (simplified, explicit)
-    /(?i)\b(?:fag|faggot|f@g|f@ggot|f a g|f @ g)\b/,
-    // Queer variations (simplified, explicit)
-    /(?i)\b(?:queer|qweer|qu33r|q@eer|q u e e r|q w e e r)\b/,
-    // Kike variations (simplified, explicit)
-    /(?i)\b(?:kike|k1ke|k!ke|kik3|k i k e|k 1 k e)\b/,
-    // Chink variations (simplified, explicit)
-    /(?i)\b(?:chink|ch1nk|ch!nk|chenck|ch3nck|chanck|c h i n k|c h 1 n k)\b/,
-    // Spic variations (simplified, explicit)
-    /(?i)\b(?:spic|spick|sp@c|sp1c|s p i c|s p i c k)\b/,
-    // Wetback variations (simplified, explicit)
-    /(?i)\b(?:wetback|w3tback|w e t b a c k)\b/
-];
+// Regex patterns for specific hate speech/slurs (EMPTY - relying on LLM and keywords)
+const hateSpeechRegexes = [];
 
 // Specific keywords for hate speech/slurs
 const hateSpeechKeywords = [
@@ -381,29 +366,19 @@ const checkMessageForModeration = async (message) => {
     let flaggedReason = null;
     let autoPunish = false; // Flag for immediate punishment
 
-    // 1. Regex and Keyword Checks (for definite offenses)
-    for (const regex of hateSpeechRegexes) {
-        if (regex.test(content)) {
-            flaggedReason = `Matched regex: \`${regex.source}\``;
+    // 1. Keyword Checks (for definite offenses)
+    for (const keyword of hateSpeechKeywords) {
+        // Use word boundaries for keywords to avoid partial matches
+        const keywordRegex = new RegExp(`\\b${keyword}\\b`, 'i');
+        if (keywordRegex.test(content)) {
+            flaggedReason = `Matched keyword: \`${keyword}\``;
             autoPunish = true; // Severe offense, auto-punish
             break;
         }
     }
 
-    if (!flaggedReason) { // If no regex match, check keywords
-        for (const keyword of hateSpeechKeywords) {
-            // Use word boundaries for keywords to avoid partial matches
-            const keywordRegex = new RegExp(`\\b${keyword}\\b`, 'i');
-            if (keywordRegex.test(content)) {
-                flaggedReason = `Matched keyword: \`${keyword}\``;
-                autoPunish = true; // Severe offense, auto-punish
-                break;
-            }
-        }
-    }
-
     // 2. LLM Check (for general bad language / unsure cases)
-    // Only run LLM if not already flagged by regex/keywords for auto-punishment
+    // Only run LLM if not already flagged by keywords for auto-punishment
     if (!autoPunish) {
         const llmOffensive = await isContentOffensive(content);
         if (llmOffensive === 'yes') {
