@@ -1,5 +1,5 @@
 // moderation/warn.js
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js'); // Added MessageFlags
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 module.exports = {
     // Slash command data
@@ -16,12 +16,12 @@ module.exports = {
                 .setRequired(false)), // Reason is optional
 
     // Execute function for slash command
-    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, MessageFlags }) { // Received MessageFlags
+    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction }) {
         const targetUser = interaction.options.getUser('target');
         const reason = interaction.options.getString('reason') || 'No reason provided.';
         const moderator = interaction.user;
         const guild = interaction.guild;
-        const guildConfig = await getGuildConfig(guild.id); // Await config fetch
+        const guildConfig = await getGuildConfig(guild.id);
 
         // Fetch the target member to check roles
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
@@ -36,7 +36,7 @@ module.exports = {
         }
 
         guildConfig.caseNumber++;
-        await saveGuildConfig(guild.id, guildConfig); // Await save
+        await saveGuildConfig(guild.id, guildConfig);
         const caseNumber = guildConfig.caseNumber;
 
         try {
@@ -46,10 +46,10 @@ module.exports = {
                 .setDescription(`**Server:** ${guild.name}\n**Reason:** ${reason}\n**Moderator:** ${moderator.tag}`)
                 .setColor(0xFFA500)
                 .setTimestamp();
-            await targetUser.send({ embeds: [dmEmbed] }).catch(console.error); // Catch DM errors silently
+            await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
 
-            // Log the moderation action
-            await logModerationAction(guild, 'Warning', targetUser, reason, moderator, caseNumber);
+            // Log the moderation action (passing getGuildConfig, db, appId from index.js via interaction.client context)
+            await logModerationAction(guild, 'Warning', targetUser, reason, moderator, caseNumber, null, null, getGuildConfig, interaction.client.db, interaction.client.appId);
 
             await interaction.editReply({ content: `Successfully warned ${targetUser.tag} for: ${reason} (Case #${caseNumber})` });
         } catch (error) {
@@ -70,10 +70,10 @@ module.exports = {
                 .setDescription(`**Server:** ${guild.name}\n**Reason:** ${reason}\n**Moderator:** ${moderator.tag}`)
                 .setColor(0xFFA500)
                 .setTimestamp();
-            await targetUser.send({ embeds: [dmEmbed] }).catch(console.error); // Catch DM errors silently
+            await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
 
-            // Log the moderation action
-            await logModerationAction(guild, 'Warning (Emoji)', targetUser, reason, moderator, caseNumber);
+            // Log the moderation action (passing getGuildConfig, db, appId from index.js via message.client context)
+            await logModerationAction(guild, 'Warning (Emoji)', targetUser, reason, moderator, caseNumber, null, message.url, message.client.getGuildConfig, message.client.db, message.client.appId);
 
             console.log(`Successfully warned ${targetUser.tag} via emoji for: ${reason} (Case #${caseNumber})`);
         } catch (error) {
