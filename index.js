@@ -21,14 +21,14 @@ const client = new Client({
     partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
+// Create a collection to store commands - MOVED TO TOP AND INITIALIZED HERE
+client.commands = new Collection();
+
 // Firebase and Google API variables - Initialize them early to prevent 'null' errors
 client.db = null;
 client.auth = null;
 client.appId = null;
 client.googleApiKey = null;
-
-// Create a collection to store commands - MOVED HERE
-client.commands = new Collection();
 
 
 // Import helper functions
@@ -211,7 +211,7 @@ app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
             return res.status(404).json({ message: 'Bot is not in this guild or guild not found.' });
         }
 
-        // Ensure the logged-in user is actually an admin in this guild
+        // Ensure the logged-in user is actually an an admin in this guild
         const member = await guild.members.fetch(req.discordUser.id).catch(() => null);
         if (!member || !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return res.status(403).json({ message: 'You do not have administrator permissions in this guild to save settings.' });
