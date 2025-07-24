@@ -9,12 +9,31 @@ const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query,
 const express = require('express');
 const axios = require('axios'); // Changed from node-fetch to axios
 
+// Create a new Discord client with necessary intents - MOVED TO TOP
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMessageReactions
+    ],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+});
+
+// Firebase and Google API variables - Initialize them early to prevent 'null' errors
+client.db = null;
+client.auth = null;
+client.appId = null;
+client.googleApiKey = null;
+
+
 // Import helper functions
 const { hasPermission, isExempt } = require('./helpers/permissions');
-const logging = require('./logging/logging'); // Import the entire logging module
-const karmaSystem = require('./karma/karmaSystem'); // Import the entire karmaSystem module
-const autoModeration = require('./automoderation/autoModeration'); // Import the entire autoModeration module
-const handleMessageReactionAdd = require('./events/messageReactionAdd'); // Import the event handler
+const logging = require('./logging/logging');
+const karmaSystem = require('./karma/karmaSystem');
+const autoModeration = require('./automoderation/autoModeration');
+const handleMessageReactionAdd = require('./events/messageReactionAdd');
 
 // --- Discord OAuth Configuration ---
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
@@ -212,53 +231,6 @@ app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
         res.status(error.response?.status || 500).json({ message: 'Internal server error saving config.' });
     }
 });
-
-
-// --- Discord Bot Client Setup ---
-// Firebase and Google API variables - Initialize them early to prevent 'null' errors
-client.db = null;
-client.auth = null;
-client.appId = null;
-client.googleApiKey = null;
-
-
-// Create a collection to store commands
-client.commands = new Collection();
-
-// Dynamically load command files
-const moderationCommandFiles = [
-    'warn.js',
-    'timeout.js',
-    'kick.js',
-    'ban.js',
-    'warnings.js',
-    'warning.js',
-    'clearwarnings.js',
-    'clearwarning.js'
-];
-
-const karmaCommandFiles = [
-    'karma.js',
-    'leaderboard.js'
-];
-
-for (const file of moderationCommandFiles) {
-    const command = require(`./moderation/${file}`);
-    if ('data' in command && 'execute' in command) {
-        client.commands.set(command.data.name, command);
-    } else {
-        console.log(`[WARNING] The moderation command in ${file} is missing a required "data" or "execute" property.`);
-    }
-}
-
-for (const file of karmaCommandFiles) {
-    const command = require(`./karma/${file}`);
-    if ('data' in command && 'execute' in command) {
-        client.commands.set(command.data.name, command);
-    } else {
-        console.log(`[WARNING] The karma command in ${file} is missing a required "data" or "execute" property.`);
-    }
-}
 
 
 // Event: Bot is ready
