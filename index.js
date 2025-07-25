@@ -23,7 +23,7 @@ app.get('/', (req, res) => {
 
 // Discord OAuth Login Route
 app.get('/api/login', (req, res) => {
-    const authorizeUrl = `https://discord.com/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.DISCORD_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent('identify guilds')}&permissions=${[
+    const authorizeUrl = `[https://discord.com/oauth2/authorize?client_id=$](https://discord.com/oauth2/authorize?client_id=$){process.env.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.DISCORD_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent('identify guilds')}&permissions=${[
         PermissionsBitField.Flags.ManageChannels,
         PermissionsBitField.Flags.ManageRoles,
         PermissionsBitField.Flags.KickMembers,
@@ -44,7 +44,7 @@ app.post('/api/token', async (req, res) => {
     }
 
     try {
-        const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
+        const tokenResponse = await axios.post('[https://discord.com/api/oauth2/token](https://discord.com/api/oauth2/token)', new URLSearchParams({
             client_id: process.env.DISCORD_CLIENT_ID,
             client_secret: process.env.DISCORD_CLIENT_SECRET,
             grant_type: 'authorization_code',
@@ -73,7 +73,7 @@ const verifyDiscordToken = async (req, res, next) => {
     const accessToken = authHeader.split(' ')[1];
 
     try {
-        const userResponse = await axios.get('https://discord.com/api/users/@me', {
+        const userResponse = await axios.get('[https://discord.com/api/users/@me](https://discord.com/api/users/@me)', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         req.discordUser = userResponse.data;
@@ -100,7 +100,7 @@ app.get('/api/guilds', verifyDiscordToken, async (req, res) => {
              return res.status(503).json({ message: 'Bot not fully initialized. Please try again in a moment.' });
         }
 
-        const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
+        const guildsResponse = await axios.get('[https://discord.com/api/users/@me/guilds](https://discord.com/api/users/@me/guilds)', {
             headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
         });
         const userGuilds = guildsResponse.data;
@@ -142,6 +142,7 @@ app.get('/api/guild-config', verifyDiscordToken, async (req, res) => {
             .filter(channel => channel.isTextBased())
             .map(channel => ({ id: channel.id, name: channel.name, type: channel.type }));
 
+        // Get current bot config from Firestore
         const currentConfig = await getGuildConfig(guildId);
 
         res.json({
@@ -195,11 +196,6 @@ app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
         console.error(`Error saving config for guild ${guildId}:`, error.response ? error.response.data : error.message);
         res.status(error.response?.status || 500).json({ message: 'Internal server error saving config.' });
     }
-});
-
-// Start the Express server FIRST
-app.listen(PORT, '0.0.0.0', () => { // Explicitly bind to 0.0.0.0
-    console.log(`Web server listening on port ${PORT}`);
 });
 
 
