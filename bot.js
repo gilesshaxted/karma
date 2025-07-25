@@ -1,4 +1,4 @@
-// bot.js - Contains all Discord bot logic and exports named functions/client
+// bot.js - Contains all Discord bot logic and exports a single initialization function
 require('dotenv').config();
 const { Client, Collection, GatewayIntentBits, Partials, PermissionsBitField, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
@@ -147,6 +147,7 @@ for (const file of karmaCommandFiles) {
 /**
  * Initializes the Discord bot, Firebase, and registers event listeners.
  * Returns the fully ready Discord client instance.
+ * This is the primary export of bot.js.
  * @returns {Promise<Client>} The fully initialized Discord client.
  */
 const initializeAndGetClient = async () => {
