@@ -307,20 +307,40 @@ client.on('interactionCreate', async interaction => {
 
     try {
         if (interaction.isCommand()) {
-            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+            // Defer reply immediately, but handle potential failure
+            let deferred = false;
+            try {
+                await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+                deferred = true;
+            } catch (deferError) {
+                if (deferError.code === 10062) { // Unknown interaction
+                    console.warn(`Interaction ${interaction.id} already expired or unknown when deferring. Skipping.`);
+                    return; // Stop processing this interaction
+                }
+                console.error(`Error deferring reply for interaction ${interaction.id}:`, deferError);
+                // If defer fails for other reasons, still try to reply normally later
+            }
 
             const { commandName } = interaction;
 
             const command = client.commands.get(commandName);
 
             if (!command) {
-                return interaction.editReply({ content: 'No command matching that name was found.' });
+                if (deferred) {
+                    return interaction.editReply({ content: 'No command matching that name was found.' });
+                } else {
+                    return interaction.reply({ content: 'No command matching that name was found.', ephemeral: true });
+                }
             }
 
             const guildConfig = await getGuildConfig(interaction.guildId);
 
             if (!hasPermission(interaction.member, guildConfig)) {
-                return interaction.editReply({ content: 'You do not have permission to use this command.' });
+                if (deferred) {
+                    return interaction.editReply({ content: 'You do not have permission to use this command.' });
+                } else {
+                    return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+                }
             }
 
             // Pass all necessary dependencies to command execute functions
@@ -341,7 +361,19 @@ client.on('interactionCreate', async interaction => {
                 client
             });
         } else if (interaction.isButton()) {
-            await interaction.deferUpdate();
+            // Defer update immediately, but handle potential failure
+            let deferred = false;
+            try {
+                await interaction.deferUpdate(); // Use deferUpdate for buttons
+                deferred = true;
+            } catch (deferError) {
+                if (deferError.code === 10062) { // Unknown interaction
+                    console.warn(`Button interaction ${interaction.id} already expired or unknown when deferring. Skipping.`);
+                    return; // Stop processing this interaction
+                }
+                console.error(`Error deferring button update for interaction ${interaction.id}:`, deferError);
+                // If defer fails for other reasons, we can't do much for buttons.
+            }
 
             const { customId } = interaction;
             const guildConfig = await getGuildConfig(interaction.guildId);
@@ -360,10 +392,12 @@ client.on('interactionCreate', async interaction => {
         }
     } catch (error) {
         console.error('Error during interaction processing:', error);
+        // Fallback if an unexpected error occurs after initial defer/reply attempts
         if (interaction.deferred || interaction.replied) {
-            await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
+            await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply after error:', e));
         } else {
-            await interaction.reply({ content: 'An unexpected error occurred while processing your command.', ephemeral: true }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
+            // This path should ideally not be hit for commands if deferReply is handled correctly
+            await interaction.reply({ content: 'An unexpected error occurred while processing your command.', ephemeral: true }).catch(e => console.error('Failed to reply after error:', e));
         }
     }
 });
