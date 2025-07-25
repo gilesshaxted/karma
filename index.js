@@ -95,8 +95,6 @@ app.get('/api/user', verifyDiscordToken, (req, res) => {
 // API route to get guilds where the bot is present and the user has admin permissions
 app.get('/api/guilds', verifyDiscordToken, async (req, res) => {
     try {
-        // This route depends on the Discord client being ready to access client.guilds.cache
-        // botClient is now imported from bot.js
         if (!botClient || !botClient.guilds || botClient.guilds.cache.size === 0) {
              return res.status(503).json({ message: 'Bot not fully initialized. Please try again in a moment.' });
         }
@@ -220,11 +218,11 @@ let botClient; // Declare botClient here so it's accessible in API routes
 // Use an async IIFE to start the the Discord bot process
 (async () => {
     try {
-        // Dynamically import bot.js to get the client instance and start it
         const botModule = require('./bot');
         botClient = botModule.client; // Assign the client instance from bot.js
-        botClient.getGuildConfig = botModule.getGuildConfig; // Attach getGuildConfig for API routes
-        botClient.saveGuildConfig = botModule.saveGuildConfig; // Attach saveGuildConfig for API routes
+        // Attach helper functions from botModule to botClient instance for API routes
+        botClient.getGuildConfig = botModule.getGuildConfig;
+        botClient.saveGuildConfig = botModule.saveGuildConfig;
         
         // The botModule already calls client.login() internally
         console.log("Discord bot initialization initiated from bot.js");
