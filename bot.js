@@ -17,7 +17,8 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.GuildPresences, // Required for userUpdate, guildMemberUpdate (presence changes)
-        GatewayIntentBits.GuildModeration // Required for audit log, guildScheduledEvent*
+        GatewayIntentBits.GuildModeration, // Required for audit log, guildScheduledEvent*
+        GatewayIntentBits.GuildMessageTyping // Often useful for bot interactions, though not strictly for logging
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember, Partials.User] // Added GuildMember, User for member/user updates
 });
@@ -306,12 +307,12 @@ client.on('messageCreate', async message => {
 });
 
 client.on('messageDelete', async message => {
-    if (!message.guild) return;
+    if (!message.guild) return; // Ignore DMs
     await messageLogHandler.handleMessageDelete(message, client.getGuildConfig, logging.logMessage);
 });
 
 client.on('messageUpdate', async (oldMessage, newMessage) => {
-    if (!newMessage.guild) return;
+    if (!newMessage.guild) return; // Ignore DMs
     await messageLogHandler.handleMessageUpdate(oldMessage, newMessage, client.getGuildConfig, logging.logMessage);
 });
 
