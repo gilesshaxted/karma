@@ -24,7 +24,8 @@ const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([ // Bot permissions for
     PermissionsBitField.Flags.ModerateMembers,
     PermissionsBitField.Flags.ReadMessageHistory,
     PermissionsBitField.Flags.SendMessages,
-    PermissionsBitField.Flags.ManageMessages
+    PermissionsBitField.Flags.ManageMessages,
+    PermissionsBitField.Flags.ViewAuditLog // Added for admin logging
 ]).bitfield.toString(); // Get the BigInt bitfield and convert to string
 
 // Basic health check endpoint (serves dashboard HTML)
@@ -201,6 +202,10 @@ app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
         if (newConfig.messageLogChannelId) validConfig.messageLogChannelId = newConfig.messageLogChannelId;
         if (newConfig.modAlertChannelId) validConfig.modAlertChannelId = newConfig.modAlertChannelId;
         if (newConfig.modPingRoleId) validConfig.modPingRoleId = newConfig.modPingRoleId;
+        if (newConfig.memberLogChannelId) validConfig.memberLogChannelId = newConfig.memberLogChannelId; // New
+        if (newConfig.adminLogChannelId) validConfig.adminLogChannelId = newConfig.adminLogChannelId;     // New
+        if (newConfig.joinLeaveLogChannelId) validConfig.joinLeaveLogChannelId = newConfig.joinLeaveLogChannelId; // New
+        if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;     // New
 
         // Save config using botClient's saveGuildConfig
         await botClient.saveGuildConfig(guildId, validConfig);
