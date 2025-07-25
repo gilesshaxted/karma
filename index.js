@@ -202,10 +202,10 @@ app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
         if (newConfig.messageLogChannelId) validConfig.messageLogChannelId = newConfig.messageLogChannelId;
         if (newConfig.modAlertChannelId) validConfig.modAlertChannelId = newConfig.modAlertChannelId;
         if (newConfig.modPingRoleId) validConfig.modPingRoleId = newConfig.modPingRoleId;
-        if (newConfig.memberLogChannelId) validConfig.memberLogChannelId = newConfig.memberLogChannelId; // New
-        if (newConfig.adminLogChannelId) validConfig.adminLogChannelId = newConfig.adminLogChannelId;     // New
-        if (newConfig.joinLeaveLogChannelId) validConfig.joinLeaveLogChannelId = newConfig.joinLeaveLogChannelId; // New
-        if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;     // New
+        if (newConfig.memberLogChannelId) validConfig.memberLogChannelId = newConfig.memberLogChannelId;
+        if (newConfig.adminLogChannelId) validConfig.adminLogChannelId = newConfig.adminLogChannelId;
+        if (newConfig.joinLeaveLogChannelId) validConfig.joinLeaveLogChannelId = newConfig.joinLeaveLogChannelId;
+        if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
 
         // Save config using botClient's saveGuildConfig
         await botClient.saveGuildConfig(guildId, validConfig);
@@ -231,12 +231,7 @@ let botClient; // Declare botClient here so it's accessible in API routes
     try {
         const botModule = require('./bot');
         // Await the bot's full readiness before assigning it
-        botClient = await botModule.getReadyClient(); // bot.js now exports a function that returns the ready client
-
-        // Now that botClient is guaranteed to be ready, attach its helper functions
-        // These functions were already exported by bot.js, so we just need to reference them
-        botClient.getGuildConfig = botModule.getGuildConfig;
-        botClient.saveGuildConfig = botModule.saveGuildConfig;
+        botClient = await botModule.initializeAndGetClient(); // bot.js now exports a function that returns the ready client
         
         console.log("Discord bot initialization completed and ready for API use.");
     } catch (error) {
