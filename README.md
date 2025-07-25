@@ -44,9 +44,15 @@ Karma is a powerful and intuitive Discord moderation bot designed to help server
 
     * **Moderator Alerts**: If the bot detects potentially problematic content but isn't entirely "sure," it will repost the message content, author, and a link to the original message in a designated `mod-alert` channel. This alert will also ping a configurable generic moderator role.
 
-* **Automated Logging**: All moderation actions are logged to a designated moderation log channel with detailed embeds, including case numbers. Deleted messages (especially those from kicks/bans) are logged to a separate message log channel with a clear embed format.
+* **Expanded Automated Logging**: Karma now provides comprehensive logging for various server activities to dedicated channels:
+    * **Moderation Logs**: All moderation actions (`/warn`, `/timeout`, `/kick`, `/ban`, emoji moderation) are logged to a designated `moderation-log` channel.
+    * **Message Logs**: Edits and deletions of messages are logged to a `message-log` channel, along with messages deleted by moderation actions.
+    * **Member Logs**: Changes to member profiles (username, nickname, avatar) and role assignments/removals are logged to a `member-log` channel.
+    * **Admin Logs**: Comprehensive logging for server-level changes including channel creation/deletion/updates (including permissions), role creation/deletion/updates, emoji creation/deletion/updates, and scheduled event creation/deletion/updates.
+    * **Join/Leave Logs**: Tracks when members join or leave the guild, logged to a `join-leave-log` channel.
+    * **Boost Notifications**: Announces guild boosts in a designated `boost-notify` channel.
 
-* **Firestore Integration**: All bot configurations (moderator/admin roles, logging channels, case numbers) are persistently stored in Google Firestore, ensuring data is saved across restarts and accessible from any host.
+* **Firestore Integration**: All bot configurations (roles, channels, case numbers) are persistently stored in Google Firestore, ensuring data is saved across restarts and accessible from any host.
 
 * **LLM-Powered Sentiment Analysis**: The bot uses a Large Language Model (LLM) to analyze the sentiment of replies. Negative replies will prevent karma gain for the replied-to user.
 
@@ -97,6 +103,8 @@ Karma is designed to be efficient, user-friendly, and highly effective in mainta
         * `Send Messages`
 
         * `Manage Messages`
+
+        * `View Audit Log` (Recommended for comprehensive admin logging)
 
     * Copy the generated URL and paste it into your browser to invite the bot to your server.
 
