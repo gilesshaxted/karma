@@ -15,9 +15,11 @@ const client = new Client({
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMessageReactions
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildPresences, // Required for userUpdate, guildMemberUpdate (presence changes)
+        GatewayIntentBits.GuildModeration // Required for audit log, guildScheduledEvent*
     ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember, Partials.User] // Added GuildMember, User for member/user updates
 });
 
 // Create a collection to store commands
@@ -33,10 +35,18 @@ client.userId = null; // Also store userId on client
 
 // Import helper functions (relative to bot.js)
 const { hasPermission, isExempt } = require('./helpers/permissions');
-const logging = require('./logging/logging');
-const karmaSystem = require('./karma/karmaSystem');
-const autoModeration = require('./automoderation/autoModeration');
-const handleMessageReactionAdd = require('./events/messageReactionAdd');
+const logging = require('./logging/logging'); // Core logging functions
+const karmaSystem = require('./karma/karmaSystem'); // Karma system functions
+const autoModeration = require('./automoderation/autoModeration'); // Auto-moderation functions
+const handleMessageReactionAdd = require('./events/messageReactionAdd'); // Emoji reaction handler
+
+// New logging handlers
+const messageLogHandler = require('./logging/messageLogHandler');
+const memberLogHandler = require('./logging/memberLogHandler');
+const adminLogHandler = require('./logging/adminLogHandler');
+const joinLeaveLogHandler = require('./logging/joinLeaveLogHandler');
+const boostLogHandler = require('./logging/boostLogHandler');
+
 
 // --- Discord OAuth Configuration (Bot's Permissions for Invite) ---
 const DISCORD_APPLICATION_ID = process.env.DISCORD_APPLICATION_ID;
@@ -48,7 +58,8 @@ const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([
     PermissionsBitField.Flags.ModerateMembers,
     PermissionsBitField.Flags.ReadMessageHistory,
     PermissionsBitField.Flags.SendMessages,
-    PermissionsBitField.Flags.ManageMessages
+    PermissionsBitField.Flags.ManageMessages,
+    PermissionsBitField.Flags.ViewAuditLog // Added for admin logging
 ]).bitfield.toString();
 
 // Helper function to get guild-specific config from Firestore
@@ -71,6 +82,10 @@ const getGuildConfig = async (guildId) => {
             messageLogChannelId: null,
             modAlertChannelId: null,
             modPingRoleId: null,
+            memberLogChannelId: null, // New: Member log channel
+            adminLogChannelId: null,   // New: Admin log channel
+            joinLeaveLogChannelId: null, // New: Join/Leave log channel
+            boostLogChannelId: null,   // New: Boost log channel
             caseNumber: 0
         };
         await setDoc(configRef, defaultConfig);
@@ -125,7 +140,7 @@ for (const file of karmaCommandFiles) {
     }
 }
 
-// New function to start the bot and return a promise that resolves when ready
+// Promise to track bot readiness and Firebase initialization
 const getReadyClient = async () => {
     return new Promise(async (resolve, reject) => {
         client.once('ready', async () => {
