@@ -405,7 +405,6 @@ client.on('interactionCreate', async interaction => {
         if (acknowledged) {
             await interaction.editReply({ content: 'Bot is still starting up, please try again in a moment.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
         } else {
-            // This path should ideally not be hit if initial deferReply is robust
             console.error('Interaction not acknowledged and bot not ready. Cannot respond.');
         }
         return;
