@@ -147,7 +147,6 @@ for (const file of karmaCommandFiles) {
 /**
  * Initializes the Discord bot, Firebase, and registers event listeners.
  * Returns the fully ready Discord client instance.
- * This is the primary export of bot.js.
  * @returns {Promise<Client>} The fully initialized Discord client.
  */
 const initializeAndGetClient = async () => {
