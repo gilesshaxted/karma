@@ -153,7 +153,7 @@ app.get('/api/guild-config', verifyDiscordToken, async (req, res) => {
             .map(channel => ({ id: channel.id, name: channel.name, type: channel.type }));
 
         // Get current bot config from Firestore using botClient's getGuildConfig
-        const currentConfig = await botClient.getGuildConfig(guildId);
+        const currentConfig = await botGetGuildConfig(guildId); // Use named import
 
         res.json({
             guildData: {
@@ -208,7 +208,7 @@ app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
         if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
 
         // Save config using botClient's saveGuildConfig
-        await botClient.saveGuildConfig(guildId, validConfig);
+        await botSaveGuildConfig(guildId, validConfig); // Use named import
         res.json({ message: 'Configuration saved successfully!' });
 
     } catch (error) {
@@ -225,15 +225,23 @@ app.listen(PORT, '0.0.0.0', () => {
 
 // --- Start the Discord Bot (Imported from bot.js) ---
 let botClient; // Declare botClient here so it's accessible in API routes
+let botGetGuildConfig; // Declare named import for getGuildConfig
+let botSaveGuildConfig; // Declare named import for saveGuildConfig
 
 // Use an async IIFE to start the the Discord bot process
 (async () => {
     try {
-        const botModule = require('./bot');
-        // Await the bot's full readiness before assigning it
-        botClient = await botModule.initializeAndGetClient(); // bot.js now exports a function that returns the ready client
+        const botModule = require('./bot'); // Import the module
+        // Destructure the named exports
+        const { client: importedClient, getGuildConfig: importedGetGuildConfig, saveGuildConfig: importedSaveGuildConfig } = botModule;
+
+        // Assign to the variables declared outside
+        botClient = importedClient;
+        botGetGuildConfig = importedGetGuildConfig;
+        botSaveGuildConfig = importedSaveGuildConfig;
         
-        console.log("Discord bot initialization completed and ready for API use.");
+        // The botModule already calls client.login() internally
+        console.log("Discord bot initialization initiated from bot.js");
     } catch (error) {
         console.error("Failed to start Discord bot from bot.js:", error);
         process.exit(1); // Exit if bot fails to start
