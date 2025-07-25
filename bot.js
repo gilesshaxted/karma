@@ -1,4 +1,4 @@
-// bot.js - Contains all Discord bot logic and exports the client and helper functions
+// bot.js - Contains all Discord bot logic and exports a single initialization function
 require('dotenv').config();
 const { Client, Collection, GatewayIntentBits, Partials, PermissionsBitField, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
@@ -26,7 +26,7 @@ const client = new Client({
 // Create a collection to store commands
 client.commands = new Collection();
 
-// Firebase and Google API variables - will be initialized in client.once('ready')
+// Firebase and Google API variables - will be initialized in initializeAndGetClient
 client.db = null;
 client.auth = null;
 client.appId = null;
@@ -144,75 +144,92 @@ for (const file of karmaCommandFiles) {
     }
 }
 
-// Event: Bot is ready (This is where Firebase and commands are initialized)
-client.once('ready', async () => {
-    console.log(`Logged in as ${client.user.tag}!`);
+/**
+ * Initializes the Discord bot, Firebase, and registers event listeners.
+ * Returns the fully ready Discord client instance.
+ * This is the primary export of bot.js.
+ * @returns {Promise<Client>} The fully initialized Discord client.
+ */
+const initializeAndGetClient = async () => {
+    return new Promise(async (resolve, reject) => {
+        client.once('ready', async () => {
+            console.log(`Logged in as ${client.user.tag}!`);
 
-    // Initialize Firebase and Google API Key
-    try {
-        client.appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        client.googleApiKey = process.env.GOOGLE_API_KEY || "";
+            // Initialize Firebase and Google API Key
+            try {
+                client.appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                client.googleApiKey = process.env.GOOGLE_API_KEY || "";
 
-        const firebaseConfig = {
-            apiKey: process.env.FIREBASE_API_KEY,
-            authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-            projectId: process.env.FIREBASE_PROJECT_ID,
-            storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-            appId: process.env.FIREBASE_APP_ID
-        };
+                const firebaseConfig = {
+                    apiKey: process.env.FIREBASE_API_KEY,
+                    authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+                    projectId: process.env.FIREBASE_PROJECT_ID,
+                    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+                    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+                    appId: process.env.FIREBASE_APP_ID
+                };
 
-        if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId || !firebaseConfig.authDomain) {
-            console.error('Missing essential Firebase environment variables. Please check your .env or hosting configuration.');
-            process.exit(1);
-        }
+                if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId || !firebaseConfig.authDomain) {
+                    console.error('Missing essential Firebase environment variables. Please check your .env or hosting configuration.');
+                    process.exit(1);
+                }
 
-        const firebaseApp = initializeApp(firebaseConfig);
-        client.db = getFirestore(firebaseApp);
-        client.auth = getAuth(firebaseApp);
+                const firebaseApp = initializeApp(firebaseConfig);
+                client.db = getFirestore(firebaseApp);
+                client.auth = getAuth(firebaseApp);
 
-        if (typeof __initial_auth_token !== 'undefined') {
-            await signInWithCustomToken(client.auth, __initial_auth_token);
-        } else {
-            await signInAnonymously(client.auth);
-        }
-        client.userId = client.auth.currentUser?.uid || crypto.randomUUID();
-        console.log(`Firebase initialized. User ID: ${client.userId}. App ID for Firestore: ${client.appId}`);
+                if (typeof __initial_auth_token !== 'undefined') {
+                    await signInWithCustomToken(client.auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(client.auth);
+                }
+                client.userId = client.auth.currentUser?.uid || crypto.randomUUID();
+                console.log(`Firebase initialized. User ID: ${client.userId}. App ID for Firestore: ${client.appId}`);
 
-    } catch (firebaseError) {
-        console.error('Failed to initialize Firebase:', firebaseError);
-        process.exit(1);
-    }
+            } catch (firebaseError) {
+                console.error('Failed to initialize Firebase:', firebaseError);
+                return reject(firebaseError);
+            }
 
-    // Register slash commands
-    const commands = [];
-    client.commands.forEach(command => {
-        commands.push(command.data.toJSON());
+            // Register slash commands
+            const commands = [];
+            client.commands.forEach(command => {
+                commands.push(command.data.toJSON());
+            });
+
+            const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+
+            try {
+                console.log('Started refreshing application (/) commands.');
+                if (!DISCORD_APPLICATION_ID) {
+                    console.error('DISCORD_APPLICATION_ID environment variable is not set. Slash commands might not register.');
+                    return;
+                }
+
+                await rest.put(
+                    Routes.applicationCommands(DISCORD_APPLICATION_ID),
+                    { body: commands },
+                );
+
+                console.log('Successfully reloaded application (/) commands.');
+            } catch (error) {
+                console.error('Error refreshing application commands:', error);
+            }
+
+            // Attach getGuildConfig and saveGuildConfig directly to the client instance
+            client.getGuildConfig = getGuildConfig;
+            client.saveGuildConfig = saveGuildConfig;
+
+            resolve(client);
+        });
+
+        // Log in to Discord with the client's token
+        client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
+            console.error("Discord login failed:", err);
+            reject(err);
+        });
     });
-
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
-
-    try {
-        console.log('Started refreshing application (/) commands.');
-        if (!DISCORD_APPLICATION_ID) {
-            console.error('DISCORD_APPLICATION_ID environment variable is not set. Slash commands might not register.');
-            return;
-        }
-
-        await rest.put(
-            Routes.applicationCommands(DISCORD_APPLICATION_ID),
-            { body: commands },
-        );
-
-        console.log('Successfully reloaded application (/) commands.');
-    } catch (error) {
-        console.error('Error refreshing application commands:', error);
-    }
-
-    // Attach getGuildConfig and saveGuildConfig directly to the client instance
-    client.getGuildConfig = getGuildConfig;
-    client.saveGuildConfig = saveGuildConfig;
-});
+};
 
 
 // --- Event Listeners for the Discord Bot ---
@@ -390,15 +407,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
 
 // Log in to Discord with the client's token (This is now handled inside initializeAndGetClient)
-client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
-    console.error("Discord login failed immediately:", err);
-    // Do not exit here, let the process continue for the web server
-});
+// client.login(process.env.DISCORD_BOT_TOKEN);
 
-// Export client and helper functions for index.js to use in API routes
-module.exports = {
-    client,
-    getGuildConfig,
-    saveGuildConfig,
-    // No longer exporting initializeAndGetClient as a function
-};
+// Export the initialization function as the default export
+module.exports = initializeAndGetClient;
