@@ -9,52 +9,7 @@ const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query,
 const express = require('express');
 const axios = require('axios'); // Changed from node-fetch to axios
 
-// Create a new Discord client with necessary intents
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMessageReactions
-    ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction]
-});
-
-// Create a collection to store commands
-client.commands = new Collection();
-
-// Firebase and Google API variables - Initialize them early to prevent 'null' errors
-client.db = null;
-client.auth = null;
-client.appId = null;
-client.googleApiKey = null;
-
-
-// Import helper functions
-const { hasPermission, isExempt } = require('./helpers/permissions');
-const logging = require('./logging/logging');
-const karmaSystem = require('./karma/karmaSystem');
-const autoModeration = require('./automoderation/autoModeration');
-const handleMessageReactionAdd = require('./events/messageReactionAdd');
-
-// --- Discord OAuth Configuration ---
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
-const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI;
-const DISCORD_OAUTH_SCOPES = 'identify guilds'; // Scopes for user identification and guild list
-const DISCORD_BOT_PERMISSIONS = [ // Bot permissions for the invite link
-    PermissionsBitField.Flags.ManageChannels,
-    PermissionsBitField.Flags.ManageRoles,
-    PermissionsBitField.Flags.KickMembers,
-    PermissionsBitField.Flags.BanMembers,
-    PermissionsBitField.Flags.ModerateMembers, // For timeout
-    PermissionsBitField.Flags.ReadMessageHistory,
-    PermissionsBitField.Flags.SendMessages,
-    PermissionsBitField.Flags.ManageMessages
-].reduce((acc, perm) => acc | perm, 0n).toString(); // Changed 0 to 0n for BigInt compatibility
-
-// --- Express Web Server for Dashboard ---
+// --- Express Web Server for Dashboard (Moved to top for early port binding) ---
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -63,13 +18,21 @@ app.use(express.static('public')); // Serve static files from the 'public' direc
 
 // Basic health check endpoint
 app.get('/', (req, res) => {
-    // If user navigates to root, serve the dashboard HTML
     res.sendFile(__dirname + '/public/index.html');
 });
 
 // Discord OAuth Login Route
 app.get('/api/login', (req, res) => {
-    const authorizeUrl = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(DISCORD_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(DISCORD_OAUTH_SCOPES)}&permissions=${DISCORD_BOT_PERMISSIONS}`;
+    const authorizeUrl = `https://discord.com/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.DISCORD_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent('identify guilds')}&permissions=${[
+        PermissionsBitField.Flags.ManageChannels,
+        PermissionsBitField.Flags.ManageRoles,
+        PermissionsBitField.Flags.KickMembers,
+        PermissionsBitField.Flags.BanMembers,
+        PermissionsBitField.Flags.ModerateMembers,
+        PermissionsBitField.Flags.ReadMessageHistory,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.ManageMessages
+    ].reduce((acc, perm) => acc | perm, 0n).toString()}`;
     res.redirect(authorizeUrl);
 });
 
@@ -82,19 +45,19 @@ app.post('/api/token', async (req, res) => {
 
     try {
         const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
-            client_id: DISCORD_CLIENT_ID,
-            client_secret: DISCORD_CLIENT_SECRET,
+            client_id: process.env.DISCORD_CLIENT_ID,
+            client_secret: process.env.DISCORD_CLIENT_SECRET,
             grant_type: 'authorization_code',
             code: code,
-            redirect_uri: DISCORD_REDIRECT_URI,
-            scope: DISCORD_OAUTH_SCOPES,
+            redirect_uri: process.env.DISCORD_REDIRECT_URI,
+            scope: 'identify guilds',
         }), {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
         });
 
-        res.json(tokenResponse.data); // axios puts response data in .data
+        res.json(tokenResponse.data);
     } catch (error) {
         console.error('Error exchanging Discord OAuth code:', error.response ? error.response.data : error.message);
         res.status(error.response?.status || 500).json({ message: error.response?.data?.error_description || 'Internal server error during OAuth.' });
@@ -113,7 +76,7 @@ const verifyDiscordToken = async (req, res, next) => {
         const userResponse = await axios.get('https://discord.com/api/users/@me', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
-        req.discordUser = userResponse.data; // axios puts response data in .data
+        req.discordUser = userResponse.data;
         req.discordAccessToken = accessToken;
         next();
     } catch (error) {
@@ -130,16 +93,22 @@ app.get('/api/user', verifyDiscordToken, (req, res) => {
 // API route to get guilds where the bot is present and the user has admin permissions
 app.get('/api/guilds', verifyDiscordToken, async (req, res) => {
     try {
+        // Ensure client.guilds.cache is populated before trying to access it
+        if (!client.guilds.cache || client.guilds.cache.size === 0) {
+             // This might happen if bot hasn't fully logged in yet.
+             // For dashboard, we need the bot to be ready to know its guilds.
+             return res.status(503).json({ message: 'Bot not fully initialized. Please try again in a moment.' });
+        }
+
         const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
             headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
         });
-        const userGuilds = guildsResponse.data; // axios puts response data in .data
+        const userGuilds = guildsResponse.data;
 
-        const botGuilds = client.guilds.cache; // Get guilds where the bot is currently in
+        const botGuilds = client.guilds.cache;
 
-        // Filter guilds: bot is in it AND user has Administrator permission in that guild
         const manageableGuilds = userGuilds.filter(userGuild => {
-            const hasAdminPerms = (parseInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
+            const hasAdminPerms = (BigInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
             return botGuilds.has(userGuild.id) && hasAdminPerms;
         });
 
@@ -163,21 +132,16 @@ app.get('/api/guild-config', verifyDiscordToken, async (req, res) => {
             return res.status(404).json({ message: 'Bot is not in this guild or guild not found.' });
         }
 
-        // Ensure the logged-in user is actually an admin in this guild
         const member = await guild.members.fetch(req.discordUser.id).catch(() => null);
         if (!member || !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return res.status(403).json({ message: 'You do not have administrator permissions in this guild.' });
         }
 
-        // Fetch roles
         const roles = guild.roles.cache.map(role => ({ id: role.id, name: role.name }));
-
-        // Fetch channels (only text channels for now, as per setup needs)
         const channels = guild.channels.cache
             .filter(channel => channel.isTextBased())
             .map(channel => ({ id: channel.id, name: channel.name, type: channel.type }));
 
-        // Get current bot config from Firestore
         const currentConfig = await getGuildConfig(guildId);
 
         res.json({
@@ -211,13 +175,11 @@ app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
             return res.status(404).json({ message: 'Bot is not in this guild or guild not found.' });
         }
 
-        // Ensure the logged-in user is actually an an admin in this guild
         const member = await guild.members.fetch(req.discordUser.id).catch(() => null);
         if (!member || !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return res.status(403).json({ message: 'You do not have administrator permissions in this guild to save settings.' });
         }
 
-        // Validate incoming config (basic validation)
         const validConfig = {};
         if (newConfig.modRoleId) validConfig.modRoleId = newConfig.modRoleId;
         if (newConfig.adminRoleId) validConfig.adminRoleId = newConfig.adminRoleId;
@@ -234,6 +196,50 @@ app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
         res.status(error.response?.status || 500).json({ message: 'Internal server error saving config.' });
     }
 });
+
+// Start the Express server FIRST
+app.listen(PORT, '0.0.0.0', () => { // Explicitly bind to 0.0.0.0
+    console.log(`Web server listening on port ${PORT}`);
+});
+
+
+// --- Discord Bot Client Setup (Happens after web server starts) ---
+
+// Helper function to get guild-specific config from Firestore
+const getGuildConfig = async (guildId) => {
+    if (!client.db || !client.appId) {
+        console.error('Firestore not initialized yet when getGuildConfig was called.');
+        return null;
+    }
+    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
+    const configSnap = await getDoc(configRef);
+
+    if (configSnap.exists()) {
+        return configSnap.data();
+    } else {
+        const defaultConfig = {
+            modRoleId: null,
+            adminRoleId: null,
+            moderationLogChannelId: null,
+            messageLogChannelId: null,
+            modAlertChannelId: null,
+            modPingRoleId: null,
+            caseNumber: 0
+        };
+        await setDoc(configRef, defaultConfig);
+        return defaultConfig;
+    }
+};
+
+// Helper function to save guild-specific config to Firestore
+const saveGuildConfig = async (guildId, newConfig) => {
+    if (!client.db || !client.appId) {
+        console.error('Firestore not initialized yet when saveGuildConfig was called.');
+        return;
+    }
+    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
+    await setDoc(configRef, newConfig, { merge: true });
+};
 
 
 // Event: Bot is ready
