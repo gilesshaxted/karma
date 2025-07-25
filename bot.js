@@ -8,7 +8,7 @@ const { getAuth, signInAnonymously, signInWithCustomToken } = require('firebase/
 const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, limit, getDocs } = require('firebase/firestore');
 const axios = require('axios'); // Use axios for API calls
 
-// Create a new Discord client with necessary intents
+// Create a new Discord client instance
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -23,14 +23,15 @@ const client = new Client({
 // Create a collection to store commands
 client.commands = new Collection();
 
-// Firebase and Google API variables - Initialize them early to prevent 'null' errors
+// Firebase and Google API variables - will be initialized in client.once('ready')
 client.db = null;
 client.auth = null;
 client.appId = null;
 client.googleApiKey = null;
+client.userId = null; // Also store userId on client
 
 
-// Import helper functions
+// Import helper functions (relative to bot.js)
 const { hasPermission, isExempt } = require('./helpers/permissions');
 const logging = require('./logging/logging');
 const karmaSystem = require('./karma/karmaSystem');
@@ -51,6 +52,7 @@ const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([
 ]).bitfield.toString();
 
 // Helper function to get guild-specific config from Firestore
+// This function needs to be exported for index.js to use in API routes
 const getGuildConfig = async (guildId) => {
     if (!client.db || !client.appId) {
         console.error('Firestore not initialized yet when getGuildConfig was called.');
@@ -77,6 +79,7 @@ const getGuildConfig = async (guildId) => {
 };
 
 // Helper function to save guild-specific config to Firestore
+// This function needs to be exported for index.js to use in API routes
 const saveGuildConfig = async (guildId, newConfig) => {
     if (!client.db || !client.appId) {
         console.error('Firestore not initialized yet when saveGuildConfig was called.');
@@ -173,7 +176,6 @@ client.once('ready', async () => {
 
     try {
         console.log('Started refreshing application (/) commands.');
-        // Use DISCORD_APPLICATION_ID from environment for command registration
         if (!DISCORD_APPLICATION_ID) {
             console.error('DISCORD_APPLICATION_ID environment variable is not set. Slash commands might not register.');
             return;
@@ -207,7 +209,7 @@ client.on('messageCreate', async message => {
     // --- Auto-Moderation Check ---
     await autoModeration.checkMessageForModeration(
         message,
-        client,
+        client, // Pass client for its properties
         getGuildConfig,
         saveGuildConfig,
         isExempt,
@@ -329,15 +331,13 @@ client.on('interactionCreate', async interaction => {
                 }
                 return;
             }
-
-            // Removed setup buttons as they are handled by the dashboard
         }
     } catch (error) {
         console.error('Error during interaction processing:', error);
         if (interaction.deferred || interaction.replied) {
-            await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply after error:', e));
+            await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
         } else {
-            await interaction.reply({ content: 'An unexpected error occurred while processing your command.', ephemeral: true }).catch(e => console.error('Failed to reply after error:', e));
+            await interaction.reply({ content: 'An unexpected error occurred while processing your command.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
         }
     }
 });
@@ -369,3 +369,10 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
 // Log in to Discord with your client's token
 client.login(process.env.DISCORD_BOT_TOKEN);
+
+// Export client and helper functions for index.js to use in API routes
+module.exports = {
+    client,
+    getGuildConfig,
+    saveGuildConfig,
+};
