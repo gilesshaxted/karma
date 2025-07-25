@@ -1,6 +1,6 @@
 // bot.js - Contains all Discord bot logic
 require('dotenv').config();
-const { Client, Collection, GatewayIntentBits, Partials, PermissionsBitField } = require('discord.js');
+const { Client, Collection, GatewayIntentBits, Partials, PermissionsBitField, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
 const { initializeApp } = require('firebase/app');
@@ -335,9 +335,9 @@ client.on('interactionCreate', async interaction => {
     } catch (error) {
         console.error('Error during interaction processing:', error);
         if (interaction.deferred || interaction.replied) {
-            await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
+            await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply after error:', e));
         } else {
-            await interaction.reply({ content: 'An unexpected error occurred while processing your command.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
+            await interaction.reply({ content: 'An unexpected error occurred while processing your command.', ephemeral: true }).catch(e => console.error('Failed to reply after error:', e));
         }
     }
 });
@@ -369,10 +369,3 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
 // Log in to Discord with your client's token
 client.login(process.env.DISCORD_BOT_TOKEN);
-
-// Export client and helper functions for index.js to use in API routes
-module.exports = {
-    client,
-    getGuildConfig,
-    saveGuildConfig,
-};
