@@ -149,13 +149,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Populate role selects
                 populateSelect(document.getElementById('mod-role-select'), guildData.roles, currentConfig.modRoleId);
                 populateSelect(document.getElementById('admin-role-select'), guildData.roles, currentConfig.adminRoleId);
+                populateSelect(document.getElementById('mod-ping-role-select'), guildData.roles, currentConfig.modPingRoleId);
 
                 // Populate channel selects
                 const textChannels = guildData.channels.filter(c => c.type === 0); // Type 0 is GUILD_TEXT
                 populateSelect(document.getElementById('mod-log-channel-select'), textChannels, currentConfig.moderationLogChannelId);
                 populateSelect(document.getElementById('message-log-channel-select'), textChannels, currentConfig.messageLogChannelId);
                 populateSelect(document.getElementById('mod-alert-channel-select'), textChannels, currentConfig.modAlertChannelId);
-                populateSelect(document.getElementById('mod-ping-role-select'), guildData.roles, currentConfig.modPingRoleId);
+                populateSelect(document.getElementById('member-log-channel-select'), textChannels, currentConfig.memberLogChannelId); // New
+                populateSelect(document.getElementById('admin-log-channel-select'), textChannels, currentConfig.adminLogChannelId);     // New
+                populateSelect(document.getElementById('join-leave-log-channel-select'), textChannels, currentConfig.joinLeaveLogChannelId); // New
+                populateSelect(document.getElementById('boost-log-channel-select'), textChannels, currentConfig.boostLogChannelId);     // New
+
 
                 configSection.style.display = 'block';
                 saveStatus.textContent = '';
@@ -199,6 +204,10 @@ document.addEventListener('DOMContentLoaded', () => {
             messageLogChannelId: document.getElementById('message-log-channel-select').value || null,
             modAlertChannelId: document.getElementById('mod-alert-channel-select').value || null,
             modPingRoleId: document.getElementById('mod-ping-role-select').value || null,
+            memberLogChannelId: document.getElementById('member-log-channel-select').value || null, // New
+            adminLogChannelId: document.getElementById('admin-log-channel-select').value || null,     // New
+            joinLeaveLogChannelId: document.getElementById('join-leave-log-channel-select').value || null, // New
+            boostLogChannelId: document.getElementById('boost-log-channel-select').value || null,     // New
         };
 
         try {
