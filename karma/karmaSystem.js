@@ -180,10 +180,60 @@ const calculateAndAwardKarma = async (guild, user, karmaData, db, appId, googleA
     return karmaAwarded;
 };
 
+/**
+ * Adds karma points to a user.
+ * @param {string} guildId - The ID of the guild.
+ * @param {User} targetUser - The user to add karma to.
+ * @param {number} points - The number of points to add.
+ * @param {object} db - Firestore database instance.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @returns {Promise<number>} The new karma total.
+ */
+const addKarmaPoints = async (guildId, targetUser, points, db, appId) => {
+    const karmaData = await getOrCreateUserKarma(guildId, targetUser.id, db, appId);
+    const newKarma = karmaData.karmaPoints + points;
+    await updateUserKarmaData(guildId, targetUser.id, { karmaPoints: newKarma }, db, appId);
+    return newKarma;
+};
+
+/**
+ * Subtracts karma points from a user.
+ * @param {string} guildId - The ID of the guild.
+ * @param {User} targetUser - The user to subtract karma from.
+ * @param {number} points - The number of points to subtract.
+ * @param {object} db - Firestore database instance.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @returns {Promise<number>} The new karma total.
+ */
+const subtractKarmaPoints = async (guildId, targetUser, points, db, appId) => {
+    const karmaData = await getOrCreateUserKarma(guildId, targetUser.id, db, appId);
+    const newKarma = karmaData.karmaPoints - points;
+    await updateUserKarmaData(guildId, targetUser.id, { karmaPoints: newKarma }, db, appId);
+    return newKarma;
+};
+
+/**
+ * Sets a user's karma points to a specific total.
+ * @param {string} guildId - The ID of the guild.
+ * @param {User} targetUser - The user to set karma for.
+ * @param {number} newTotal - The new total karma points.
+ * @param {object} db - Firestore database instance.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @returns {Promise<number>} The new karma total.
+ */
+const setKarmaPoints = async (guildId, targetUser, newTotal, db, appId) => {
+    await updateUserKarmaData(guildId, targetUser.id, { karmaPoints: newTotal }, db, appId);
+    return newTotal;
+};
+
+
 module.exports = {
     getOrCreateUserKarma,
     updateUserKarmaData,
     hasRecentModeration,
     analyzeSentiment,
-    calculateAndAwardKarma
+    calculateAndAwardKarma,
+    addKarmaPoints,
+    subtractKarmaPoints,
+    setKarmaPoints
 };
