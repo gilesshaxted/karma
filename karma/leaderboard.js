@@ -1,47 +1,46 @@
 // karma/leaderboard.js
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
-const { collection, query, orderBy, limit, getDocs } = require('firebase/firestore');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { collection, query, orderBy, getDocs } = require('firebase/firestore');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('leaderboard')
-        .setDescription('Shows the top users by karma points.'),
+        .setDescription('Displays the top Karma earners in the guild.'),
+    async execute(interaction, { db, appId, getGuildConfig }) {
+        await interaction.deferReply();
 
-    async execute(interaction, { db, appId, MessageFlags }) {
-        const guildId = interaction.guild.id;
+        const guild = interaction.guild;
+        const guildId = guild.id;
 
         try {
             const karmaUsersRef = collection(db, `artifacts/${appId}/public/data/guilds/${guildId}/karma_users`);
-            const q = query(
-                karmaUsersRef,
-                orderBy('karmaPoints', 'desc'),
-                limit(10) // Top 10 users
-            );
-
+            const q = query(karmaUsersRef, orderBy('karmaPoints', 'desc'));
             const querySnapshot = await getDocs(q);
-            const leaderboard = querySnapshot.docs.map(doc => doc.data());
+
+            if (querySnapshot.empty) {
+                return interaction.editReply('No Karma data found for this guild yet. Start interacting!');
+            }
+
+            const leaderboard = [];
+            let rank = 1;
+            querySnapshot.forEach(doc => {
+                const data = doc.data();
+                // Format the user ID as a Discord mention
+                leaderboard.push(`${rank}. <@${data.userId}> - ${data.karmaPoints} Karma`);
+                rank++;
+            });
 
             const embed = new EmbedBuilder()
-                .setTitle(`Karma Leaderboard for ${interaction.guild.name}`)
-                .setColor(0xFFD700) // Gold color
+                .setTitle('Karma Leaderboard')
+                .setDescription(leaderboard.join('\n'))
+                .setColor(0xFFD700) // Gold color for leaderboard
                 .setTimestamp();
-
-            if (leaderboard.length === 0) {
-                embed.setDescription('No karma data available yet. Be active to earn some!');
-            } else {
-                let description = '';
-                for (let i = 0; i < leaderboard.length; i++) {
-                    const user = leaderboard[i];
-                    description += `**${i + 1}.** ${user.targetUserTag || user.userId} - **${user.karmaPoints}** Karma\n`;
-                }
-                embed.setDescription(description);
-            }
 
             await interaction.editReply({ embeds: [embed] });
 
         } catch (error) {
-            console.error(`Error fetching leaderboard for guild ${guildId}:`, error);
-            await interaction.editReply({ content: 'There was an error fetching the karma leaderboard.' });
+            console.error('Error fetching Karma leaderboard:', error);
+            await interaction.editReply('Failed to retrieve the Karma leaderboard. An error occurred.');
         }
-    }
+    },
 };
