@@ -38,7 +38,14 @@ app.get('/api/login', (req, res) => {
     res.redirect(authorizeUrl);
 });
 
-// Discord OAuth Callback Route
+// Discord OAuth Callback Route (Handles GET redirect from Discord)
+app.get('/callback', (req, res) => {
+    // Discord redirects here with the 'code' in query params.
+    // We serve the index.html, and script.js will handle the code.
+    res.sendFile(__dirname + '/public/index.html');
+});
+
+// Discord OAuth Token Exchange Route (Frontend POSTs the code here)
 app.post('/api/token', async (req, res) => {
     const { code } = req.body;
     if (!code) {
