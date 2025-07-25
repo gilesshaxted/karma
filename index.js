@@ -40,8 +40,6 @@ app.get('/api/login', (req, res) => {
 
 // Discord OAuth Callback Route (Handles GET redirect from Discord)
 app.get('/callback', (req, res) => {
-    // Discord redirects here with the 'code' in query params.
-    // We serve the index.html, and script.js will handle the code.
     res.sendFile(__dirname + '/public/index.html');
 });
 
@@ -227,13 +225,15 @@ let botClient; // Declare botClient here so it's accessible in API routes
 (async () => {
     try {
         const botModule = require('./bot');
-        // Assign the client instance and helper functions directly from botModule
-        botClient = botModule.client;
+        // Await the bot's full readiness before assigning it
+        botClient = await botModule.getReadyClient(); // bot.js now exports a function that returns the ready client
+
+        // Now that botClient is guaranteed to be ready, attach its helper functions
+        // These functions were already exported by bot.js, so we just need to reference them
         botClient.getGuildConfig = botModule.getGuildConfig;
         botClient.saveGuildConfig = botModule.saveGuildConfig;
         
-        // The botModule already calls client.login() internally
-        console.log("Discord bot initialization initiated from bot.js");
+        console.log("Discord bot initialization completed and ready for API use.");
     } catch (error) {
         console.error("Failed to start Discord bot from bot.js:", error);
         process.exit(1); // Exit if bot fails to start
