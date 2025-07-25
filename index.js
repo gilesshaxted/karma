@@ -229,9 +229,9 @@ let botClient; // Declare botClient here so it's accessible in API routes
 // Use an async IIFE to start the the Discord bot process
 (async () => {
     try {
-        const botModule = require('./bot'); // Import the module
+        const initializeAndGetClient = require('./bot'); // Import the default export
         // Await the bot's full readiness before assigning it
-        botClient = await botModule(); // bot.js now exports initializeAndGetClient as default
+        botClient = await initializeAndGetClient(); // Call the default exported function
         
         console.log("Discord bot initialization completed and ready for API use.");
     } catch (error) {
