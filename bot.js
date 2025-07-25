@@ -125,74 +125,82 @@ for (const file of karmaCommandFiles) {
     }
 }
 
-// Promise to track bot readiness and Firebase initialization
-const botReadyPromise = new Promise(resolve => {
-    client.once('ready', async () => {
-        console.log(`Logged in as ${client.user.tag}!`);
+// New function to start the bot and return a promise that resolves when ready
+const getReadyClient = async () => {
+    return new Promise(async (resolve, reject) => {
+        client.once('ready', async () => {
+            console.log(`Logged in as ${client.user.tag}!`);
 
-        // Initialize Firebase and Google API Key
-        try {
-            client.appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-            client.googleApiKey = process.env.GOOGLE_API_KEY || "";
+            // Initialize Firebase and Google API Key
+            try {
+                client.appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                client.googleApiKey = process.env.GOOGLE_API_KEY || "";
 
-            const firebaseConfig = {
-                apiKey: process.env.FIREBASE_API_KEY,
-                authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-                projectId: process.env.FIREBASE_PROJECT_ID,
-                storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-                messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-                appId: process.env.FIREBASE_APP_ID
-            };
+                const firebaseConfig = {
+                    apiKey: process.env.FIREBASE_API_KEY,
+                    authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+                    projectId: process.env.FIREBASE_PROJECT_ID,
+                    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+                    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+                    appId: process.env.FIREBASE_APP_ID
+                };
 
-            if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId || !firebaseConfig.authDomain) {
-                console.error('Missing essential Firebase environment variables. Please check your .env or hosting configuration.');
-                process.exit(1);
+                if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId || !firebaseConfig.authDomain) {
+                    console.error('Missing essential Firebase environment variables. Please check your .env or hosting configuration.');
+                    process.exit(1);
+                }
+
+                const firebaseApp = initializeApp(firebaseConfig);
+                client.db = getFirestore(firebaseApp);
+                client.auth = getAuth(firebaseApp);
+
+                if (typeof __initial_auth_token !== 'undefined') {
+                    await signInWithCustomToken(client.auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(client.auth);
+                }
+                client.userId = client.auth.currentUser?.uid || crypto.randomUUID();
+                console.log(`Firebase initialized. User ID: ${client.userId}. App ID for Firestore: ${client.appId}`);
+
+            } catch (firebaseError) {
+                console.error('Failed to initialize Firebase:', firebaseError);
+                return reject(firebaseError); // Reject the promise on Firebase error
             }
 
-            const firebaseApp = initializeApp(firebaseConfig);
-            client.db = getFirestore(firebaseApp);
-            client.auth = getAuth(firebaseApp);
+            // Register slash commands
+            const commands = [];
+            client.commands.forEach(command => {
+                commands.push(command.data.toJSON());
+            });
 
-            if (typeof __initial_auth_token !== 'undefined') {
-                await signInWithCustomToken(client.auth, __initial_auth_token);
-            } else {
-                await signInAnonymously(client.auth);
+            const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+
+            try {
+                console.log('Started refreshing application (/) commands.');
+                if (!DISCORD_APPLICATION_ID) {
+                    console.error('DISCORD_APPLICATION_ID environment variable is not set. Slash commands might not register.');
+                    return;
+                }
+
+                await rest.put(
+                    Routes.applicationCommands(DISCORD_APPLICATION_ID),
+                    { body: commands },
+                );
+
+                console.log('Successfully reloaded application (/) commands.');
+            } catch (error) {
+                console.error('Error refreshing application commands:', error);
             }
-            client.userId = client.auth.currentUser?.uid || crypto.randomUUID();
-            console.log(`Firebase initialized. User ID: ${client.userId}. App ID for Firestore: ${client.appId}`);
-
-        } catch (firebaseError) {
-            console.error('Failed to initialize Firebase:', firebaseError);
-            process.exit(1);
-        }
-
-        // Register slash commands
-        const commands = [];
-        client.commands.forEach(command => {
-            commands.push(command.data.toJSON());
+            resolve(client); // Resolve the promise with the ready client
         });
 
-        const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
-
-        try {
-            console.log('Started refreshing application (/) commands.');
-            if (!DISCORD_APPLICATION_ID) {
-                console.error('DISCORD_APPLICATION_ID environment variable is not set. Slash commands might not register.');
-                return;
-            }
-
-            await rest.put(
-                Routes.applicationCommands(DISCORD_APPLICATION_ID),
-                { body: commands },
-            );
-
-            console.log('Successfully reloaded application (/) commands.');
-        } catch (error) {
-            console.error('Error refreshing application commands:', error);
-        }
-        resolve(client); // Resolve the promise with the ready client
+        // Log in to Discord with the client's token
+        client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
+            console.error("Discord login failed:", err);
+            reject(err); // Reject the promise if login fails
+        });
     });
-});
+};
 
 
 // Event: Message Creation (for Karma system and Auto-Moderation)
@@ -370,7 +378,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
 });
 
 
-// Log in to Discord with your client's token
+// Log in to Discord with the client's token
 client.login(process.env.DISCORD_BOT_TOKEN);
 
 // Export client and helper functions for index.js to use in API routes
@@ -378,4 +386,5 @@ module.exports = {
     client,
     getGuildConfig,
     saveGuildConfig,
+    getReadyClient // Export the new function
 };
