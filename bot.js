@@ -220,7 +220,215 @@ const initializeAndGetClient = async () => {
             client.getGuildConfig = getGuildConfig;
             client.saveGuildConfig = saveGuildConfig;
 
-            resolve(client);
+            // --- Register ALL Event Listeners HERE, after client is ready and Firebase is initialized ---
+
+            // Message-related events
+            client.on('messageCreate', async message => {
+                if (!message.author.bot && message.guild) {
+                    if (!client.db || !client.appId || !client.googleApiKey) {
+                        console.warn('Skipping message processing: Firebase or API keys not fully initialized yet.');
+                        return;
+                    }
+                    const guild = message.guild;
+                    const author = message.author;
+
+                    await autoModeration.checkMessageForModeration(
+                        message, client, client.getGuildConfig, client.saveGuildConfig, isExempt, logging.logModerationAction, logging.logMessage, client.googleApiKey
+                    );
+                    try {
+                        const authorKarmaData = await karmaSystem.getOrCreateUserKarma(guild.id, author.id, client.db, client.appId);
+                        await karmaSystem.updateUserKarmaData(guild.id, author.id, { messagesToday: (authorKarmaData.messagesToday || 0) + 1, lastActivityDate: new Date() }, client.db, client.appId);
+                        await karmaSystem.calculateAndAwardKarma(guild, author, { ...authorKarmaData, messagesToday: (authorKarmaData.messagesToday || 0) + 1 }, client.db, client.appId, client.googleApiKey);
+
+                        if (message.reference && message.reference.messageId) {
+                            const repliedToMessage = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+                            if (repliedToMessage && !repliedToMessage.author.bot && repliedToMessage.author.id !== author.id) {
+                                const repliedToAuthor = repliedToMessage.author;
+                                const repliedToKarmaData = await karmaSystem.getOrCreateUserKarma(guild.id, repliedToAuthor.id, client.db, client.appId);
+                                const sentiment = await karmaSystem.analyzeSentiment(message.content, client.googleApiKey);
+                                if (sentiment === 'negative') {
+                                    console.log(`Negative reply sentiment detected for message from ${author.tag} to ${repliedToAuthor.tag}. Skipping karma gain for reply.`);
+                                } else {
+                                    await karmaSystem.updateUserKarmaData(guild.id, repliedToAuthor.id, { repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1, lastActivityDate: new Date() }, client.db, client.appId);
+                                    await karmaSystem.calculateAndAwardKarma(guild, repliedToAuthor, { ...repliedToKarmaData, repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1 }, client.db, client.appId, client.googleApiKey);
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`Error in messageCreate karma tracking for ${author.tag}:`, error);
+                    }
+                }
+            });
+
+            client.on('messageDelete', async message => {
+                if (!message.guild) return;
+                await messageLogHandler.handleMessageDelete(message, client.getGuildConfig, logging.logMessage);
+            });
+
+            client.on('messageUpdate', async (oldMessage, newMessage) => {
+                if (!newMessage.guild) return;
+                await messageLogHandler.handleMessageUpdate(oldMessage, newMessage, client.getGuildConfig, logging.logMessage);
+            });
+
+            // Member-related events
+            client.on('guildMemberUpdate', async (oldMember, newMember) => {
+                await memberLogHandler.handleGuildMemberUpdate(oldMember, newMember, client.getGuildConfig);
+                await boostLogHandler.handleBoostUpdate(oldMember, newMember, client.getGuildConfig);
+            });
+
+            client.on('userUpdate', async (oldUser, newUser) => {
+                await memberLogHandler.handleUserUpdate(oldUser, newUser, client.getGuildConfig, client);
+            });
+
+            client.on('guildMemberAdd', async member => {
+                await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig);
+            });
+
+            client.on('guildMemberRemove', async member => {
+                await joinLeaveLogHandler.handleGuildMemberRemove(member, client.getGuildConfig);
+            });
+
+            // Admin-related events (channels, roles, emojis, scheduled events)
+            client.on('channelCreate', async channel => {
+                await adminLogHandler.handleChannelCreate(channel, client.getGuildConfig);
+            });
+            client.on('channelDelete', async channel => {
+                await adminLogHandler.handleChannelDelete(channel, client.getGuildConfig);
+            });
+            client.on('channelUpdate', async (oldChannel, newChannel) => {
+                await adminLogHandler.handleChannelUpdate(oldChannel, newChannel, client.getGuildConfig);
+            });
+            client.on('channelPinsUpdate', async (channel, time) => {
+                // console.log(`Pins updated in channel ${channel.name} at ${time}`);
+            });
+            client.on('roleCreate', async role => {
+                await adminLogHandler.handleRoleCreate(role, client.getGuildConfig);
+            });
+            client.on('roleDelete', async role => {
+                await adminLogHandler.handleRoleDelete(role, client.getGuildConfig);
+            });
+            client.on('roleUpdate', async (oldRole, newRole) => {
+                await adminLogHandler.handleRoleUpdate(oldRole, newRole, client.getGuildConfig);
+            });
+            client.on('emojiCreate', async emoji => {
+                await adminLogHandler.handleEmojiCreate(emoji, client.getGuildConfig);
+            });
+            client.on('emojiDelete', async emoji => {
+                await adminLogHandler.handleEmojiDelete(emoji, client.getGuildConfig);
+            });
+            client.on('emojiUpdate', async (oldEmoji, newEmoji) => {
+                await adminLogHandler.handleEmojiUpdate(oldEmoji, newEmoji, client.getGuildConfig);
+            });
+            client.on('guildScheduledEventCreate', async guildScheduledEvent => {
+                await adminLogHandler.handleGuildScheduledEventCreate(guildScheduledEvent, client.getGuildConfig);
+            });
+            client.on('guildScheduledEventDelete', async guildScheduledEvent => {
+                await adminLogHandler.handleGuildScheduledEventDelete(guildScheduledEvent, client.getGuildConfig);
+            });
+            client.on('guildScheduledEventUpdate', async (oldGuildScheduledEvent, newGuildScheduledEvent) => {
+                await adminLogHandler.handleGuildScheduledEventUpdate(oldGuildScheduledEvent, newGuildScheduledEvent, client.getGuildConfig);
+            });
+
+
+            // Event: Message reaction added (for emoji moderation and karma system reactions)
+            client.on('messageReactionAdd', async (reaction, user) => {
+                if (!client.db || !client.appId || !client.googleApiKey) {
+                    console.warn('Skipping reaction processing: Firebase or API keys not fully initialized yet.');
+                    reaction.users.remove(user.id).catch(e => console.error('Failed to remove reaction for uninitialized bot:', e));
+                    return;
+                }
+                await handleMessageReactionAdd(
+                    reaction, user, client, client.getGuildConfig, client.saveGuildConfig, hasPermission, isExempt, logging.logModerationAction, logging.logMessage, karmaSystem
+                );
+            });
+
+            // Event: Interaction created (for slash commands and buttons)
+            client.on('interactionCreate', async interaction => {
+                if (!client.db || !client.appId) {
+                    console.warn('Skipping interaction processing: Firebase not fully initialized yet.');
+                    if (interaction.deferred || interaction.replied) {
+                        await interaction.editReply({ content: 'Bot is still starting up, please try again in a moment.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
+                    } else {
+                        await interaction.reply({ content: 'Bot is still starting up, please try again in a moment.', ephemeral: true }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
+                    }
+                    return;
+                }
+
+                try {
+                    // Determine if the reply should be ephemeral based on command
+                    let ephemeral = true; // Default to ephemeral
+                    if (interaction.isCommand() && interaction.commandName === 'leaderboard') {
+                        ephemeral = false; // Make leaderboard public
+                    }
+                    
+                    // Defer reply immediately, but handle potential failure
+                    let deferred = false;
+                    try {
+                        await interaction.deferReply({ ephemeral: ephemeral }); // Use the determined ephemeral value
+                        deferred = true;
+                    } catch (deferError) {
+                        if (deferError.code === 10062) { // Unknown interaction
+                            console.warn(`Interaction ${interaction.id} already expired or unknown when deferring. Skipping.`);
+                            return; // Stop processing this interaction
+                        }
+                        console.error(`Error deferring reply for interaction ${interaction.id}:`, deferError);
+                    }
+
+                    if (interaction.isCommand()) {
+                        const { commandName } = interaction;
+                        const command = client.commands.get(commandName);
+
+                        if (!command) {
+                            if (deferred) {
+                                return interaction.editReply({ content: 'No command matching that name was found.' });
+                            } else {
+                                return interaction.reply({ content: 'No command matching that name was found.', ephemeral: true });
+                            }
+                        }
+
+                        const guildConfig = await client.getGuildConfig(interaction.guildId);
+
+                        if (!hasPermission(interaction.member, guildConfig)) {
+                            if (deferred) {
+                                return interaction.editReply({ content: 'You do not have permission to use this command.' });
+                            } else {
+                                return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+                            }
+                        }
+
+                        await command.execute(interaction, {
+                            getGuildConfig: client.getGuildConfig,
+                            saveGuildConfig: client.saveGuildConfig,
+                            hasPermission,
+                            isExempt,
+                            logModerationAction: logging.logModerationAction,
+                            logMessage: logging.logMessage,
+                            MessageFlags,
+                            db: client.db,
+                            appId: client.appId,
+                            getOrCreateUserKarma: karmaSystem.getOrCreateUserKarma,
+                            updateUserKarmaData: karmaSystem.updateUserKarmaData,
+                            calculateAndAwardKarma: karmaSystem.calculateAndAwardKarma,
+                            analyzeSentiment: karmaSystem.analyzeSentiment,
+                            addKarmaPoints: karmaSystem.addKarmaPoints, // Passed new karma functions
+                            subtractKarmaPoints: karmaSystem.subtractKarmaPoints, // Passed new karma functions
+                            setKarmaPoints: karmaSystem.setKarmaPoints, // Passed new karma functions
+                            client
+                        });
+                    } else if (interaction.isButton()) {
+                        // For buttons, deferUpdate is usually sufficient and handled above.
+                        // No specific button logic here for now.
+                    }
+                } catch (error) {
+                    console.error('Error during interaction processing:', error);
+                    if (interaction.deferred || interaction.replied) {
+                        await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply after error:', e));
+                    } else {
+                        await interaction.reply({ content: 'An unexpected error occurred while processing your command.', ephemeral: true }).catch(e => console.error('Failed to reply after error:', e));
+                    }
+                }
+            });
+            // End of event listener registrations
         });
 
         // Log in to Discord with the client's token
@@ -231,183 +439,6 @@ const initializeAndGetClient = async () => {
     });
 };
 
-
-// --- Event Listeners for the Discord Bot ---
-
-// Message-related events
-client.on('messageCreate', async message => {
-    if (!message.author.bot && message.guild) { // Ignore bot messages and DMs
-        // Crucial check: Ensure Firebase and essential services are initialized
-        if (!client.db || !client.appId || !client.googleApiKey) {
-            console.warn('Skipping message processing: Firebase or API keys not fully initialized yet.');
-            return;
-        }
-
-        const guild = message.guild;
-        const author = message.author;
-
-        // --- Auto-Moderation Check ---
-        await autoModeration.checkMessageForModeration(
-            message,
-            client, // Pass client for its properties
-            client.getGuildConfig, // Use client's attached function
-            client.saveGuildConfig, // Use client's attached function
-            isExempt,
-            logging.logModerationAction,
-            logging.logMessage,
-            client.googleApiKey
-        );
-
-        // --- Karma System Update ---
-        try {
-            const authorKarmaData = await karmaSystem.getOrCreateUserKarma(guild.id, author.id, client.db, client.appId);
-            await karmaSystem.updateUserKarmaData(guild.id, author.id, {
-                messagesToday: (authorKarmaData.messagesToday || 0) + 1,
-                lastActivityDate: new Date()
-            }, client.db, client.appId);
-            await karmaSystem.calculateAndAwardKarma(
-                guild,
-                author,
-                { ...authorKarmaData, messagesToday: (authorKarmaData.messagesToday || 0) + 1 },
-                client.db,
-                client.appId,
-                client.googleApiKey
-            );
-
-            // If it's a reply, track replies received by the original author
-            if (message.reference && message.reference.messageId) {
-                const repliedToMessage = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
-                if (repliedToMessage && !repliedToMessage.author.bot && repliedToMessage.author.id !== author.id) {
-                    const repliedToAuthor = repliedToMessage.author;
-                    const repliedToKarmaData = await karmaSystem.getOrCreateUserKarma(guild.id, repliedToAuthor.id, client.db, client.appId);
-
-                    const sentiment = await karmaSystem.analyzeSentiment(message.content, client.googleApiKey);
-                    if (sentiment === 'negative') {
-                        console.log(`Negative reply sentiment detected for message from ${author.tag} to ${repliedToAuthor.tag}. Skipping karma gain for reply.`);
-                    } else {
-                        await karmaSystem.updateUserKarmaData(guild.id, repliedToAuthor.id, {
-                            repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1,
-                            lastActivityDate: new Date()
-                        }, client.db, client.appId);
-                        await karmaSystem.calculateAndAwardKarma(
-                            guild,
-                            repliedToAuthor,
-                            { ...repliedToKarmaData, repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1 },
-                            client.db,
-                            client.appId,
-                            client.googleApiKey
-                        );
-                    }
-                }
-            }
-        } catch (error) {
-            console.error(`Error in messageCreate karma tracking for ${author.tag}:`, error);
-        }
-    }
-});
-
-client.on('messageDelete', async message => {
-    if (!message.guild) return; // Ignore DMs
-    await messageLogHandler.handleMessageDelete(message, client.getGuildConfig, logging.logMessage);
-});
-
-client.on('messageUpdate', async (oldMessage, newMessage) => {
-    if (!newMessage.guild) return; // Ignore DMs
-    await messageLogHandler.handleMessageUpdate(oldMessage, newMessage, client.getGuildConfig, logging.logMessage);
-});
-
-// Member-related events
-client.on('guildMemberUpdate', async (oldMember, newMember) => {
-    // Pass client.getGuildConfig directly
-    await memberLogHandler.handleGuildMemberUpdate(oldMember, newMember, client.getGuildConfig);
-    await boostLogHandler.handleBoostUpdate(oldMember, newMember, client.getGuildConfig); // Boosts are part of member update
-});
-
-client.on('userUpdate', async (oldUser, newUser) => {
-    await memberLogHandler.handleUserUpdate(oldUser, newUser, client.getGuildConfig, client);
-});
-
-client.on('guildMemberAdd', async member => {
-    await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig);
-});
-
-client.on('guildMemberRemove', async member => {
-    await joinLeaveLogHandler.handleGuildMemberRemove(member, client.getGuildConfig);
-});
-
-// Admin-related events (channels, roles, emojis, scheduled events)
-client.on('channelCreate', async channel => {
-    await adminLogHandler.handleChannelCreate(channel, client.getGuildConfig);
-});
-client.on('channelDelete', async channel => {
-    await adminLogHandler.handleChannelDelete(channel, client.getGuildConfig);
-});
-client.on('channelUpdate', async (oldChannel, newChannel) => {
-    await adminLogHandler.handleChannelUpdate(oldChannel, newChannel, client.getGuildConfig);
-});
-client.on('channelPinsUpdate', async (channel, time) => {
-    // This event can be noisy, only log if truly needed for pins
-    // console.log(`Pins updated in channel ${channel.name} at ${time}`);
-});
-client.on('guildMemberRoleUpdate', async (member, oldRoles, newRoles) => {
-    // This is handled by memberLogHandler.handleGuildMemberUpdate
-});
-client.on('roleCreate', async role => {
-    await adminLogHandler.handleRoleCreate(role, client.getGuildConfig);
-});
-client.on('roleDelete', async role => {
-    await adminLogHandler.handleRoleDelete(role, client.getGuildConfig);
-});
-client.on('roleUpdate', async (oldRole, newRole) => {
-    await adminLogHandler.handleRoleUpdate(oldRole, newRole, client.getGuildConfig);
-});
-client.on('emojiCreate', async emoji => {
-    await adminLogHandler.handleEmojiCreate(emoji, client.getGuildConfig);
-});
-client.on('emojiDelete', async emoji => {
-    await adminLogHandler.handleEmojiDelete(emoji, client.getGuildConfig);
-});
-client.on('emojiUpdate', async (oldEmoji, newEmoji) => {
-    await adminLogHandler.handleEmojiUpdate(oldEmoji, newEmoji, client.getGuildConfig);
-});
-client.on('guildScheduledEventCreate', async guildScheduledEvent => {
-    await adminLogHandler.handleGuildScheduledEventCreate(guildScheduledEvent, client.getGuildConfig);
-});
-client.on('guildScheduledEventDelete', async guildScheduledEvent => {
-    await adminLogHandler.handleGuildScheduledEventDelete(guildScheduledEvent, client.getGuildConfig);
-});
-client.on('guildScheduledEventUpdate', async (oldGuildScheduledEvent, newGuildScheduledEvent) => {
-    await adminLogHandler.handleGuildScheduledEventUpdate(oldGuildScheduledEvent, newGuildScheduledEvent, client.getGuildConfig);
-});
-
-
-// Event: Message reaction added (for emoji moderation and karma system reactions)
-client.on('messageReactionAdd', async (reaction, user) => {
-    // Crucial check: Ensure Firebase and essential services are initialized
-    if (!client.db || !client.appId || !client.googleApiKey) {
-        console.warn('Skipping reaction processing: Firebase or API keys not fully initialized yet.');
-        reaction.users.remove(user.id).catch(e => console.error('Failed to remove reaction for uninitialized bot:', e));
-        return;
-    }
-
-    // Delegate to the external event handler
-    await handleMessageReactionAdd(
-        reaction,
-        user,
-        client,
-        client.getGuildConfig, // Pass client's attached function
-        client.saveGuildConfig, // Pass client's attached function
-        hasPermission,
-        isExempt,
-        logging.logModerationAction,
-        logging.logMessage,
-        karmaSystem // Pass the entire karmaSystem module
-    );
-});
-
-
-// Log in to Discord with the client's token (This is now handled inside initializeAndGetClient)
-// client.login(process.env.DISCORD_BOT_TOKEN);
 
 // Export the initialization function as the default export
 module.exports = initializeAndGetClient;
