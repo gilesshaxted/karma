@@ -10,7 +10,8 @@ module.exports = {
                 .setDescription('The user to give Karma to')
                 .setRequired(true)),
     async execute(interaction, { db, appId, getGuildConfig, hasPermission, isExempt, logModerationAction, addKarmaPoints }) {
-        await interaction.deferReply({ ephemeral: true });
+        // interaction.deferReply() is now handled by bot.js for all slash commands.
+        // So, we use editReply here.
 
         const targetUser = interaction.options.getUser('target');
         const moderator = interaction.user;
