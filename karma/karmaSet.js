@@ -14,7 +14,8 @@ module.exports = {
                 .setDescription('The new total Karma points')
                 .setRequired(true)),
     async execute(interaction, { db, appId, getGuildConfig, hasPermission, isExempt, logModerationAction, setKarmaPoints }) {
-        await interaction.deferReply({ ephemeral: true });
+        // interaction.deferReply() is now handled by bot.js for all slash commands.
+        // So, we use editReply here.
 
         const targetUser = interaction.options.getUser('target');
         const newTotal = interaction.options.getInteger('total');
