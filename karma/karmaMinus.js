@@ -9,8 +9,9 @@ module.exports = {
             option.setName('target')
                 .setDescription('The user to remove Karma from')
                 .setRequired(true)),
-    async execute(interaction, { db, appId, getGuildConfig, hasPermission, isExempt, logModerationAction, subtractKarmaPoints }) {
-        await interaction.deferReply({ ephemeral: true });
+    async execute(interaction, { db, appId, getGuildConfig, hasPermission, subtractKarmaPoints }) { // Removed isExempt, logModerationAction
+        // interaction.deferReply() is handled by bot.js for all slash commands.
+        // So, we use editReply here.
 
         const targetUser = interaction.options.getUser('target');
         const moderator = interaction.user;
@@ -23,21 +24,14 @@ module.exports = {
             return interaction.editReply('Could not find that user in this server.');
         }
 
-        // Check if the target is exempt
-        if (isExempt(targetMember, guildConfig) && targetUser.id !== moderator.id) {
-            return interaction.editReply('You cannot manually adjust Karma for this user as they are exempt from moderation (unless you are adjusting your own karma).');
-        }
+        // Permission check for the invoker is handled by bot.js
+        // No isExempt check for the target, as all users can receive karma
 
         try {
             const newKarma = await subtractKarmaPoints(guild.id, targetUser, 1, db, appId);
 
-            // Log the action
-            guildConfig.caseNumber++;
-            await interaction.client.saveGuildConfig(guild.id, guildConfig);
-            const caseNumber = guildConfig.caseNumber;
-
-            const reason = `Manually subtracted 1 Karma point. New total: ${newKarma}`;
-            await logModerationAction(guild, 'Karma Minus', targetUser, reason, moderator, caseNumber, null, null, getGuildConfig, db, appId);
+            // No logging to mod-logs for karma commands
+            // No case number increment for karma commands
 
             await interaction.editReply(`Successfully subtracted 1 Karma point from ${targetUser.tag}. Their new Karma total is ${newKarma}.`);
 
