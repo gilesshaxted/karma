@@ -26,6 +26,12 @@ Karma is a powerful and intuitive Discord moderation bot designed to help server
 
     * `/clearwarning <case_number> [user]`: Clears a specific warning by its case number.
 
+    * `/karma plus <user>`: Adds 1 Karma point to a user (Moderator/Admin only).
+
+    * `/karma minus <user>`: Subtracts 1 Karma point from a user (Moderator/Admin only).
+
+    * `/karma set <user> <new total>`: Sets a user's Karma points to a specific total (Moderator/Admin only).
+
 * **Emoji-Based Moderation**:
 
     * React to a message with ⚠️ (warning emoji) to warn the author and delete the message.
@@ -35,6 +41,10 @@ Karma is a powerful and intuitive Discord moderation bot designed to help server
     * React to a message with 👢 (boot emoji) to kick the author and delete the message.
 
     * React to a message with 🔗 (link emoji) to manually flag a message for moderator review (sends to mod-alert channel).
+
+    * React to a message with 👍 (thumbs up emoji) to add 1 Karma point to the message author (Moderator/Admin only). The bot will announce this in the channel.
+
+    * React to a message with 👎 (thumbs down emoji) to subtract 1 Karma point from the message author (Moderator/Admin only). The bot will announce this in the channel.
 
 * **Auto-Moderation**:
 
