@@ -42,15 +42,16 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
     // --- Moderation Emojis Handling ---
     // Check if the reactor has permission for moderation/flagging
     if (hasPermission(reactorMember, guildConfig)) {
-        const targetMember = await guild.members.fetch(message.author.id).catch(() => null);
+        const targetUser = message.author; // The author of the message being reacted to
+        const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
+
         if (!targetMember) {
-            console.log(`Could not fetch target member ${message.author.id}.`);
-            // Attempt to remove reaction even if target member cannot be fetched
-            reaction.users.remove(user.id).catch(console.error);
+            console.log(`Could not fetch target member ${targetUser.id}.`);
+            reaction.users.remove(user.id).catch(console.error); // Remove reaction if target user is unresolvable
             return;
         }
 
-        // Check if the target user is exempt for moderation actions (warn, timeout, kick)
+        // Check if the target user is exempt from moderation actions (warn, timeout, kick)
         const isTargetExempt = isExempt(targetMember, guildConfig);
 
         // Safely get channel ID and name for reason
@@ -71,10 +72,36 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
                 channelNameForReason = resolvedChannelForReason.name;
             }
         }
-        // Use safely obtained channelIdForReason and channelNameForReason
         const reasonContent = `Emoji moderation: "${message.content || 'No message content'}" from channel <#${channelIdForReason}> (${channelNameForReason})`;
         const messageLink = message.url;
         let actionTaken = false;
+
+        // Handle Karma reactions (👍, 👎) from moderators/admins
+        if (['👍', '👎'].includes(reaction.emoji.name)) {
+            let karmaChange = 0;
+            let actionText = '';
+
+            if (reaction.emoji.name === '👍') {
+                karmaChange = 1;
+                actionText = '+1 Karma';
+            } else { // 👎
+                karmaChange = -1;
+                actionText = '-1 Karma';
+            }
+
+            try {
+                // No isExempt check for karma target as per new requirement: all users can receive karma
+                const newKarma = await karmaSystem.addKarmaPoints(guild.id, targetUser, karmaChange, client.db, client.appId);
+                await message.channel.send(`${actionText} for <@${targetUser.id}>. New total: ${newKarma} Karma.`).catch(console.error);
+            } catch (error) {
+                console.error(`Error adjusting karma for ${targetUser.tag} via emoji:`, error);
+                message.channel.send(`Failed to adjust Karma for <@${targetUser.id}>. An error occurred.`).catch(console.error);
+            } finally {
+                // Always remove the reaction after processing
+                reaction.users.remove(user.id).catch(e => console.error(`Failed to remove karma emoji reaction:`, e));
+            }
+            return; // Stop processing this reaction, it's handled
+        }
 
         // Handle manual flagging (🔗)
         if (reaction.emoji.name === '🔗') {
@@ -96,7 +123,6 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
                     try {
                         const warnCommand = client.commands.get('warn');
                         if (warnCommand) {
-                            // Pass getGuildConfig, db, appId to executeEmoji
                             await warnCommand.executeEmoji(message, targetMember, reasonContent, reactorMember, caseNumber, { logModerationAction, logMessage, getGuildConfig, db: client.db, appId: client.appId });
                             actionTaken = true;
                         }
@@ -109,7 +135,6 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
                         const timeoutCommand = client.commands.get('timeout');
                         if (timeoutCommand) {
                             const duration = '1h';
-                            // Pass getGuildConfig, db, appId to executeEmoji
                             await timeoutCommand.executeEmoji(message, targetMember, 60, reasonContent, reactorMember, caseNumber, { logModerationAction, logMessage, duration, getGuildConfig, db: client.db, appId: client.appId });
                             actionTaken = true;
                         }
@@ -121,7 +146,6 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
                     try {
                         const kickCommand = client.commands.get('kick');
                         if (kickCommand) {
-                            // Pass getGuildConfig, db, appId to executeEmoji
                             await kickCommand.executeEmoji(message, targetMember, reasonContent, reactorMember, caseNumber, { logModerationAction, logMessage, getGuildConfig, db: client.db, appId: client.appId });
                             actionTaken = true;
                         }
@@ -132,7 +156,7 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
             }
         }
 
-        // If an action was taken (moderation or flagging), remove the reaction FIRST, then delete message (if applicable)
+        // If a moderation action was taken, remove the reaction FIRST, then delete message (if applicable)
         if (actionTaken) {
             try {
                 // Always remove the user's reaction first
@@ -162,11 +186,11 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
         }
     }
 
-    // --- Karma System Reactions Handling ---
-    // Ignore if it's one of the moderation emojis, as they are handled above
-    if (['⚠️', '⏰', '👢', '🔗'].includes(reaction.emoji.name)) return;
+    // --- Karma System Reactions Handling (for passive karma, not mod-triggered) ---
+    // Ignore if it's one of the moderation or mod-triggered karma emojis, as they are handled above
+    if (['⚠️', '⏰', '👢', '🔗', '👍', '👎'].includes(reaction.emoji.name)) return;
 
-    // Ignore reactions from the message author themselves for karma
+    // Ignore reactions from the message author themselves for passive karma
     if (reaction.message.author.id === user.id) return;
 
     const originalAuthor = message.author;
