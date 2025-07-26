@@ -7,7 +7,8 @@ module.exports = {
         .setName('leaderboard')
         .setDescription('Displays the top Karma earners in the guild.'),
     async execute(interaction, { db, appId, getGuildConfig }) {
-        await interaction.deferReply();
+        // interaction.deferReply() is now handled by bot.js for all slash commands.
+        // So, we use editReply here.
 
         const guild = interaction.guild;
         const guildId = guild.id;
