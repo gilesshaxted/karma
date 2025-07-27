@@ -1,12 +1,13 @@
 // logging/joinLeaveLogHandler.js
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, Collection } = require('discord.js');
 
 /**
- * Handles guild member join events.
+ * Handles guild member join events, including invite tracking.
  * @param {GuildMember} member - The member who joined.
  * @param {function} getGuildConfig - Function to retrieve guild configuration.
+ * @param {Collection<string, number>} cachedInvites - The client's cached invites for the guild.
  */
-const handleGuildMemberAdd = async (member, getGuildConfig) => {
+const handleGuildMemberAdd = async (member, getGuildConfig, cachedInvites) => {
     const guildConfig = await getGuildConfig(member.guild.id);
     const logChannelId = guildConfig.joinLeaveLogChannelId;
 
@@ -14,9 +15,42 @@ const handleGuildMemberAdd = async (member, getGuildConfig) => {
     const logChannel = member.guild.channels.cache.get(logChannelId);
     if (!logChannel) return;
 
+    let inviteUsed = null;
+    let inviter = 'Unknown';
+    let inviteCode = 'N/A';
+
+    // Attempt to track invite if bot has Manage Guild permission and invites are cached
+    if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild) && cachedInvites) {
+        try {
+            const newInvites = await member.guild.invites.fetch(); // Fetch current invites
+            const oldInvites = cachedInvites; // Get previously cached invites
+
+            // Find which invite code increased in use
+            for (const [code, newUses] of newInvites) {
+                const oldUses = oldInvites.get(code) || 0;
+                if (newUses > oldUses) {
+                    inviteUsed = newInvites.get(code);
+                    break;
+                }
+            }
+
+            if (inviteUsed) {
+                inviter = inviteUsed.inviter ? `<@${inviteUsed.inviter.id}> (${inviteUsed.inviter.tag})` : 'Unknown';
+                inviteCode = inviteUsed.code;
+            }
+        } catch (error) {
+            console.warn(`Error tracking invite for ${member.user.tag} in ${member.guild.name}:`, error);
+        }
+    }
+
     const embed = new EmbedBuilder()
         .setTitle('Member Joined')
-        .setDescription(`**User:** <@${member.user.id}> (${member.user.tag})\n**Account Created:** <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`)
+        .setDescription(
+            `**User:** <@${member.user.id}> (${member.user.tag})\n` +
+            `**Account Created:** <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>\n` +
+            `**Invited By:** ${inviter}\n` +
+            `**Invite Code:** \`${inviteCode}\``
+        )
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
         .setColor(0x00FF00) // Green
         .setTimestamp();
@@ -41,7 +75,10 @@ const handleGuildMemberRemove = async (member, getGuildConfig) => {
 
     const embed = new EmbedBuilder()
         .setTitle('Member Left')
-        .setDescription(`**User:** ${member.user.tag} (${member.user.id})\n**Joined Guild:** <t:${Math.floor(member.joinedTimestamp / 1000)}:R>`)
+        .setDescription(
+            `**User:** ${member.user.tag} (${member.user.id})\n` +
+            `**Joined Guild:** ${member.joinedTimestamp ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : 'Unknown'}` // Safely access joinedTimestamp
+        )
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
         .setColor(0xFF0000) // Red
         .setTimestamp();
