@@ -18,13 +18,16 @@ const client = new Client({
         GatewayIntentBits.GuildMessageReactions,
         GatewayIntentBits.GuildPresences, // Required for userUpdate, guildMemberUpdate (presence changes)
         GatewayIntentBits.GuildModeration, // Required for audit log, guildScheduledEvent*
-        GatewayIntentBits.GuildMessageTyping // Often useful for bot interactions, though not strictly for logging
+        GatewayIntentBits.GuildMessageTyping, // Often useful for bot interactions, though not strictly for logging
+        GatewayIntentBits.GuildInvites // Required to read invites for join tracking
     ],
     partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember, Partials.User] // Added GuildMember, User for member/user updates
 });
 
 // Create a collection to store commands
 client.commands = new Collection();
+// Collection to store guild invites for tracking
+client.invites = new Collection();
 
 // Firebase and Google API variables - will be initialized in initializeAndGetClient
 client.db = null;
@@ -60,7 +63,8 @@ const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([
     PermissionsBitField.Flags.ReadMessageHistory,
     PermissionsBitField.Flags.SendMessages,
     PermissionsBitField.Flags.ManageMessages,
-    PermissionsBitField.Flags.ViewAuditLog // Added for admin logging
+    PermissionsBitField.Flags.ViewAuditLog, // Added for admin logging
+    PermissionsBitField.Flags.ManageGuild // Added for invite tracking
 ]).bitfield.toString();
 
 // Helper function to get guild-specific config from Firestore
@@ -220,11 +224,28 @@ const initializeAndGetClient = async () => {
             client.getGuildConfig = getGuildConfig;
             client.saveGuildConfig = saveGuildConfig;
 
+            // --- Populate invite cache for join tracking ---
+            console.log('Populating invite cache...');
+            client.guilds.cache.forEach(async guild => {
+                if (guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+                    try {
+                        const invites = await guild.invites.fetch();
+                        client.invites.set(guild.id, new Collection(invites.map(invite => [invite.code, invite.uses])));
+                        console.log(`Cached invites for guild ${guild.name}`);
+                    } catch (error) {
+                        console.warn(`Could not fetch invites for guild ${guild.name}. Ensure bot has 'Manage Guild' permission.`, error);
+                    }
+                } else {
+                    console.warn(`Bot does not have 'Manage Guild' permission in ${guild.name}. Cannot track invites.`);
+                }
+            });
+
+
             // --- Register ALL Event Listeners HERE, after client is ready and Firebase is initialized ---
 
             // Message-related events
             client.on('messageCreate', async message => {
-                if (!message.author.bot && message.guild) {
+                if (!message.author.bot && message.guild) { // Ignore bot messages and DMs
                     if (!client.db || !client.appId || !client.googleApiKey) {
                         console.warn('Skipping message processing: Firebase or API keys not fully initialized yet.');
                         return;
@@ -281,7 +302,17 @@ const initializeAndGetClient = async () => {
             });
 
             client.on('guildMemberAdd', async member => {
-                await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig);
+                // Pass client.invites for invite tracking
+                await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig, client.invites);
+                // Update invite cache after a member joins
+                if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+                    try {
+                        const newInvites = await member.guild.invites.fetch();
+                        client.invites.set(member.guild.id, new Collection(newInvites.map(invite => [invite.code, invite.uses])));
+                    } catch (error) {
+                        console.warn(`Failed to update invite cache for guild ${member.guild.name} after member join:`, error);
+                    }
+                }
             });
 
             client.on('guildMemberRemove', async member => {
@@ -329,6 +360,24 @@ const initializeAndGetClient = async () => {
                 await adminLogHandler.handleGuildScheduledEventUpdate(oldGuildScheduledEvent, newGuildScheduledEvent, client.getGuildConfig);
             });
 
+            // Invite tracking events
+            client.on('inviteCreate', async invite => {
+                if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+                    try {
+                        const newInvites = await invite.guild.invites.fetch();
+                        client.invites.set(invite.guild.id, new Collection(newInvites.map(i => [i.code, i.uses])));
+                    } catch (error) {
+                        console.warn(`Failed to update invite cache for guild ${invite.guild.name} after invite create:`, error);
+                    }
+                }
+            });
+
+            client.on('inviteDelete', async invite => {
+                if (invite.guild && client.invites.has(invite.guild.id)) {
+                    client.invites.get(invite.guild.id).delete(invite.code);
+                }
+            });
+
 
             // Event: Message reaction added (for emoji moderation and karma system reactions)
             client.on('messageReactionAdd', async (reaction, user) => {
@@ -337,6 +386,40 @@ const initializeAndGetClient = async () => {
                     reaction.users.remove(user.id).catch(e => console.error('Failed to remove reaction for uninitialized bot:', e));
                     return;
                 }
+                // Handle Karma reactions first
+                if (['👍', '👎'].includes(reaction.emoji.name)) {
+                    const reactorMember = await reaction.message.guild.members.fetch(user.id).catch(() => null);
+                    const guildConfig = await client.getGuildConfig(reaction.message.guild.id);
+
+                    // Only process karma reactions from moderators or admins
+                    if (reactorMember && hasPermission(reactorMember, guildConfig)) {
+                        const targetUser = reaction.message.author;
+                        let karmaChange = 0;
+                        let actionText = '';
+
+                        if (reaction.emoji.name === '👍') {
+                            karmaChange = 1;
+                            actionText = '+1 Karma';
+                        } else {
+                            karmaChange = -1;
+                            actionText = '-1 Karma';
+                        }
+
+                        try {
+                            const newKarma = await karmaSystem.addKarmaPoints(reaction.message.guild.id, targetUser, karmaChange, client.db, client.appId);
+                            await reaction.message.channel.send(`${actionText} for <@${targetUser.id}>. New total: ${newKarma} Karma.`).catch(console.error);
+                        } catch (error) {
+                            console.error(`Error adjusting karma for ${targetUser.tag} via emoji:`, error);
+                            reaction.message.channel.send(`Failed to adjust Karma for <@${targetUser.id}>. An error occurred.`).catch(console.error);
+                        } finally {
+                            // Always remove the reaction after processing
+                            reaction.users.remove(user.id).catch(e => console.error(`Failed to remove karma emoji reaction:`, e));
+                        }
+                        return; // Stop processing this reaction, it's handled
+                    }
+                }
+
+                // Delegate to the external moderation/karma reaction handler if not a karma emoji
                 await handleMessageReactionAdd(
                     reaction, user, client, client.getGuildConfig, client.saveGuildConfig, hasPermission, isExempt, logging.logModerationAction, logging.logMessage, karmaSystem
                 );
@@ -388,11 +471,22 @@ const initializeAndGetClient = async () => {
 
                         const guildConfig = await client.getGuildConfig(interaction.guildId);
 
-                        if (!hasPermission(interaction.member, guildConfig)) {
-                            if (deferred) {
-                                return interaction.editReply({ content: 'You do not have permission to use this command.' });
-                            } else {
-                                return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+                        // Check permissions for karma commands
+                        if (['karma_plus', 'karma_minus', 'karma_set'].includes(commandName)) {
+                            if (!hasPermission(interaction.member, guildConfig)) {
+                                if (deferred) {
+                                    return interaction.editReply({ content: 'You do not have permission to use this karma command.' });
+                                } else {
+                                    return interaction.reply({ content: 'You do not have permission to use this karma command.', ephemeral: true });
+                                }
+                            }
+                        } else { // For other moderation commands
+                            if (!hasPermission(interaction.member, guildConfig)) {
+                                if (deferred) {
+                                    return interaction.editReply({ content: 'You do not have permission to use this command.' });
+                                } else {
+                                    return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+                                }
                             }
                         }
 
@@ -400,7 +494,7 @@ const initializeAndGetClient = async () => {
                             getGuildConfig: client.getGuildConfig,
                             saveGuildConfig: client.saveGuildConfig,
                             hasPermission,
-                            isExempt,
+                            isExempt, // isExempt is still passed, but individual karma commands will ignore it for target
                             logModerationAction: logging.logModerationAction,
                             logMessage: logging.logMessage,
                             MessageFlags,
@@ -410,9 +504,9 @@ const initializeAndGetClient = async () => {
                             updateUserKarmaData: karmaSystem.updateUserKarmaData,
                             calculateAndAwardKarma: karmaSystem.calculateAndAwardKarma,
                             analyzeSentiment: karmaSystem.analyzeSentiment,
-                            addKarmaPoints: karmaSystem.addKarmaPoints, // Passed new karma functions
-                            subtractKarmaPoints: karmaSystem.subtractKarmaPoints, // Passed new karma functions
-                            setKarmaPoints: karmaSystem.setKarmaPoints, // Passed new karma functions
+                            addKarmaPoints: karmaSystem.addKarmaPoints,
+                            subtractKarmaPoints: karmaSystem.subtractKarmaPoints,
+                            setKarmaPoints: karmaSystem.setKarmaPoints,
                             client
                         });
                     } else if (interaction.isButton()) {
