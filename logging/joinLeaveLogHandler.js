@@ -1,5 +1,5 @@
 // logging/joinLeaveLogHandler.js
-const { EmbedBuilder, Collection } = require('discord.js');
+const { EmbedBuilder, Collection, PermissionsBitField } = require('discord.js'); // Added PermissionsBitField
 
 /**
  * Handles guild member join events, including invite tracking.
@@ -23,13 +23,13 @@ const handleGuildMemberAdd = async (member, getGuildConfig, cachedInvites) => {
     if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild) && cachedInvites) {
         try {
             const newInvites = await member.guild.invites.fetch(); // Fetch current invites
-            const oldInvites = cachedInvites; // Get previously cached invites
+            const oldInvites = cachedInvites; // Get previously cached invites from client.invites
 
             // Find which invite code increased in use
-            for (const [code, newUses] of newInvites) {
+            for (const [code, invite] of newInvites) { // newInvites is a Collection of Invite objects
                 const oldUses = oldInvites.get(code) || 0;
-                if (newUses > oldUses) {
-                    inviteUsed = newInvites.get(code);
+                if (invite.uses > oldUses) {
+                    inviteUsed = invite;
                     break;
                 }
             }
@@ -53,7 +53,8 @@ const handleGuildMemberAdd = async (member, getGuildConfig, cachedInvites) => {
         )
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
         .setColor(0x00FF00) // Green
-        .setTimestamp();
+        .setTimestamp()
+        .setFooter({ text: `User ID: ${member.user.id}` }); // Footer as requested
 
     await logChannel.send({ embeds: [embed] }).catch(console.error);
 };
@@ -81,7 +82,8 @@ const handleGuildMemberRemove = async (member, getGuildConfig) => {
         )
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
         .setColor(0xFF0000) // Red
-        .setTimestamp();
+        .setTimestamp()
+        .setFooter({ text: `User ID: ${member.user.id}` }); // Footer as requested
 
     await logChannel.send({ embeds: [embed] }).catch(console.error);
 };
