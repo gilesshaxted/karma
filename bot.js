@@ -225,7 +225,7 @@ const initializeAndGetClient = async () => {
             client.saveGuildConfig = saveGuildConfig;
 
             // --- Populate invite cache for join tracking ---
-            console.log('Populating invite cache...');
+            console.log('Populating initial invite cache...');
             client.guilds.cache.forEach(async guild => {
                 // Ensure bot has 'Manage Guild' permission to fetch invites
                 if (guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
@@ -233,9 +233,9 @@ const initializeAndGetClient = async () => {
                         const invites = await guild.invites.fetch();
                         // Store invites as a Map of code -> uses
                         client.invites.set(guild.id, new Map(invites.map(invite => [invite.code, invite.uses]))); // Store uses count
-                        console.log(`Cached invites for guild ${guild.name}`);
+                        console.log(`Cached initial invites for guild ${guild.name}`);
                     } catch (error) {
-                        console.warn(`Could not fetch invites for guild ${guild.name}. Ensure bot has 'Manage Guild' permission.`, error);
+                        console.warn(`Could not fetch initial invites for guild ${guild.name}. Ensure bot has 'Manage Guild' permission.`, error);
                     }
                 } else {
                     console.warn(`Bot does not have 'Manage Guild' permission in ${guild.name}. Cannot track invites.`);
@@ -304,22 +304,25 @@ const initializeAndGetClient = async () => {
             });
 
             client.on('guildMemberAdd', async member => {
+                // Store the old invites map *before* fetching new ones for comparison
+                const oldInvitesMap = client.invites.has(member.guild.id) ? new Map(client.invites.get(member.guild.id)) : new Map();
+
                 // Fetch new invites immediately to get latest uses
-                let newInvitesMap = new Collection();
+                let newInvitesMap = new Collection(); // Use Collection for fetched invites for consistency
                 if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
                     try {
                         const fetchedInvites = await member.guild.invites.fetch();
-                        newInvitesMap = new Map(fetchedInvites.map(invite => [invite.code, invite.uses]));
+                        newInvitesMap = fetchedInvites; // Store the Collection directly
                     } catch (error) {
                         console.warn(`Failed to fetch latest invites for guild ${member.guild.name} on member join:`, error);
                     }
                 }
-                // Pass newInvitesMap and client.invites (old cache) to handler
-                await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig, client.invites, newInvitesMap);
+                // Pass newInvitesMap and oldInvitesMap to handler
+                await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig, oldInvitesMap, newInvitesMap);
 
                 // Update client.invites cache AFTER the handler has used the old state
                 if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-                    client.invites.set(member.guild.id, newInvitesMap); // Store the latest uses map
+                    client.invites.set(member.guild.id, new Map(newInvitesMap.map(invite => [invite.code, invite.uses]))); // Store uses count
                 }
             });
 
