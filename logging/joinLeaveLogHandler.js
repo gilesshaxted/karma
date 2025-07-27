@@ -1,13 +1,13 @@
 // logging/joinLeaveLogHandler.js
-const { EmbedBuilder, Collection, PermissionsBitField } = require('discord.js'); // Added PermissionsBitField
+const { EmbedBuilder, Collection, PermissionsBitField } = require('discord.js');
 
 /**
  * Handles guild member join events, including invite tracking.
  * @param {GuildMember} member - The member who joined.
  * @param {function} getGuildConfig - Function to retrieve guild configuration.
- * @param {Collection<string, number>} cachedInvites - The client's cached invites for the guild.
+ * @param {Collection<string, Invite>} clientInvites - The client's cached invites for the guild (full Invite objects).
  */
-const handleGuildMemberAdd = async (member, getGuildConfig, cachedInvites) => {
+const handleGuildMemberAdd = async (member, getGuildConfig, clientInvites) => {
     const guildConfig = await getGuildConfig(member.guild.id);
     const logChannelId = guildConfig.joinLeaveLogChannelId;
 
@@ -20,14 +20,16 @@ const handleGuildMemberAdd = async (member, getGuildConfig, cachedInvites) => {
     let inviteCode = 'N/A';
 
     // Attempt to track invite if bot has Manage Guild permission and invites are cached
-    if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild) && cachedInvites) {
+    if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild) && clientInvites.has(member.guild.id)) {
         try {
             const newInvites = await member.guild.invites.fetch(); // Fetch current invites
-            const oldInvites = cachedInvites; // Get previously cached invites from client.invites
+            const oldInvites = clientInvites.get(member.guild.id); // Get previously cached invites (full Invite objects)
 
             // Find which invite code increased in use
-            for (const [code, invite] of newInvites) { // newInvites is a Collection of Invite objects
-                const oldUses = oldInvites.get(code) || 0;
+            for (const [code, invite] of newInvites) {
+                const oldInvite = oldInvites.get(code); // Get the old Invite object
+                const oldUses = oldInvite ? oldInvite.uses : 0; // Get uses from old Invite object or 0 if new
+
                 if (invite.uses > oldUses) {
                     inviteUsed = invite;
                     break;
