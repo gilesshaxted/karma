@@ -160,6 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 populateSelect(document.getElementById('admin-log-channel-select'), textChannels, currentConfig.adminLogChannelId);     // New
                 populateSelect(document.getElementById('join-leave-log-channel-select'), textChannels, currentConfig.joinLeaveLogChannelId); // New
                 populateSelect(document.getElementById('boost-log-channel-select'), textChannels, currentConfig.boostLogChannelId);     // New
+                populateSelect(document.getElementById('counting-channel-select'), textChannels, currentConfig.countingChannelId); // New
 
 
                 configSection.style.display = 'block';
@@ -208,6 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
             adminLogChannelId: document.getElementById('admin-log-channel-select').value || null,     // New
             joinLeaveLogChannelId: document.getElementById('join-leave-log-channel-select').value || null, // New
             boostLogChannelId: document.getElementById('boost-log-channel-select').value || null,     // New
+            countingChannelId: document.getElementById('counting-channel-select').value || null,     // New
         };
 
         try {
