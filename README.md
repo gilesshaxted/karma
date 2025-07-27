@@ -32,6 +32,10 @@ Karma is a powerful and intuitive Discord moderation bot designed to help server
 
     * `/karma set <user> <new total>`: Sets a user's Karma points to a specific total (Moderator/Admin only).
 
+    * `/count-reset`: Resets the counting game's count to zero (Moderator/Admin only).
+
+    * `/count-set <number>`: Sets the counting game's count to a specific number (Moderator/Admin only).
+
 * **Emoji-Based Moderation**:
 
     * React to a message with ⚠️ (warning emoji) to warn the author and delete the message.
@@ -59,8 +63,15 @@ Karma is a powerful and intuitive Discord moderation bot designed to help server
     * **Message Logs**: Edits and deletions of messages are logged to a `message-log` channel, along with messages deleted by moderation actions.
     * **Member Logs**: Changes to member profiles (username, nickname, avatar) and role assignments/removals are logged to a `member-log` channel.
     * **Admin Logs**: Comprehensive logging for server-level changes including channel creation/deletion/updates (including permissions), role creation/deletion/updates, emoji creation/deletion/updates, and scheduled event creation/deletion/updates.
-    * **Join/Leave Logs**: Tracks when members join or leave the guild, including **who invited them and which invite code was used**, logged to a `join-leave-log` channel.
+    * **Join/Leave Logs**: Tracks when members join or leave the guild, including **who invited them and which invite code was used (powered by `discord-invites-tracker`)**, logged to a `join-leave-log` channel.
     * **Boost Notifications**: Announces guild boosts in a designated `boost-notify` channel.
+
+* **Counting Game**:
+    * A designated "Counting Channel" where users post numbers sequentially (1, 2, 3...).
+    * If correct, the bot reacts with a specific animated verify emoji (`<a:verifyanimated:1196558213726863491>`).
+    * Only the most recent correct number will have the bot's reaction.
+    * If incorrect, the bot will say "Oh No Karma got you, that was wrong!", time out the user for 60 seconds, and delete the incorrect message.
+    * `/count-reset` and `/count-set` commands are available for moderators/admins to manage the count.
 
 * **Firestore Integration**: All bot configurations (roles, channels, case numbers) are persistently stored in Google Firestore, ensuring data is saved across restarts and accessible from any host.
 
@@ -167,7 +178,7 @@ Karma is designed to be efficient, user-friendly, and highly effective in mainta
 7.  **Install Dependencies**: Open your terminal in the bot's root directory and run:
 
     ```bash
-    npm install discord.js dotenv firebase express axios
+    npm install discord.js dotenv firebase express axios discord-invites-tracker
     ```
 
 8.  **Run the Bot**:
