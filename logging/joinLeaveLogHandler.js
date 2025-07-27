@@ -27,6 +27,7 @@ const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newIn
         // Find which invite code(s) increased in use
         for (const [code, newUses] of newInvitesMap) {
             const oldUses = oldInvitesMap.get(code) || 0; // Get uses from old map, or 0 if new invite
+
             if (newUses > oldUses) {
                 // This invite's uses increased
                 possibleInvites.push({ code, newUses, oldUses });
