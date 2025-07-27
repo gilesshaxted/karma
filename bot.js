@@ -27,7 +27,7 @@ const client = new Client({
 // Create a collection to store commands
 client.commands = new Collection();
 // Collection to store guild invites for tracking (stores Map<string, number> of code -> uses)
-client.invites = new Collection(); // Changed to store Map<string, number>
+client.invites = new Collection();
 
 // Firebase and Google API variables - will be initialized in initializeAndGetClient
 client.db = null;
@@ -50,6 +50,9 @@ const memberLogHandler = require('./logging/memberLogHandler');
 const adminLogHandler = require('./logging/adminLogHandler');
 const joinLeaveLogHandler = require('./logging/joinLeaveLogHandler');
 const boostLogHandler = require('./logging/boostLogHandler');
+
+// New game handlers
+const countingGame = require('./games/countingGame');
 
 
 // --- Discord OAuth Configuration (Bot's Permissions for Invite) ---
@@ -91,6 +94,9 @@ const getGuildConfig = async (guildId) => {
             adminLogChannelId: null,   // New: Admin log channel
             joinLeaveLogChannelId: null, // New: Join/Leave log channel
             boostLogChannelId: null,   // New: Boost log channel
+            countingChannelId: null,   // New: Counting game channel
+            currentCount: 0,           // New: Counting game current count
+            lastCountMessageId: null,  // New: Counting game last correct message ID
             caseNumber: 0
         };
         await setDoc(configRef, defaultConfig);
@@ -130,6 +136,11 @@ const karmaCommandFiles = [
     'karmaSet.js'
 ];
 
+const gameCommandFiles = [ // New array for game commands
+    'countReset.js',
+    'countSet.js'
+];
+
 for (const file of moderationCommandFiles) {
     const command = require(`./moderation/${file}`);
     if ('data' in command && 'execute' in command) {
@@ -145,6 +156,15 @@ for (const file of karmaCommandFiles) {
         client.commands.set(command.data.name, command);
     } else {
         console.log(`[WARNING] The karma command in ${file} is missing a required "data" or "execute" property.`);
+    }
+}
+
+for (const file of gameCommandFiles) { // Load game commands
+    const command = require(`./games/${file}`);
+    if ('data' in command && 'execute' in command) {
+        client.commands.set(command.data.name, command);
+    } else {
+        console.log(`[WARNING] The game command in ${file} is missing a required "data" or "execute" property.`);
     }
 }
 
@@ -255,6 +275,22 @@ const initializeAndGetClient = async () => {
                     const guild = message.guild;
                     const author = message.author;
 
+                    // --- Counting Game Check (before auto-mod) ---
+                    const guildConfig = await client.getGuildConfig(guild.id);
+                    if (guildConfig.countingChannelId && message.channel.id === guildConfig.countingChannelId) {
+                        const handledByCountingGame = await countingGame.checkCountMessage(
+                            message,
+                            client,
+                            client.getGuildConfig,
+                            client.saveGuildConfig,
+                            isExempt,
+                            logging.logMessage
+                        );
+                        if (handledByCountingGame) {
+                            return; // Message was handled by counting game, stop further processing
+                        }
+                    }
+
                     await autoModeration.checkMessageForModeration(
                         message, client, client.getGuildConfig, client.saveGuildConfig, isExempt, logging.logModerationAction, logging.logMessage, client.googleApiKey
                     );
@@ -296,7 +332,7 @@ const initializeAndGetClient = async () => {
             // Member-related events
             client.on('guildMemberUpdate', async (oldMember, newMember) => {
                 await memberLogHandler.handleGuildMemberUpdate(oldMember, newMember, client.getGuildConfig);
-                await boostLogHandler.handleBoostUpdate(oldMember, newMember, client.getGuildConfig);
+                await boostLogHandler.handleBoostUpdate(oldMember, newMember, client.getGuildConfig); // Boosts are part of member update
             });
 
             client.on('userUpdate', async (oldUser, newUser) => {
@@ -304,22 +340,25 @@ const initializeAndGetClient = async () => {
             });
 
             client.on('guildMemberAdd', async member => {
+                // Store the old invites map *before* fetching new ones for comparison
+                const oldInvitesMap = client.invites.has(member.guild.id) ? new Map(client.invites.get(member.guild.id)) : new Map();
+
                 // Fetch new invites immediately to get latest uses
-                let newInvitesMap = new Collection();
+                let newInvitesMap = new Collection(); // Use Collection for fetched invites for consistency
                 if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
                     try {
                         const fetchedInvites = await member.guild.invites.fetch();
-                        newInvitesMap = new Map(fetchedInvites.map(invite => [invite.code, invite.uses]));
+                        newInvitesMap = fetchedInvites; // Store the Collection directly
                     } catch (error) {
                         console.warn(`Failed to fetch latest invites for guild ${member.guild.name} on member join:`, error);
                     }
                 }
-                // Pass newInvitesMap and client.invites (old cache) to handler
-                await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig, client.invites, newInvitesMap);
+                // Pass newInvitesMap and oldInvitesMap to handler
+                await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig, oldInvitesMap, newInvitesMap);
 
                 // Update client.invites cache AFTER the handler has used the old state
                 if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-                    client.invites.set(member.guild.id, newInvitesMap); // Store the latest uses map
+                    client.invites.set(member.guild.id, new Map(newInvitesMap.map(invite => [invite.code, invite.uses]))); // Store uses count
                 }
             });
 
