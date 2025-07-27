@@ -93,12 +93,48 @@ const verifyDiscordToken = async (req, res, next) => {
     }
 };
 
-// Middleware to check if botClient is ready for API calls
-const checkBotReadiness = (req, res, next) => {
-    if (!botClient || !botClient.isReady() || !botClient.db || !botClient.appId) {
-        console.warn('API request received but bot backend not fully initialized. Returning 503.');
-        return res.status(503).json({ message: 'Bot backend is still starting up. Please try again in a moment.' });
+// Start Express server FIRST
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Web server listening on port ${PORT}`);
+});
+
+// --- Start the Discord Bot (Imported from bot.js) ---
+let botClient = null; // Will hold the Discord client instance
+let botReadyPromise; // This promise will resolve when the bot is fully ready
+
+// Use an async IIFE to start the Discord bot process
+(async () => {
+    try {
+        const initializeAndGetClient = require('./bot'); // Import the default export
+        botReadyPromise = initializeAndGetClient(); // Call the function, store the promise
+        botClient = await botReadyPromise; // Await the bot's full readiness
+        
+        console.log("Discord bot initialization completed and ready for API use.");
+    } catch (error) {
+        console.error("Failed to start Discord bot from bot.js:", error);
+        process.exit(1); // Exit if bot fails to start
     }
+})();
+
+// Middleware to check if botClient is ready for API calls
+const checkBotReadiness = async (req, res, next) => {
+    if (!botClient) { // If botClient is still null, it means initializeAndGetClient hasn't resolved yet
+        try {
+            // Wait for the bot to become ready
+            await botReadyPromise;
+            // After awaiting, botClient should now be assigned
+            if (!botClient || !botClient.isReady() || !botClient.db || !botClient.appId) {
+                // Should not happen if botReadyPromise resolves correctly, but as a fallback
+                console.warn('BotClient still not fully ready after awaiting botReadyPromise. Returning 503.');
+                return res.status(503).json({ message: 'Bot backend is still starting up. Please try again in a moment.' });
+            }
+        } catch (error) {
+            // If botReadyPromise rejected (bot failed to start)
+            console.error('Bot failed to initialize. Returning 503.', error);
+            return res.status(503).json({ message: 'Bot backend failed to start. Please check logs.' });
+        }
+    }
+    // If botClient is not null and isReady, proceed
     next();
 };
 
@@ -212,26 +248,3 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         res.status(error.response?.status || 500).json({ message: 'Internal server error saving config.' });
     }
 });
-
-
-// Start Express server FIRST
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Web server listening on port ${PORT}`);
-});
-
-// --- Start the Discord Bot (Imported from bot.js) ---
-let botClient; // Declare botClient here so it's accessible in API routes
-
-// Use an async IIFE to start the the Discord bot process
-(async () => {
-    try {
-        const initializeAndGetClient = require('./bot'); // Import the default export
-        // Await the bot's full readiness before assigning it
-        botClient = await initializeAndGetClient(); // Call the default exported function
-        
-        console.log("Discord bot initialization completed and ready for API use.");
-    } catch (error) {
-        console.error("Failed to start Discord bot from bot.js:", error);
-        process.exit(1); // Exit if bot fails to start
-    }
-})();
