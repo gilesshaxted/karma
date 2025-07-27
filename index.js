@@ -93,19 +93,24 @@ const verifyDiscordToken = async (req, res, next) => {
     }
 };
 
+// Middleware to check if botClient is ready for API calls
+const checkBotReadiness = (req, res, next) => {
+    if (!botClient || !botClient.isReady() || !botClient.db || !botClient.appId) {
+        console.warn('API request received but bot backend not fully initialized. Returning 503.');
+        return res.status(503).json({ message: 'Bot backend is still starting up. Please try again in a moment.' });
+    }
+    next();
+};
+
+
 // API route to get current Discord user info
-app.get('/api/user', verifyDiscordToken, (req, res) => {
+app.get('/api/user', verifyDiscordToken, checkBotReadiness, (req, res) => {
     res.json(req.discordUser);
 });
 
 // API route to get guilds where the bot is present and the user has admin permissions
-app.get('/api/guilds', verifyDiscordToken, async (req, res) => {
+app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) => {
     try {
-        // This route depends on the Discord client being ready to access client.guilds.cache
-        if (!botClient || !botClient.guilds || botClient.guilds.cache.size === 0) {
-             return res.status(503).json({ message: 'Bot not fully initialized. Please try again in a moment.' });
-        }
-
         const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
             headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
         });
@@ -126,17 +131,13 @@ app.get('/api/guilds', verifyDiscordToken, async (req, res) => {
 });
 
 // API route to get a specific guild's roles and channels, and bot's current config
-app.get('/api/guild-config', verifyDiscordToken, async (req, res) => {
+app.get('/api/guild-config', verifyDiscordToken, checkBotReadiness, async (req, res) => {
     const guildId = req.query.guildId;
     if (!guildId) {
         return res.status(400).json({ message: 'Guild ID is required.' });
     }
 
     try {
-        if (!botClient || !botClient.db || !botClient.appId) {
-            return res.status(503).json({ message: 'Bot backend not fully initialized. Please try again in a moment.' });
-        }
-
         const guild = botClient.guilds.cache.get(guildId);
         if (!guild) {
             return res.status(404).json({ message: 'Bot is not in this guild or guild not found.' });
@@ -152,7 +153,6 @@ app.get('/api/guild-config', verifyDiscordToken, async (req, res) => {
             .filter(channel => channel.isTextBased())
             .map(channel => ({ id: channel.id, name: channel.name, type: channel.type }));
 
-        // Get current bot config from Firestore using botClient's getGuildConfig
         const currentConfig = await botClient.getGuildConfig(guildId);
 
         res.json({
@@ -172,7 +172,7 @@ app.get('/api/guild-config', verifyDiscordToken, async (req, res) => {
 });
 
 // API route to save guild configuration
-app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
+app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, res) => {
     const guildId = req.query.guildId;
     const newConfig = req.body;
 
@@ -181,10 +181,6 @@ app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
     }
 
     try {
-        if (!botClient || !botClient.db || !botClient.appId) {
-            return res.status(503).json({ message: 'Bot backend not fully initialized. Please try again in a moment.' });
-        }
-
         const guild = botClient.guilds.cache.get(guildId);
         if (!guild) {
             return res.status(404).json({ message: 'Bot is not in this guild or guild not found.' });
@@ -206,8 +202,8 @@ app.post('/api/save-config', verifyDiscordToken, async (req, res) => {
         if (newConfig.adminLogChannelId) validConfig.adminLogChannelId = newConfig.adminLogChannelId;
         if (newConfig.joinLeaveLogChannelId) validConfig.joinLeaveLogChannelId = newConfig.joinLeaveLogChannelId;
         if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
+        if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
 
-        // Save config using botClient's saveGuildConfig
         await botClient.saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
 
