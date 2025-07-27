@@ -5,10 +5,11 @@ const { EmbedBuilder, Collection, PermissionsBitField } = require('discord.js');
  * Handles guild member join events, including invite tracking.
  * @param {GuildMember} member - The member who joined.
  * @param {function} getGuildConfig - Function to retrieve guild configuration.
- * @param {Map<string, number>} oldInvitesMap - A Map of invite codes to their uses count *before* this member joined.
- * @param {Map<string, number>} newInvitesMap - A Map of invite codes to their uses count *after* this member joined.
+ * @param {InvitesTracker} invitesTracker - The instance of discord-invites-tracker.
+ * @param {Invite} invite - The invite object provided by the tracker.
+ * @param {User} inviter - The inviter user object provided by the tracker.
  */
-const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newInvitesMap) => {
+const handleGuildMemberAdd = async (member, getGuildConfig, invite, inviter) => {
     const guildConfig = await getGuildConfig(member.guild.id);
     const logChannelId = guildConfig.joinLeaveLogChannelId;
 
@@ -16,59 +17,17 @@ const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newIn
     const logChannel = member.guild.channels.cache.get(logChannelId);
     if (!logChannel) return;
 
-    let inviteUsed = null;
-    let inviter = 'Unknown';
+    let inviterInfo = 'Unknown';
     let inviteCode = 'N/A';
 
-    // Only attempt invite tracking if the bot has 'Manage Guild' permission
-    if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-        let potentialInvites = [];
-
-        // Find which invite code(s) increased in use
-        for (const [code, newUses] of newInvitesMap) {
-            const oldUses = oldInvitesMap.get(code) || 0; // Get uses from old map, or 0 if new invite
-
-            if (newUses > oldUses) {
-                // This invite's uses increased
-                potentialInvites.push({ code, newUses, oldUses });
-            }
-        }
-
-        // Try to find the exact invite that increased by 1
-        let foundExactMatch = false;
-        if (potentialInvites.length > 0) {
-            for (const inviteData of potentialInvites) {
-                if (inviteData.newUses === inviteData.oldUses + 1) {
-                    try {
-                        // Fetch the full invite object to get inviter details
-                        const fetchedInvite = await member.guild.invites.fetch(inviteData.code);
-                        inviteUsed = fetchedInvite;
-                        foundExactMatch = true;
-                        break; // Found the exact match, no need to check further
-                    } catch (fetchError) {
-                        console.warn(`Could not fetch specific invite ${inviteData.code} for exact match:`, fetchError);
-                        // Continue to check other potential invites or fallbacks
-                    }
-                }
-            }
-        }
-
-        if (foundExactMatch && inviteUsed) {
-            inviter = inviteUsed.inviter ? `<@${inviteUsed.inviter.id}> (${inviteUsed.inviter.tag})` : 'Unknown (No Inviter)';
-            inviteCode = inviteUsed.code;
-        } else if (potentialInvites.length > 0) {
-            // If no exact +1 match, but some invites increased, it's ambiguous
-            console.warn(`Ambiguous invite tracking for ${member.user.tag} in ${member.guild.name}. Multiple or non-single-increment invites increased in uses.`);
-            inviter = 'Ambiguous/Multiple Invites';
-            inviteCode = 'Multiple/Unknown';
-        } else {
-            // No invite found by increased uses. Could be vanity URL or other untracked join.
-            inviter = 'Unknown (No specific invite found)';
-            inviteCode = 'N/A';
-        }
-
+    if (invite) { // If the tracker successfully found an invite
+        inviterInfo = inviter ? `<@${inviter.id}> (${inviter.tag})` : 'Unknown (No Inviter Info)';
+        inviteCode = invite.code;
     } else {
-        console.warn(`Bot does not have 'Manage Guild' permission in ${member.guild.name}. Cannot track invites for ${member.user.tag}.`);
+        // Fallback for cases where tracker couldn't find a specific invite
+        // This might happen for vanity URLs or other untracked joins
+        inviterInfo = 'Unknown (No specific invite found)';
+        inviteCode = 'N/A';
     }
 
     const embed = new EmbedBuilder()
@@ -76,7 +35,7 @@ const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newIn
         .setDescription(
             `**User:** <@${member.user.id}> (${member.user.tag})\n` +
             `**Account Created:** <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>\n` +
-            `**Invited By:** ${inviter}\n` +
+            `**Invited By:** ${inviterInfo}\n` +
             `**Invite Code:** \`${inviteCode}\``
         )
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
@@ -113,7 +72,7 @@ const handleGuildMemberRemove = async (member, getGuildConfig) => {
         .setTimestamp()
         .setFooter({ text: `User ID: ${member.user.id}` });
 
-    await logChannel.send({ embeds: [embed] }).catch(console.error);
+    await logChannel.send({ embeds: [embed] }).catch(console.console.error);
 };
 
 module.exports = {
