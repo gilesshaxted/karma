@@ -7,7 +7,6 @@ const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, signInWithCustomToken } = require('firebase/auth');
 const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, limit, getDocs } = require('firebase/firestore');
 const axios = require('axios'); // Use axios for API calls
-const { InvitesTracker } = require('discord-invites-tracker'); // Import the tracker
 
 // Create a new Discord client instance
 const client = new Client({
@@ -27,8 +26,8 @@ const client = new Client({
 
 // Create a collection to store commands
 client.commands = new Collection();
-// client.invites will now be managed by the InvitesTracker
-client.invites = null; // Set to null initially, will be InvitesTracker instance
+// Collection to store guild invites for tracking (stores Map<string, number> of code -> uses)
+client.invites = new Collection(); // Changed to store Map<string, number>
 
 // Firebase and Google API variables - will be initialized in initializeAndGetClient
 client.db = null;
@@ -225,13 +224,23 @@ const initializeAndGetClient = async () => {
             client.getGuildConfig = getGuildConfig;
             client.saveGuildConfig = saveGuildConfig;
 
-            // --- Initialize InvitesTracker ---
-            client.invites = new InvitesTracker(client, {
-                fetchGuilds: true, // Fetch invites for all guilds the bot is in
-                fetchOnReady: true, // Fetch invites when the bot is ready
-                fetchInterval: 5000 // Fetch invites every 5 seconds to keep cache updated
+            // --- Populate invite cache for join tracking ---
+            console.log('Populating initial invite cache...');
+            client.guilds.cache.forEach(async guild => {
+                // Ensure bot has 'Manage Guild' permission to fetch invites
+                if (guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+                    try {
+                        const invites = await guild.invites.fetch();
+                        // Store invites as a Map of code -> uses
+                        client.invites.set(guild.id, new Map(invites.map(invite => [invite.code, invite.uses]))); // Store uses count
+                        console.log(`Cached initial invites for guild ${guild.name}`);
+                    } catch (error) {
+                        console.warn(`Could not fetch initial invites for guild ${guild.name}. Ensure bot has 'Manage Guild' permission.`, error);
+                    }
+                } else {
+                    console.warn(`Bot does not have 'Manage Guild' permission in ${guild.name}. Cannot track invites.`);
+                }
             });
-            console.log('InvitesTracker initialized.');
 
 
             // --- Register ALL Event Listeners HERE, after client is ready and Firebase is initialized ---
@@ -287,20 +296,31 @@ const initializeAndGetClient = async () => {
             // Member-related events
             client.on('guildMemberUpdate', async (oldMember, newMember) => {
                 await memberLogHandler.handleGuildMemberUpdate(oldMember, newMember, client.getGuildConfig);
-                await boostLogHandler.handleBoostUpdate(oldMember, newMember, client.getGuildConfig); // Boosts are part of member update
+                await boostLogHandler.handleBoostUpdate(oldMember, newMember, client.getGuildConfig);
             });
 
             client.on('userUpdate', async (oldUser, newUser) => {
                 await memberLogHandler.handleUserUpdate(oldUser, newUser, client.getGuildConfig, client);
             });
 
-            // Replaced manual invite tracking with tracker's event
-            client.invites.on('guildMemberAdd', async (member, invite, inviter, error) => {
-                if (error) {
-                    console.error(`Error from InvitesTracker on guildMemberAdd for ${member.user.tag}:`, error);
+            client.on('guildMemberAdd', async member => {
+                // Fetch new invites immediately to get latest uses
+                let newInvitesMap = new Collection();
+                if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+                    try {
+                        const fetchedInvites = await member.guild.invites.fetch();
+                        newInvitesMap = new Map(fetchedInvites.map(invite => [invite.code, invite.uses]));
+                    } catch (error) {
+                        console.warn(`Failed to fetch latest invites for guild ${member.guild.name} on member join:`, error);
+                    }
                 }
-                // Pass the invite object directly from the tracker's event
-                await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig, invite, inviter);
+                // Pass newInvitesMap and client.invites (old cache) to handler
+                await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig, client.invites, newInvitesMap);
+
+                // Update client.invites cache AFTER the handler has used the old state
+                if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+                    client.invites.set(member.guild.id, newInvitesMap); // Store the latest uses map
+                }
             });
 
             client.on('guildMemberRemove', async member => {
@@ -348,9 +368,24 @@ const initializeAndGetClient = async () => {
                 await adminLogHandler.handleGuildScheduledEventUpdate(oldGuildScheduledEvent, newGuildScheduledEvent, client.getGuildConfig);
             });
 
-            // Invite tracking events (handled by InvitesTracker, no longer manual client.on here)
-            // client.on('inviteCreate', async invite => { ... });
-            // client.on('inviteDelete', async invite => { ... });
+            // Invite tracking events
+            client.on('inviteCreate', async invite => {
+                if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+                    try {
+                        const newInvites = await invite.guild.invites.fetch();
+                        client.invites.set(invite.guild.id, new Map(newInvites.map(i => [i.code, i.uses]))); // Store uses count
+                    } catch (error) {
+                        console.warn(`Failed to update invite cache for guild ${invite.guild.name} after invite create:`, error);
+                    }
+                }
+            });
+
+            client.on('inviteDelete', async invite => {
+                if (invite.guild && client.invites.has(invite.guild.id)) {
+                    // Only delete from cache if it exists and matches the code
+                    client.invites.get(invite.guild.id).delete(invite.code);
+                }
+            });
 
 
             // Event: Message reaction added (for emoji moderation and karma system reactions)
