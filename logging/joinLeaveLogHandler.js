@@ -22,7 +22,7 @@ const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newIn
 
     // Only attempt invite tracking if the bot has 'Manage Guild' permission
     if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-        let possibleInvites = [];
+        let potentialInvites = [];
 
         // Find which invite code(s) increased in use
         for (const [code, newUses] of newInvitesMap) {
@@ -30,40 +30,41 @@ const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newIn
 
             if (newUses > oldUses) {
                 // This invite's uses increased
-                possibleInvites.push({ code, newUses, oldUses });
+                potentialInvites.push({ code, newUses, oldUses });
             }
         }
 
-        if (possibleInvites.length === 1) {
-            // Exactly one invite's uses increased, this is likely the one
-            const inviteData = possibleInvites[0];
-            try {
-                // Fetch the full invite object to get inviter details
-                const fetchedInvite = await member.guild.invites.fetch(inviteData.code);
-                inviteUsed = fetchedInvite;
-            } catch (fetchError) {
-                console.warn(`Could not fetch specific invite ${inviteData.code}:`, fetchError);
-                // Fallback to just code and uses if fetch fails
-                inviteCode = inviteData.code;
-                inviter = `Unknown (Code: ${inviteData.code}, Uses: ${inviteData.oldUses} -> ${inviteData.newUses})`;
+        // Try to find the exact invite that increased by 1
+        let foundExactMatch = false;
+        if (potentialInvites.length > 0) {
+            for (const inviteData of potentialInvites) {
+                if (inviteData.newUses === inviteData.oldUses + 1) {
+                    try {
+                        // Fetch the full invite object to get inviter details
+                        const fetchedInvite = await member.guild.invites.fetch(inviteData.code);
+                        inviteUsed = fetchedInvite;
+                        foundExactMatch = true;
+                        break; // Found the exact match, no need to check further
+                    } catch (fetchError) {
+                        console.warn(`Could not fetch specific invite ${inviteData.code} for exact match:`, fetchError);
+                        // Continue to check other potential invites or fallbacks
+                    }
+                }
             }
-        } else if (possibleInvites.length > 1) {
-            // Multiple invites increased, or no clear single invite.
-            // This can happen if multiple users join simultaneously, or if an invite was used
-            // but its oldUses wasn't accurately cached.
-            console.warn(`Ambiguous invite tracking for ${member.user.tag} in ${member.guild.name}. Multiple invites increased in uses.`);
+        }
+
+        if (foundExactMatch && inviteUsed) {
+            inviter = inviteUsed.inviter ? `<@${inviteUsed.inviter.id}> (${inviteUsed.inviter.tag})` : 'Unknown (No Inviter)';
+            inviteCode = inviteUsed.code;
+        } else if (potentialInvites.length > 0) {
+            // If no exact +1 match, but some invites increased, it's ambiguous
+            console.warn(`Ambiguous invite tracking for ${member.user.tag} in ${member.guild.name}. Multiple or non-single-increment invites increased in uses.`);
             inviter = 'Ambiguous/Multiple Invites';
             inviteCode = 'Multiple/Unknown';
         } else {
             // No invite found by increased uses. Could be vanity URL or other untracked join.
-            // Discord API doesn't provide direct inviter for vanity URL joins.
             inviter = 'Unknown (No specific invite found)';
             inviteCode = 'N/A';
-        }
-
-        if (inviteUsed) {
-            inviter = inviteUsed.inviter ? `<@${inviteUsed.inviter.id}> (${inviteUsed.inviter.tag})` : 'Unknown (No Inviter)';
-            inviteCode = inviteUsed.code;
         }
 
     } else {
