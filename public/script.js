@@ -23,6 +23,63 @@ document.addEventListener('DOMContentLoaded', () => {
         return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
     };
 
+    // Function to handle loading dashboard data with retry logic
+    async function loadDashboardWithRetry(retries = 5, delay = 2000) {
+        try {
+            const userResponse = await fetch('/api/user', {
+                headers: { 'Authorization': `Bearer ${discordAccessToken}` }
+            });
+
+            if (userResponse.status === 503 && retries > 0) {
+                console.warn(`Bot backend not ready (503). Retrying in ${delay / 1000} seconds...`);
+                saveStatus.textContent = `Bot is starting up... Retrying in ${delay / 1000}s.`;
+                saveStatus.className = 'status-message';
+                await new Promise(res => setTimeout(res, delay));
+                return loadDashboardWithRetry(retries - 1, delay * 1.5); // Exponential backoff
+            }
+
+            const userData = await userResponse.json();
+            if (userResponse.ok) {
+                userDisplayName.textContent = userData.username;
+            } else {
+                throw new Error(userData.message || 'Failed to fetch user data');
+            }
+
+            const guildsResponse = await fetch('/api/guilds', {
+                headers: { 'Authorization': `Bearer ${discordAccessToken}` }
+            });
+            if (guildsResponse.status === 503 && retries > 0) {
+                 console.warn(`Bot backend not ready (503). Retrying in ${delay / 1000} seconds...`);
+                 saveStatus.textContent = `Bot is starting up... Retrying in ${delay / 1000}s.`;
+                 saveStatus.className = 'status-message';
+                 await new Promise(res => setTimeout(res, delay));
+                 return loadDashboardWithRetry(retries - 1, delay * 1.5);
+            }
+            const guildsData = await guildsResponse.json();
+            if (guildsResponse.ok) {
+                guildSelect.innerHTML = '<option value="">-- Select a Guild --</option>';
+                guildsData.forEach(guild => {
+                    const option = document.createElement('option');
+                    option.value = guild.id;
+                    option.textContent = guild.name;
+                    guildSelect.appendChild(option);
+                });
+                showDashboardSection();
+                saveStatus.textContent = ''; // Clear status once loaded
+            } else {
+                throw new Error(guildsData.message || 'Failed to fetch guilds');
+            }
+
+        } catch (error) {
+            console.error('Error loading dashboard:', error);
+            saveStatus.textContent = `Error loading dashboard: ${error.message}. Please log in again.`;
+            saveStatus.className = 'status-message error';
+            localStorage.removeItem('discord_access_token');
+            showAuthSection();
+        }
+    }
+
+
     // Handle OAuth callback
     const code = getUrlParameter('code');
     if (code) {
@@ -41,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 localStorage.setItem('discord_access_token', discordAccessToken);
                 // Remove code from URL
                 window.history.replaceState({}, document.title, "/");
-                loadDashboard();
+                loadDashboardWithRetry(); // Start loading dashboard with retry logic
             } else {
                 console.error('Failed to get access token:', data);
                 alert('Failed to log in with Discord. Please try again.');
@@ -57,7 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Check for existing token
         discordAccessToken = localStorage.getItem('discord_access_token');
         if (discordAccessToken) {
-            loadDashboard();
+            loadDashboardWithRetry(); // Start loading dashboard with retry logic
         } else {
             showAuthSection();
         }
@@ -88,46 +145,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Load dashboard data (user info, guilds)
-    async function loadDashboard() {
-        showDashboardSection();
-        try {
-            // Fetch user info
-            const userResponse = await fetch('/api/user', {
-                headers: { 'Authorization': `Bearer ${discordAccessToken}` }
-            });
-            const userData = await userResponse.json();
-            if (userResponse.ok) {
-                userDisplayName.textContent = userData.username;
-            } else {
-                throw new Error(userData.message || 'Failed to fetch user data');
-            }
-
-            // Fetch guilds where bot is admin
-            const guildsResponse = await fetch('/api/guilds', {
-                headers: { 'Authorization': `Bearer ${discordAccessToken}` }
-            });
-            const guildsData = await guildsResponse.json();
-            if (guildsResponse.ok) {
-                guildSelect.innerHTML = '<option value="">-- Select a Guild --</option>';
-                guildsData.forEach(guild => {
-                    const option = document.createElement('option');
-                    option.value = guild.id;
-                    option.textContent = guild.name;
-                    guildSelect.appendChild(option);
-                });
-            } else {
-                throw new Error(guildsData.message || 'Failed to fetch guilds');
-            }
-
-        } catch (error) {
-            console.error('Error loading dashboard:', error);
-            alert('Error loading dashboard. Please log in again.');
-            localStorage.removeItem('discord_access_token'); // Clear invalid token
-            showAuthSection();
-        }
-    }
-
     // Load guild-specific configuration
     async function loadGuildConfig(guildId) {
         configSection.style.display = 'none';
@@ -138,6 +155,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const configResponse = await fetch(`/api/guild-config?guildId=${guildId}`, {
                 headers: { 'Authorization': `Bearer ${discordAccessToken}` }
             });
+            // Handle 503 for guild-config as well
+            if (configResponse.status === 503) {
+                 saveStatus.textContent = `Bot is still starting up. Please try again in a moment.`;
+                 saveStatus.className = 'status-message';
+                 // Don't retry automatically here, let user re-select or refresh
+                 return;
+            }
+
             const configData = await configResponse.json();
 
             if (configResponse.ok) {
@@ -156,11 +181,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 populateSelect(document.getElementById('mod-log-channel-select'), textChannels, currentConfig.moderationLogChannelId);
                 populateSelect(document.getElementById('message-log-channel-select'), textChannels, currentConfig.messageLogChannelId);
                 populateSelect(document.getElementById('mod-alert-channel-select'), textChannels, currentConfig.modAlertChannelId);
-                populateSelect(document.getElementById('member-log-channel-select'), textChannels, currentConfig.memberLogChannelId); // New
-                populateSelect(document.getElementById('admin-log-channel-select'), textChannels, currentConfig.adminLogChannelId);     // New
-                populateSelect(document.getElementById('join-leave-log-channel-select'), textChannels, currentConfig.joinLeaveLogChannelId); // New
-                populateSelect(document.getElementById('boost-log-channel-select'), textChannels, currentConfig.boostLogChannelId);     // New
-                populateSelect(document.getElementById('counting-channel-select'), textChannels, currentConfig.countingChannelId); // New
+                populateSelect(document.getElementById('member-log-channel-select'), textChannels, currentConfig.memberLogChannelId);
+                populateSelect(document.getElementById('admin-log-channel-select'), textChannels, currentConfig.adminLogChannelId);
+                populateSelect(document.getElementById('join-leave-log-channel-select'), textChannels, currentConfig.joinLeaveLogChannelId);
+                populateSelect(document.getElementById('boost-log-channel-select'), textChannels, currentConfig.boostLogChannelId);
+                populateSelect(document.getElementById('counting-channel-select'), textChannels, currentConfig.countingChannelId);
 
 
                 configSection.style.display = 'block';
@@ -205,11 +230,11 @@ document.addEventListener('DOMContentLoaded', () => {
             messageLogChannelId: document.getElementById('message-log-channel-select').value || null,
             modAlertChannelId: document.getElementById('mod-alert-channel-select').value || null,
             modPingRoleId: document.getElementById('mod-ping-role-select').value || null,
-            memberLogChannelId: document.getElementById('member-log-channel-select').value || null, // New
-            adminLogChannelId: document.getElementById('admin-log-channel-select').value || null,     // New
-            joinLeaveLogChannelId: document.getElementById('join-leave-log-channel-select').value || null, // New
-            boostLogChannelId: document.getElementById('boost-log-channel-select').value || null,     // New
-            countingChannelId: document.getElementById('counting-channel-select').value || null,     // New
+            memberLogChannelId: document.getElementById('member-log-channel-select').value || null,
+            adminLogChannelId: document.getElementById('admin-log-channel-select').value || null,
+            joinLeaveLogChannelId: document.getElementById('join-leave-log-channel-select').value || null,
+            boostLogChannelId: document.getElementById('boost-log-channel-select').value || null,
+            countingChannelId: document.getElementById('counting-channel-select').value || null,
         };
 
         try {
