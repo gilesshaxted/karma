@@ -26,7 +26,7 @@ const client = new Client({
 
 // Create a collection to store commands
 client.commands = new Collection();
-// Collection to store guild invites for tracking
+// Collection to store guild invites for tracking (stores Invite objects, not just uses)
 client.invites = new Collection();
 
 // Firebase and Google API variables - will be initialized in initializeAndGetClient
@@ -231,8 +231,8 @@ const initializeAndGetClient = async () => {
                 if (guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
                     try {
                         const invites = await guild.invites.fetch();
-                        // Store invites as a Map of code -> uses
-                        client.invites.set(guild.id, new Collection(invites.map(invite => [invite.code, invite.uses])));
+                        // Store invites as a Collection of Invite objects (keyed by code)
+                        client.invites.set(guild.id, invites);
                         console.log(`Cached invites for guild ${guild.name}`);
                     } catch (error) {
                         console.warn(`Could not fetch invites for guild ${guild.name}. Ensure bot has 'Manage Guild' permission.`, error);
@@ -310,7 +310,7 @@ const initializeAndGetClient = async () => {
                 if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
                     try {
                         const newInvites = await member.guild.invites.fetch();
-                        client.invites.set(member.guild.id, new Collection(newInvites.map(invite => [invite.code, invite.uses])));
+                        client.invites.set(member.guild.id, newInvites); // Store the new collection of invites
                     } catch (error) {
                         console.warn(`Failed to update invite cache for guild ${member.guild.name} after member join:`, error);
                     }
@@ -367,7 +367,7 @@ const initializeAndGetClient = async () => {
                 if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
                     try {
                         const newInvites = await invite.guild.invites.fetch();
-                        client.invites.set(invite.guild.id, new Collection(newInvites.map(i => [i.code, i.uses])));
+                        client.invites.set(invite.guild.id, newInvites); // Store the new collection of invites
                     } catch (error) {
                         console.warn(`Failed to update invite cache for guild ${invite.guild.name} after invite create:`, error);
                     }
