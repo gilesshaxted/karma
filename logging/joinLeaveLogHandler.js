@@ -1,13 +1,14 @@
 // logging/joinLeaveLogHandler.js
-const { EmbedBuilder, Collection, PermissionsBitField, AuditLogEvent } = require('discord.js'); // Added AuditLogEvent for potential future use, though not directly used in this fix for human joins.
+const { EmbedBuilder, Collection, PermissionsBitField } = require('discord.js');
 
 /**
  * Handles guild member join events, including invite tracking.
  * @param {GuildMember} member - The member who joined.
  * @param {function} getGuildConfig - Function to retrieve guild configuration.
- * @param {Collection<string, Invite>} clientInvites - The client's cached invites for the guild (full Invite objects).
+ * @param {Map<string, number>} oldInvitesMap - A Map of invite codes to their uses count *before* this member joined.
+ * @param {Map<string, number>} newInvitesMap - A Map of invite codes to their uses count *after* this member joined.
  */
-const handleGuildMemberAdd = async (member, getGuildConfig, clientInvites) => {
+const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newInvitesMap) => {
     const guildConfig = await getGuildConfig(member.guild.id);
     const logChannelId = guildConfig.joinLeaveLogChannelId;
 
@@ -19,73 +20,54 @@ const handleGuildMemberAdd = async (member, getGuildConfig, clientInvites) => {
     let inviter = 'Unknown';
     let inviteCode = 'N/A';
 
-    // Attempt to track invite if bot has Manage Guild permission
+    // Only attempt invite tracking if the bot has 'Manage Guild' permission
     if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-        try {
-            const newInvites = await member.guild.invites.fetch(); // Fetch current invites from Discord API
+        let possibleInvites = [];
 
-            // Get the old invites from our cache
-            const oldInvites = clientInvites.get(member.guild.id) || new Collection();
-
-            let possibleInvites = [];
-
-            // Find which invite code(s) increased in use
-            for (const [code, newInvite] of newInvites) {
-                const oldInvite = oldInvites.get(code);
-                const oldUses = oldInvite ? oldInvite.uses : 0;
-
-                if (newInvite.uses > oldUses) {
-                    // This invite's uses increased
-                    possibleInvites.push(newInvite);
-                }
+        // Find which invite code(s) increased in use
+        for (const [code, newUses] of newInvitesMap) {
+            const oldUses = oldInvitesMap.get(code) || 0; // Get uses from old map, or 0 if new invite
+            if (newUses > oldUses) {
+                // This invite's uses increased
+                possibleInvites.push({ code, newUses, oldUses });
             }
-
-            if (possibleInvites.length === 1) {
-                // Exactly one invite's uses increased, this is likely the one
-                inviteUsed = possibleInvites[0];
-            } else if (possibleInvites.length > 1) {
-                // Multiple invites increased, or no clear single invite.
-                // This can happen if multiple users join simultaneously, or if an invite was used
-                // but its oldUses wasn't accurately cached.
-                // For now, we'll log as ambiguous.
-                console.warn(`Ambiguous invite tracking for ${member.user.tag} in ${member.guild.name}. Multiple invites increased in uses.`);
-                inviter = 'Ambiguous/Multiple Invites';
-                inviteCode = 'Multiple/Unknown';
-            } else {
-                // No invite found by increased uses. Could be vanity URL, or bot add.
-                // Check for vanity URL if guild has one (requires GUILD_VANITY_URL feature)
-                if (member.guild.features.includes('VANITY_URL')) {
-                    try {
-                        const vanityInvite = await member.guild.fetchVanityData();
-                        if (vanityInvite && vanityInvite.uses > (oldInvites.get(vanityInvite.code)?.uses || 0)) {
-                            inviteUsed = vanityInvite;
-                            inviter = 'Vanity URL';
-                            inviteCode = vanityInvite.code;
-                        }
-                    } catch (vanityError) {
-                        console.warn(`Could not fetch vanity URL for guild ${member.guild.name}:`, vanityError);
-                    }
-                }
-            }
-
-            if (inviteUsed) {
-                inviter = inviteUsed.inviter ? `<@${inviteUsed.inviter.id}> (${inviteUsed.inviter.tag})` : 'Unknown (No Inviter)';
-                inviteCode = inviteUsed.code;
-            }
-
-            // After processing, update the client's invite cache for this guild
-            clientInvites.set(member.guild.id, newInvites);
-
-        } catch (error) {
-            console.error(`Error fetching invites for ${member.user.tag} in ${member.guild.name}:`, error);
-            // Fallback if invite fetching fails entirely
-            inviter = 'Unknown (Fetch Error)';
-            inviteCode = 'Error';
         }
-    } else {
-        console.warn(`Bot does not have 'Manage Guild' permission or invites not cached for ${member.guild.name}. Cannot track invites for ${member.user.tag}.`);
-    }
 
+        if (possibleInvites.length === 1) {
+            // Exactly one invite's uses increased, this is likely the one
+            const inviteData = possibleInvites[0];
+            try {
+                // Fetch the full invite object to get inviter details
+                const fetchedInvite = await member.guild.invites.fetch(inviteData.code);
+                inviteUsed = fetchedInvite;
+            } catch (fetchError) {
+                console.warn(`Could not fetch specific invite ${inviteData.code}:`, fetchError);
+                // Fallback to just code and uses if fetch fails
+                inviteCode = inviteData.code;
+                inviter = `Unknown (Code: ${inviteData.code}, Uses: ${inviteData.oldUses} -> ${inviteData.newUses})`;
+            }
+        } else if (possibleInvites.length > 1) {
+            // Multiple invites increased, or no clear single invite.
+            // This can happen if multiple users join simultaneously, or if an invite was used
+            // but its oldUses wasn't accurately cached.
+            console.warn(`Ambiguous invite tracking for ${member.user.tag} in ${member.guild.name}. Multiple invites increased in uses.`);
+            inviter = 'Ambiguous/Multiple Invites';
+            inviteCode = 'Multiple/Unknown';
+        } else {
+            // No invite found by increased uses. Could be vanity URL or other untracked join.
+            // Discord API doesn't provide direct inviter for vanity URL joins.
+            inviter = 'Unknown (No specific invite found)';
+            inviteCode = 'N/A';
+        }
+
+        if (inviteUsed) {
+            inviter = inviteUsed.inviter ? `<@${inviteUsed.inviter.id}> (${inviteUsed.inviter.tag})` : 'Unknown (No Inviter)';
+            inviteCode = inviteUsed.code;
+        }
+
+    } else {
+        console.warn(`Bot does not have 'Manage Guild' permission in ${member.guild.name}. Cannot track invites for ${member.user.tag}.`);
+    }
 
     const embed = new EmbedBuilder()
         .setTitle('Member Joined')
