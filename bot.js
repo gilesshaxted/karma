@@ -227,9 +227,11 @@ const initializeAndGetClient = async () => {
             // --- Populate invite cache for join tracking ---
             console.log('Populating invite cache...');
             client.guilds.cache.forEach(async guild => {
+                // Ensure bot has 'Manage Guild' permission to fetch invites
                 if (guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
                     try {
                         const invites = await guild.invites.fetch();
+                        // Store invites as a Map of code -> uses
                         client.invites.set(guild.id, new Collection(invites.map(invite => [invite.code, invite.uses])));
                         console.log(`Cached invites for guild ${guild.name}`);
                     } catch (error) {
@@ -400,7 +402,7 @@ const initializeAndGetClient = async () => {
                         if (reaction.emoji.name === '👍') {
                             karmaChange = 1;
                             actionText = '+1 Karma';
-                        } else {
+                        } else { // 👎
                             karmaChange = -1;
                             actionText = '-1 Karma';
                         }
@@ -504,9 +506,9 @@ const initializeAndGetClient = async () => {
                             updateUserKarmaData: karmaSystem.updateUserKarmaData,
                             calculateAndAwardKarma: karmaSystem.calculateAndAwardKarma,
                             analyzeSentiment: karmaSystem.analyzeSentiment,
-                            addKarmaPoints: karmaSystem.addKarmaPoints,
-                            subtractKarmaPoints: karmaSystem.subtractKarmaPoints,
-                            setKarmaPoints: karmaSystem.setKarmaPoints,
+                            addKarmaPoints: karmaSystem.addKarmaPoints, // Passed new karma functions
+                            subtractKarmaPoints: karmaSystem.subtractKarmaPoints, // Passed new karma functions
+                            setKarmaPoints: karmaSystem.setKarmaPoints, // Passed new karma functions
                             client
                         });
                     } else if (interaction.isButton()) {
