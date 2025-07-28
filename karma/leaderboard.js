@@ -7,8 +7,8 @@ module.exports = {
         .setName('leaderboard')
         .setDescription('Displays the top Karma earners in the guild.'),
     async execute(interaction, { db, appId, getGuildConfig }) {
-        // interaction.deferReply() is now handled by bot.js for all slash commands.
-        // REMOVED: await interaction.deferReply({ ephemeral: false });
+        // interaction.deferReply() is handled by bot.js for all slash commands.
+        // It will be public due to the conditional deferral in bot.js
 
         const guild = interaction.guild;
         const guildId = guild.id;
