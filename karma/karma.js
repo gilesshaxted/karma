@@ -1,39 +1,37 @@
 // karma/karma.js
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { doc, getDoc } = require('firebase/firestore');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('karma')
-        .setDescription('Shows a user\'s current karma points.')
+        .setDescription('Checks a user\'s Karma points.')
         .addUserOption(option =>
             option.setName('target')
-                .setDescription('The user whose karma to view (defaults to yourself)')
+                .setDescription('The user to check Karma for (defaults to yourself)')
                 .setRequired(false)),
+    async execute(interaction, { db, appId, getGuildConfig }) {
+        await interaction.deferReply({ ephemeral: true }); // Always ephemeral for personal karma checks
 
-    async execute(interaction, { db, appId, MessageFlags, getOrCreateUserKarma }) {
         const targetUser = interaction.options.getUser('target') || interaction.user;
-        const guildId = interaction.guild.id;
+        const guild = interaction.guild;
+        const guildId = guild.id;
 
         try {
-            const karmaData = await getOrCreateUserKarma(guildId, targetUser.id);
+            const karmaData = await interaction.client.karmaSystem.getOrCreateUserKarma(guildId, targetUser.id, db, appId); // Use client's karmaSystem
+            const karmaPoints = karmaData.karmaPoints;
 
             const embed = new EmbedBuilder()
-                .setTitle(`${targetUser.tag}'s Karma`)
-                .setDescription(`Current Karma Points: **${karmaData.karmaPoints}**`)
-                .addFields(
-                    { name: 'Messages Today', value: `${karmaData.messagesToday}`, inline: true },
-                    { name: 'Replies Received Today', value: `${karmaData.repliesReceivedToday}`, inline: true },
-                    { name: 'Reactions Received Today', value: `${karmaData.reactionsReceivedToday}`, inline: true },
-                    { name: 'Last Activity', value: `<t:${Math.floor(karmaData.lastActivityDate.toDate().getTime() / 1000)}:R>`, inline: true }
-                )
-                .setColor(0x00FF00) // Green color for karma
+                .setTitle('Karma Points')
+                .setDescription(`<@${targetUser.id}> has **${karmaPoints}** Karma points.`)
+                .setColor(0x00AE86) // Greenish color
                 .setTimestamp();
 
             await interaction.editReply({ embeds: [embed] });
 
         } catch (error) {
-            console.error(`Error fetching karma for ${targetUser.tag}:`, error);
-            await interaction.editReply({ content: 'There was an error fetching karma data for that user.' });
+            console.error(`Error fetching Karma for ${targetUser.tag}:`, error);
+            await interaction.editReply('Failed to retrieve Karma. An error occurred.');
         }
-    }
+    },
 };
