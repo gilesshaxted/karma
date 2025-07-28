@@ -26,6 +26,5 @@
     "express": "^4.19.2",
     "firebase": "^10.12.3",
     "axios": "^1.7.2",
-    "discord-invites-tracker": "^3.0.0"
   }
 }
