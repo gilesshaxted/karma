@@ -1,22 +1,67 @@
 // index.js - Main entry point for the combined web server and Discord bot
 require('dotenv').config();
+const { Client, Collection, GatewayIntentBits, Partials, PermissionsBitField, MessageFlags } = require('discord.js');
+const { REST } = require('@discordjs/rest');
+const { Routes } = require('discord-api-types/v10');
+const { initializeApp } = require('firebase/app');
+const { getAuth, signInAnonymously, signInWithCustomToken } = require('firebase/auth');
+const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, limit, getDocs } = require('firebase/firestore');
 const express = require('express');
 const axios = require('axios'); // For OAuth calls
-const { PermissionsBitField } = require('discord.js'); // For bot permissions in OAuth URL
 
-// --- Express Web Server Setup ---
-const app = express();
-const PORT = process.env.PORT || 3000;
+// Create a new Discord client instance
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.GuildPresences, // Required for userUpdate, guildMemberUpdate (presence changes)
+        GatewayIntentBits.GuildModeration, // Required for audit log, guildScheduledEvent*
+        GatewayIntentBits.GuildMessageTyping, // Often useful for bot interactions, though not strictly for logging
+        GatewayIntentBits.GuildInvites // Required to read invites for join tracking
+    ],
+    partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember, Partials.User] // Added GuildMember, User for member/user updates
+});
 
-app.use(express.json()); // For parsing application/json
-app.use(express.static('public')); // Serve static files from the 'public' directory
+// Create a collection to store commands
+client.commands = new Collection();
+// Collection to store guild invites for tracking (stores Map<string, number> of code -> uses)
+client.invites = new Collection();
 
-// Discord OAuth Configuration (for web dashboard)
+// Firebase and Google API variables - will be initialized in client.once('ready')
+client.db = null;
+client.auth = null;
+client.appId = null;
+client.googleApiKey = null;
+client.userId = null; // Also store userId on client
+
+
+// Import helper functions (relative to index.js)
+const { hasPermission, isExempt } = require('./helpers/permissions');
+const logging = require('./logging/logging'); // Core logging functions
+const karmaSystem = require('./karma/karmaSystem'); // Karma system functions
+const autoModeration = require('./automoderation/autoModeration'); // Auto-moderation functions
+const handleMessageReactionAdd = require('./events/messageReactionAdd'); // Emoji reaction handler
+
+// New logging handlers
+const messageLogHandler = require('./logging/messageLogHandler');
+const memberLogHandler = require('./logging/memberLogHandler');
+const adminLogHandler = require('./logging/adminLogHandler');
+const joinLeaveLogHandler = require('./logging/joinLeaveLogHandler');
+const boostLogHandler = require('./logging/boostLogHandler');
+
+// New game handlers
+const countingGame = require('./games/countingGame');
+
+
+// --- Discord OAuth Configuration (Bot's Permissions for Invite) ---
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI;
 const DISCORD_OAUTH_SCOPES = 'identify guilds'; // Scopes for user identification and guild list
-const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([ // Bot permissions for the invite link
+const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([
     PermissionsBitField.Flags.ManageChannels,
     PermissionsBitField.Flags.ManageRoles,
     PermissionsBitField.Flags.KickMembers,
@@ -25,8 +70,114 @@ const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([ // Bot permissions for
     PermissionsBitField.Flags.ReadMessageHistory,
     PermissionsBitField.Flags.SendMessages,
     PermissionsBitField.Flags.ManageMessages,
-    PermissionsBitField.Flags.ViewAuditLog // Added for admin logging
-]).bitfield.toString(); // Get the BigInt bitfield and convert to string
+    PermissionsBitField.Flags.ViewAuditLog, // Added for admin logging
+    PermissionsBitField.Flags.ManageGuild // Added for invite tracking
+]).bitfield.toString();
+
+// Helper function to get guild-specific config from Firestore
+// This function will be attached to the client instance
+const getGuildConfig = async (guildId) => {
+    if (!client.db || !client.appId) {
+        console.error('Firestore not initialized yet when getGuildConfig was called.');
+        return null;
+    }
+    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
+    const configSnap = await getDoc(configRef);
+
+    if (configSnap.exists()) {
+        return configSnap.data();
+    } else {
+        const defaultConfig = {
+            modRoleId: null,
+            adminRoleId: null,
+            moderationLogChannelId: null,
+            messageLogChannelId: null,
+            modAlertChannelId: null,
+            modPingRoleId: null,
+            memberLogChannelId: null, // New: Member log channel
+            adminLogChannelId: null,   // New: Admin log channel
+            joinLeaveLogChannelId: null, // New: Join/Leave log channel
+            boostLogChannelId: null,   // New: Boost log channel
+            countingChannelId: null,   // New: Counting game channel
+            currentCount: 0,           // New: Counting game current count
+            lastCountMessageId: null,  // New: Counting game last correct message ID
+            caseNumber: 0
+        };
+        await setDoc(configRef, defaultConfig);
+        return defaultConfig;
+    }
+};
+
+// Helper function to save guild-specific config to Firestore
+// This function will be attached to the client instance
+const saveGuildConfig = async (guildId, newConfig) => {
+    if (!client.db || !client.appId) {
+        console.error('Firestore not initialized yet when saveGuildConfig was called.');
+        return;
+    }
+    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
+    await setDoc(configRef, newConfig, { merge: true });
+};
+
+
+// Dynamically load command files
+const moderationCommandFiles = [
+    'warn.js',
+    'timeout.js',
+    'kick.js',
+    'ban.js',
+    'warnings.js',
+    'warning.js',
+    'clearwarnings.js',
+    'clearwarning.js'
+];
+
+const karmaCommandFiles = [
+    'karma.js',
+    'leaderboard.js',
+    'karmaPlus.js',
+    'karmaMinus.js',
+    'karmaSet.js'
+];
+
+const gameCommandFiles = [ // New array for game commands
+    'countReset.js',
+    'countSet.js'
+];
+
+for (const file of moderationCommandFiles) {
+    const command = require(`./moderation/${file}`);
+    if ('data' in command && 'execute' in command) {
+        client.commands.set(command.data.name, command);
+    } else {
+        console.log(`[WARNING] The moderation command in ${file} is missing a required "data" or "execute" property.`);
+    }
+}
+
+for (const file of karmaCommandFiles) {
+    const command = require(`./karma/${file}`);
+    if ('data' in command && 'execute' in command) {
+        client.commands.set(command.data.name, command);
+    } else {
+        console.log(`[WARNING] The karma command in ${file} is missing a required "data" or "execute" property.`);
+    }
+}
+
+for (const file of gameCommandFiles) { // Load game commands
+    const command = require(`./games/${file}`);
+    if ('data' in command && 'execute' in command) {
+        client.commands.set(command.data.name, command);
+    } else {
+        console.log(`[WARNING] The game command in ${file} is missing a required "data" or "execute" property.`);
+    }
+}
+
+// --- Express Web Server Setup ---
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(express.json()); // For parsing application/json
+app.use(express.static('public')); // Serve static files from the 'public' directory
 
 // Basic health check endpoint (serves dashboard HTML)
 app.get('/', (req, res) => {
@@ -93,14 +244,9 @@ const verifyDiscordToken = async (req, res, next) => {
     }
 };
 
-// Start Express server FIRST
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Web server listening on port ${PORT}`);
-});
-
 // Middleware to check if botClient is ready for API calls
 const checkBotReadiness = async (req, res, next) => {
-    const MAX_READY_RETRIES = 5; // Max attempts to wait for bot readiness
+    const MAX_READY_RETRIES = 10; // Max attempts to wait for bot readiness
     const READY_RETRY_DELAY_MS = 1000; // 1 second delay between retries
 
     for (let i = 0; i < MAX_READY_RETRIES; i++) {
@@ -125,22 +271,22 @@ app.get('/api/user', verifyDiscordToken, checkBotReadiness, (req, res) => {
 
 // API route to get guilds where the bot is present and the user has admin permissions
 app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) => {
-    const MAX_RETRIES = 5;
-    const RETRY_DELAY_MS = 2000; // 2 seconds
+    const MAX_GUILD_FETCH_RETRIES = 5; // Max retries for guild cache population
+    const GUILD_FETCH_RETRY_DELAY_MS = 1000; // 1 second delay
 
-    for (let i = 0; i < MAX_RETRIES; i++) {
+    for (let i = 0; i < MAX_GUILD_FETCH_RETRIES; i++) {
         try {
             const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
                 headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
             });
             const userGuilds = guildsResponse.data;
 
-            const botGuilds = client.guilds.cache; // Use client.guilds.cache directly
+            const botGuilds = client.guilds.cache;
             
-            // Check if bot's guild cache is populated. If not, wait and retry.
-            if (botGuilds.size === 0 && i < MAX_RETRIES - 1) {
-                console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+            // If bot's guild cache is still empty, and we have retries left, wait and retry.
+            if (botGuilds.size === 0 && i < MAX_GUILD_FETCH_RETRIES - 1) {
+                console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, GUILD_FETCH_RETRY_DELAY_MS));
                 continue; // Retry the loop
             }
 
@@ -167,9 +313,9 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
         } catch (error) {
             console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
             // If it's a 503 or network error, retry. Otherwise, rethrow or handle.
-            if (error.response?.status === 503 && i < MAX_RETRIES - 1) {
-                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+            if (error.response?.status === 503 && i < MAX_GUILD_FETCH_RETRIES - 1) {
+                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, GUILD_FETCH_RETRY_DELAY_MS));
                 continue; // Retry the loop
             }
             // If it's another error or retries exhausted, send error response
@@ -177,7 +323,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
         }
     }
     // Fallback if loop finishes without success (e.g., max retries reached)
-    return res.status(500).json({ message: 'Failed to fetch guilds after multiple retries. Bot may not be fully ready.' });
+    return res.status(500).json({ message: 'Failed to fetch guilds after multiple retries. Bot may not be fully ready or accessible.' });
 });
 
 // API route to get a specific guild's roles and channels, and bot's current config
