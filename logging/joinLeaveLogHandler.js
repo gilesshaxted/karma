@@ -5,10 +5,10 @@ const { EmbedBuilder, Collection, PermissionsBitField } = require('discord.js');
  * Handles guild member join events, including invite tracking.
  * @param {GuildMember} member - The member who joined.
  * @param {function} getGuildConfig - Function to retrieve guild configuration.
- * @param {Map<string, number>} oldInvitesMap - A Map of invite codes to their uses count *before* this member joined.
- * @param {Map<string, number>} newInvitesMap - A Map of invite codes to their uses count *after* this member joined.
+ * @param {Collection<string, number>} oldInvitesMap - A Map of invite codes to their uses count *before* this member joined.
+ * @param {Collection<string, Invite>} newInvitesCollection - A Collection of full Invite objects *after* this member joined.
  */
-const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newInvitesMap) => {
+const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newInvitesCollection) => {
     const guildConfig = await getGuildConfig(member.guild.id);
     const logChannelId = guildConfig.joinLeaveLogChannelId;
 
@@ -17,7 +17,7 @@ const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newIn
     if (!logChannel) return;
 
     let inviteUsed = null;
-    let inviter = 'Unknown';
+    let inviterInfo = 'Unknown';
     let inviteCode = 'N/A';
 
     // Only attempt invite tracking if the bot has 'Manage Guild' permission
@@ -25,46 +25,44 @@ const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newIn
         let potentialInvites = [];
 
         // Find which invite code(s) increased in use
-        for (const [code, newUses] of newInvitesMap) {
+        for (const [code, newInvite] of newInvitesCollection) {
             const oldUses = oldInvitesMap.get(code) || 0; // Get uses from old map, or 0 if new invite
 
-            if (newUses > oldUses) {
-                // This invite's uses increased
-                potentialInvites.push({ code, newUses, oldUses });
+            if (newInvite.uses > oldUses) {
+                potentialInvites.push(newInvite); // Store the full new Invite object
             }
         }
 
-        // Try to find the exact invite that increased by 1
-        let foundExactMatch = false;
-        if (potentialInvites.length > 0) {
-            for (const inviteData of potentialInvites) {
-                if (inviteData.newUses === inviteData.oldUses + 1) {
-                    try {
-                        // Fetch the full invite object to get inviter details
-                        const fetchedInvite = await member.guild.invites.fetch(inviteData.code);
-                        inviteUsed = fetchedInvite;
-                        foundExactMatch = true;
-                        break; // Found the exact match, no need to check further
-                    } catch (fetchError) {
-                        console.warn(`Could not fetch specific invite ${inviteData.code} for exact match:`, fetchError);
-                        // Continue to check other potential invites or fallbacks
-                    }
+        if (potentialInvites.length === 1) {
+            // Exactly one invite's uses increased, this is likely the one
+            inviteUsed = potentialInvites[0];
+        } else if (potentialInvites.length > 1) {
+            // Multiple invites increased. Try to find one with exact +1, otherwise ambiguous.
+            let exactMatch = null;
+            for (const invite of potentialInvites) {
+                const oldUses = oldInvitesMap.get(invite.code) || 0;
+                if (invite.uses === oldUses + 1) {
+                    exactMatch = invite;
+                    break;
                 }
             }
-        }
-
-        if (foundExactMatch && inviteUsed) {
-            inviter = inviteUsed.inviter ? `<@${inviteUsed.inviter.id}> (${inviteUsed.inviter.tag})` : 'Unknown (No Inviter)';
-            inviteCode = inviteUsed.code;
-        } else if (potentialInvites.length > 0) {
-            // If no exact +1 match, but some invites increased, it's ambiguous
-            console.warn(`Ambiguous invite tracking for ${member.user.tag} in ${member.guild.name}. Multiple or non-single-increment invites increased in uses.`);
-            inviter = 'Ambiguous/Multiple Invites';
-            inviteCode = 'Multiple/Unknown';
+            if (exactMatch) {
+                inviteUsed = exactMatch;
+            } else {
+                console.warn(`Ambiguous invite tracking for ${member.user.tag} in ${member.guild.name}. Multiple invites increased in uses, no single +1 match.`);
+                inviterInfo = 'Ambiguous/Multiple Invites';
+                inviteCode = 'Multiple/Unknown';
+            }
         } else {
             // No invite found by increased uses. Could be vanity URL or other untracked join.
-            inviter = 'Unknown (No specific invite found)';
+            // Discord API doesn't provide direct inviter for vanity URL joins.
+            inviterInfo = 'Unknown (No specific invite found)';
             inviteCode = 'N/A';
+        }
+
+        if (inviteUsed) {
+            inviterInfo = inviteUsed.inviter ? `<@${inviteUsed.inviter.id}> (${inviteUsed.inviter.tag})` : 'Unknown (No Inviter Info)';
+            inviteCode = inviteUsed.code;
         }
 
     } else {
@@ -76,7 +74,7 @@ const handleGuildMemberAdd = async (member, getGuildConfig, oldInvitesMap, newIn
         .setDescription(
             `**User:** <@${member.user.id}> (${member.user.tag})\n` +
             `**Account Created:** <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>\n` +
-            `**Invited By:** ${inviter}\n` +
+            `**Invited By:** ${inviterInfo}\n` +
             `**Invite Code:** \`${inviteCode}\``
         )
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
@@ -106,16 +104,16 @@ const handleGuildMemberRemove = async (member, getGuildConfig) => {
     const embed = new EmbedBuilder()
         .setTitle('Member Left')
         .setDescription(
-            `**User:** ${member.user?.tag || 'Unknown User'} (${member.user?.id || 'Unknown ID'})\n` + // Safely access user properties
+            `**User:** ${member.user?.tag || 'Unknown User'} (${member.user?.id || 'Unknown ID'})\n` +
             `**Joined Guild:** ${member.joinedTimestamp ? `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>` : 'Unknown'}`
         )
-        .setThumbnail(member.user?.displayAvatarURL({ dynamic: true }) || null) // Safely access avatar
+        .setThumbnail(member.user?.displayAvatarURL({ dynamic: true }) || null)
         .setColor(0xFF0000) // Red
         .setTimestamp()
-        .setFooter({ text: `User ID: ${member.user?.id || 'Unknown ID'}` }); // Safely access user ID
+        .setFooter({ text: `User ID: ${member.user?.id || 'Unknown ID'}` });
 
-    await logChannel.send({ embeds: [embed] }).catch(err => { // Catch block for send
-        console.error(`Error sending leave log for ${member.user?.tag || 'Unknown User'}:`, err?.message || err); // Safely log error
+    await logChannel.send({ embeds: [embed] }).catch(err => {
+        console.error(`Error sending leave log for ${member.user?.tag || 'Unknown User'}:`, err?.message || err);
     });
 };
 
