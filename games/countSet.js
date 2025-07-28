@@ -10,7 +10,8 @@ module.exports = {
                 .setDescription('The number to set the count to')
                 .setRequired(true)),
     async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission }) {
-        await interaction.deferReply({ ephemeral: true });
+        // interaction.deferReply() is now handled by index.js for all slash commands.
+        // REMOVED: await interaction.deferReply({ ephemeral: true });
 
         const newNumber = interaction.options.getInteger('number');
         const guild = interaction.guild;
