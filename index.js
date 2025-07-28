@@ -1,67 +1,22 @@
 // index.js - Main entry point for the combined web server and Discord bot
 require('dotenv').config();
-const { Client, Collection, GatewayIntentBits, Partials, PermissionsBitField, MessageFlags } = require('discord.js');
-const { REST } = require('@discordjs/rest');
-const { Routes } = require('discord-api-types/v10');
-const { initializeApp } = require('firebase/app');
-const { getAuth, signInAnonymously, signInWithCustomToken } = require('firebase/auth');
-const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, limit, getDocs } = require('firebase/firestore');
 const express = require('express');
 const axios = require('axios'); // For OAuth calls
+const { PermissionsBitField } = require('discord.js'); // For bot permissions in OAuth URL
 
-// Create a new Discord client instance
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildPresences, // Required for userUpdate, guildMemberUpdate (presence changes)
-        GatewayIntentBits.GuildModeration, // Required for audit log, guildScheduledEvent*
-        GatewayIntentBits.GuildMessageTyping, // Often useful for bot interactions, though not strictly for logging
-        GatewayIntentBits.GuildInvites // Required to read invites for join tracking
-    ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember, Partials.User] // Added GuildMember, User for member/user updates
-});
+// --- Express Web Server Setup ---
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-// Create a collection to store commands
-client.commands = new Collection();
-// Collection to store guild invites for tracking (stores Map<string, number> of code -> uses)
-client.invites = new Collection();
+app.use(express.json()); // For parsing application/json
+app.use(express.static('public')); // Serve static files from the 'public' directory
 
-// Firebase and Google API variables - will be initialized in client.once('ready')
-client.db = null;
-client.auth = null;
-client.appId = null;
-client.googleApiKey = null;
-client.userId = null; // Also store userId on client
-
-
-// Import helper functions (relative to index.js)
-const { hasPermission, isExempt } = require('./helpers/permissions');
-const logging = require('./logging/logging'); // Core logging functions
-const karmaSystem = require('./karma/karmaSystem'); // Karma system functions
-const autoModeration = require('./automoderation/autoModeration'); // Auto-moderation functions
-const handleMessageReactionAdd = require('./events/messageReactionAdd'); // Emoji reaction handler
-
-// New logging handlers
-const messageLogHandler = require('./logging/messageLogHandler');
-const memberLogHandler = require('./logging/memberLogHandler');
-const adminLogHandler = require('./logging/adminLogHandler');
-const joinLeaveLogHandler = require('./logging/joinLeaveLogHandler');
-const boostLogHandler = require('./logging/boostLogHandler');
-
-// New game handlers
-const countingGame = require('./games/countingGame');
-
-
-// --- Discord OAuth Configuration (Bot's Permissions for Invite) ---
+// Discord OAuth Configuration (for web dashboard)
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
 const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
 const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI;
 const DISCORD_OAUTH_SCOPES = 'identify guilds'; // Scopes for user identification and guild list
-const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([
+const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([ // Bot permissions for the invite link
     PermissionsBitField.Flags.ManageChannels,
     PermissionsBitField.Flags.ManageRoles,
     PermissionsBitField.Flags.KickMembers,
@@ -70,16 +25,8 @@ const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([
     PermissionsBitField.Flags.ReadMessageHistory,
     PermissionsBitField.Flags.SendMessages,
     PermissionsBitField.Flags.ManageMessages,
-    PermissionsBitField.Flags.ViewAuditLog, // Added for admin logging
-    PermissionsBitField.Flags.ManageGuild // Added for invite tracking
-]).bitfield.toString();
-
-// --- Express Web Server Setup ---
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.json()); // For parsing application/json
-app.use(express.static('public')); // Serve static files from the 'public' directory
+    PermissionsBitField.Flags.ViewAuditLog // Added for admin logging
+]).bitfield.toString(); // Get the BigInt bitfield and convert to string
 
 // Basic health check endpoint (serves dashboard HTML)
 app.get('/', (req, res) => {
@@ -153,7 +100,7 @@ app.listen(PORT, '0.0.0.0', () => {
 
 // Middleware to check if botClient is ready for API calls
 const checkBotReadiness = async (req, res, next) => {
-    const MAX_READY_RETRIES = 10; // Max attempts to wait for bot readiness
+    const MAX_READY_RETRIES = 5; // Max attempts to wait for bot readiness
     const READY_RETRY_DELAY_MS = 1000; // 1 second delay between retries
 
     for (let i = 0; i < MAX_READY_RETRIES; i++) {
@@ -178,39 +125,59 @@ app.get('/api/user', verifyDiscordToken, checkBotReadiness, (req, res) => {
 
 // API route to get guilds where the bot is present and the user has admin permissions
 app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) => {
-    try {
-        const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
-            headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
-        });
-        const userGuilds = guildsResponse.data;
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY_MS = 2000; // 2 seconds
 
-        const botGuilds = client.guilds.cache; // Use client.guilds.cache directly
-        
-        console.log("User's guilds:", userGuilds.map(g => g.name)); // Debugging
-        console.log("Bot's guilds:", botGuilds.map(g => g.name)); // Debugging
+    for (let i = 0; i < MAX_RETRIES; i++) {
+        try {
+            const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
+                headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
+            });
+            const userGuilds = guildsResponse.data;
 
-        const manageableGuilds = userGuilds.filter(userGuild => {
-            const hasAdminPerms = (BigInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
-            const botInGuild = botGuilds.has(userGuild.id);
+            const botGuilds = client.guilds.cache; // Use client.guilds.cache directly
             
-            // Debugging: Log why a guild is filtered out
-            if (!botInGuild) {
-                console.log(`Filtering out guild ${userGuild.name}: Bot not in guild.`);
-            } else if (!hasAdminPerms) {
-                console.log(`Filtering out guild ${userGuild.name}: User does not have admin permissions.`);
+            // Check if bot's guild cache is populated. If not, wait and retry.
+            if (botGuilds.size === 0 && i < MAX_RETRIES - 1) {
+                console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+                continue; // Retry the loop
             }
 
-            return botInGuild && hasAdminPerms;
-        });
+            console.log("User's guilds:", userGuilds.map(g => g.name)); // Debugging
+            console.log("Bot's guilds:", botGuilds.map(g => g.name)); // Debugging
 
-        console.log("Manageable guilds sent to frontend:", manageableGuilds.map(g => g.name)); // Debugging
-        return res.json(manageableGuilds); // Success, send response and exit function
+            const manageableGuilds = userGuilds.filter(userGuild => {
+                const hasAdminPerms = (BigInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
+                const botInGuild = botGuilds.has(userGuild.id);
+                
+                // Debugging: Log why a guild is filtered out
+                if (!botInGuild) {
+                    console.log(`Filtering out guild ${userGuild.name}: Bot not in guild.`);
+                } else if (!hasAdminPerms) {
+                    console.log(`Filtering out guild ${userGuild.name}: User does not have admin permissions.`);
+                }
 
-    } catch (error) {
-        console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
-        // If it's a 503 or network error, retry. Otherwise, rethrow or handle.
-        return res.status(error.response?.status || 500).json({ message: 'Internal server error fetching guilds.' });
+                return botInGuild && hasAdminPerms;
+            });
+
+            console.log("Manageable guilds sent to frontend:", manageableGuilds.map(g => g.name)); // Debugging
+            return res.json(manageableGuilds); // Success, send response and exit function
+
+        } catch (error) {
+            console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
+            // If it's a 503 or network error, retry. Otherwise, rethrow or handle.
+            if (error.response?.status === 503 && i < MAX_RETRIES - 1) {
+                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+                continue; // Retry the loop
+            }
+            // If it's another error or retries exhausted, send error response
+            return res.status(error.response?.status || 500).json({ message: 'Internal server error fetching guilds.' });
+        }
     }
+    // Fallback if loop finishes without success (e.g., max retries reached)
+    return res.status(500).json({ message: 'Failed to fetch guilds after multiple retries. Bot may not be fully ready.' });
 });
 
 // API route to get a specific guild's roles and channels, and bot's current config
