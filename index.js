@@ -1,266 +1,275 @@
-// index.js - Main entry point for the combined web server and Discord bot
-require('dotenv').config();
-const express = require('express');
-const axios = require('axios'); // For OAuth calls
-const { PermissionsBitField } = require('discord.js'); // For bot permissions in OAuth URL
+// public/script.js
+document.addEventListener('DOMContentLoaded', () => {
+    const loginButton = document.getElementById('login-button');
+    const authSection = document.getElementById('auth-section');
+    const dashboardSection = document.getElementById('dashboard-section');
+    const userDisplayName = document.getElementById('user-display-name');
+    const guildSelect = document.getElementById('guild-select');
+    const configSection = document.getElementById('config-section');
+    const selectedGuildName = document.getElementById('selected-guild-name');
+    const configForm = document.getElementById('config-form');
+    const saveConfigButton = document.getElementById('save-config-button');
+    const saveStatus = document.getElementById('save-status');
 
-// --- Express Web Server Setup ---
-const app = express();
-const PORT = process.env.PORT || 3000;
+    let discordAccessToken = null;
+    let selectedGuildId = null;
+    let guildData = {}; // To store roles and channels for the selected guild
 
-app.use(express.json()); // For parsing application/json
-app.use(express.static('public')); // Serve static files from the 'public' directory
+    // Function to get URL parameters
+    const getUrlParameter = (name) => {
+        name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+        const regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+        const results = regex.exec(location.search);
+        return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+    };
 
-// Discord OAuth Configuration (for web dashboard)
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
-const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI;
-const DISCORD_OAUTH_SCOPES = 'identify guilds'; // Scopes for user identification and guild list
-const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([ // Bot permissions for the invite link
-    PermissionsBitField.Flags.ManageChannels,
-    PermissionsBitField.Flags.ManageRoles,
-    PermissionsBitField.Flags.KickMembers,
-    PermissionsBitField.Flags.BanMembers,
-    PermissionsBitField.Flags.ModerateMembers,
-    PermissionsBitField.Flags.ReadMessageHistory,
-    PermissionsBitField.Flags.SendMessages,
-    PermissionsBitField.Flags.ManageMessages,
-    PermissionsBitField.Flags.ViewAuditLog // Added for admin logging
-]).bitfield.toString(); // Get the BigInt bitfield and convert to string
-
-// Basic health check endpoint (serves dashboard HTML)
-app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/public/index.html');
-});
-
-// Discord OAuth Login Route
-app.get('/api/login', (req, res) => {
-    const authorizeUrl = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(DISCORD_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(DISCORD_OAUTH_SCOPES)}&permissions=${DISCORD_BOT_PERMISSIONS}`;
-    res.redirect(authorizeUrl);
-});
-
-// Discord OAuth Callback Route (Handles GET redirect from Discord)
-app.get('/callback', (req, res) => {
-    res.sendFile(__dirname + '/public/index.html');
-});
-
-// Discord OAuth Token Exchange Route (Frontend POSTs the code here)
-app.post('/api/token', async (req, res) => {
-    const { code } = req.body;
-    if (!code) {
-        return res.status(400).json({ message: 'No code provided.' });
-    }
-
-    try {
-        const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
-            client_id: DISCORD_CLIENT_ID,
-            client_secret: DISCORD_CLIENT_SECRET,
-            grant_type: 'authorization_code',
-            code: code,
-            redirect_uri: DISCORD_REDIRECT_URI,
-            scope: DISCORD_OAUTH_SCOPES,
-        }), {
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-        });
-
-        res.json(tokenResponse.data);
-    } catch (error) {
-        console.error('Error exchanging Discord OAuth code:', error.response ? error.response.data : error.message);
-        res.status(error.response?.status || 500).json({ message: error.response?.data?.error_description || 'Internal server error during OAuth.' });
-    }
-});
-
-// Middleware to verify Discord access token for API routes
-const verifyDiscordToken = async (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Authorization token required.' });
-    }
-    const accessToken = authHeader.split(' ')[1];
-
-    try {
-        const userResponse = await axios.get('https://discord.com/api/users/@me', {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        req.discordUser = userResponse.data;
-        req.discordAccessToken = accessToken;
-        next();
-    } catch (error) {
-        console.error('Error verifying Discord token:', error.response ? error.response.data : error.message);
-        res.status(error.response?.status || 500).json({ message: 'Invalid or expired access token.' });
-    }
-};
-
-// Start Express server FIRST
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Web server listening on port ${PORT}`);
-});
-
-// --- Start the Discord Bot (Imported from bot.js) ---
-let botClient = null; // Will hold the Discord client instance
-let botReadyPromise; // This promise will resolve when the bot is fully ready
-
-// Use an async IIFE to start the Discord bot process
-(async () => {
-    try {
-        const initializeAndGetClient = require('./bot'); // Import the default export
-        botReadyPromise = initializeAndGetClient(); // Call the default exported function
-        botClient = await botReadyPromise; // Await the bot's full readiness
-        
-        console.log("Discord bot initialization completed and ready for API use.");
-    } catch (error) {
-        console.error("Failed to start Discord bot from bot.js:", error);
-        process.exit(1); // Exit if bot fails to start
-    }
-})();
-
-// Middleware to check if botClient is ready for API calls
-const checkBotReadiness = async (req, res, next) => {
-    // If botClient is not yet assigned, wait for the botReadyPromise to resolve
-    if (!botClient) {
+    // Function to handle loading dashboard data with retry logic
+    async function loadDashboardWithRetry(retries = 15, delay = 3000) { // Increased retries and initial delay
         try {
-            await botReadyPromise; // Wait for the bot to become ready
-            // After awaiting, botClient should now be assigned.
-            // Re-check if it's actually ready (isReady() and Firebase initialized)
-            if (!botClient || !botClient.isReady() || !botClient.db || !botClient.appId) {
-                console.warn('BotClient still not fully ready after awaiting botReadyPromise. Returning 503.');
-                return res.status(503).json({ message: 'Bot backend is still starting up. Please try again in a moment.' });
+            // Fetch user info
+            const userResponse = await fetch('/api/user', {
+                headers: { 'Authorization': `Bearer ${discordAccessToken}` }
+            });
+
+            if (userResponse.status === 503 && retries > 0) {
+                console.warn(`Bot backend not ready (503). Retrying user data fetch in ${delay / 1000} seconds...`);
+                saveStatus.textContent = `Bot is starting up... Retrying in ${delay / 1000}s.`;
+                saveStatus.className = 'status-message';
+                await new Promise(res => setTimeout(res, delay));
+                return loadDashboardWithRetry(retries - 1, delay * 1.5); // Exponential backoff
+            } else if (!userResponse.ok) {
+                // Only clear token for explicit auth failures, not 503 (bot not ready)
+                if (userResponse.status === 401 || userResponse.status === 403) {
+                    localStorage.removeItem('discord_access_token');
+                }
+                throw new Error(await userResponse.text() || 'Failed to fetch user data');
+            }
+            const userData = await userResponse.json();
+            userDisplayName.textContent = userData.username;
+
+
+            // Fetch guilds where bot is admin
+            const guildsResponse = await fetch('/api/guilds', {
+                headers: { 'Authorization': `Bearer ${discordAccessToken}` }
+            });
+            if (guildsResponse.status === 503 && retries > 0) {
+                 console.warn(`Bot backend not ready (503). Retrying guilds data fetch in ${delay / 1000} seconds...`);
+                 saveStatus.textContent = `Bot is starting up... Retrying in ${delay / 1000}s.`;
+                 saveStatus.className = 'status-message';
+                 await new Promise(res => setTimeout(res, delay));
+                 return loadDashboardWithRetry(retries - 1, delay * 1.5);
+            } else if (!guildsResponse.ok) {
+                // Only clear token for explicit auth failures, not 503 (bot not ready)
+                if (guildsResponse.status === 401 || guildsResponse.status === 403) {
+                    localStorage.removeItem('discord_access_token');
+                }
+                 throw new Error(await guildsResponse.text() || 'Failed to fetch guilds');
+            }
+            const guildsData = await guildsResponse.json();
+            
+            guildSelect.innerHTML = '<option value="">-- Select a Guild --</option>';
+            guildsData.forEach(guild => {
+                const option = document.createElement('option');
+                option.value = guild.id;
+                option.textContent = guild.name;
+                guildSelect.appendChild(option);
+            });
+            showDashboardSection();
+            saveStatus.textContent = ''; // Clear status once loaded
+
+
+        } catch (error) {
+            console.error('Error loading dashboard:', error);
+            saveStatus.textContent = `Error loading dashboard: ${error.message}. Please try again.`;
+            saveStatus.className = 'status-message error';
+            // Only go back to auth section if it's not a 503 (bot starting up)
+            if (!error.message.includes('503')) {
+                localStorage.removeItem('discord_access_token'); // Clear invalid token for non-503 errors
+                showAuthSection();
+            }
+        }
+    }
+
+
+    // Handle OAuth callback
+    const code = getUrlParameter('code');
+    if (code) {
+        // Exchange code for token
+        fetch('/api/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ code })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.access_token) {
+                discordAccessToken = data.access_token;
+                localStorage.setItem('discord_access_token', discordAccessToken);
+                // Remove code from URL
+                window.history.replaceState({}, document.title, "/");
+                loadDashboardWithRetry(); // Start loading dashboard with retry logic
+            } else {
+                console.error('Failed to get access token:', data);
+                alert('Failed to log in with Discord. Please try again.');
+                showAuthSection();
+            }
+        })
+        .catch(error => {
+            console.error('Error during token exchange:', error);
+            alert('An error occurred during login. Please try again.');
+            showAuthSection();
+        });
+    } else {
+        // Check for existing token
+        discordAccessToken = localStorage.getItem('discord_access_token');
+        if (discordAccessToken) {
+            loadDashboardWithRetry(); // Start loading dashboard with retry logic
+        } else {
+            showAuthSection();
+        }
+    }
+
+    // Show/Hide sections
+    function showAuthSection() {
+        authSection.style.display = 'block';
+        dashboardSection.style.display = 'none';
+    }
+
+    function showDashboardSection() {
+        authSection.style.display = 'none';
+        dashboardSection.style.display = 'block';
+    }
+
+    // Populate a select element with options (channels or roles)
+    function populateSelect(selectElement, items, selectedId) {
+        selectElement.innerHTML = '<option value="">None</option>'; // Default option
+        items.forEach(item => {
+            const option = document.createElement('option');
+            option.value = item.id;
+            option.textContent = item.name;
+            if (item.id === selectedId) {
+                option.selected = true;
+            }
+            selectElement.appendChild(option);
+        });
+    }
+
+    // Load guild-specific configuration
+    async function loadGuildConfig(guildId) {
+        configSection.style.display = 'none';
+        saveStatus.textContent = 'Loading configuration...';
+        saveStatus.className = 'status-message';
+
+        try {
+            const configResponse = await fetch(`/api/guild-config?guildId=${guildId}`, {
+                headers: { 'Authorization': `Bearer ${discordAccessToken}` }
+            });
+            // Handle 503 for guild-config as well
+            if (configResponse.status === 503) {
+                 saveStatus.textContent = `Bot is still starting up. Please try again in a moment.`;
+                 saveStatus.className = 'status-message';
+                 return; // Don't proceed, let user re-select or refresh
+            }
+
+            const configData = await configResponse.json();
+
+            if (configResponse.ok) {
+                guildData = configData.guildData; // Store all guild data (roles, channels)
+                const currentConfig = configData.currentConfig; // Current bot config
+
+                selectedGuildName.textContent = guildData.name;
+
+                // Populate role selects
+                populateSelect(document.getElementById('mod-role-select'), guildData.roles, currentConfig.modRoleId);
+                populateSelect(document.getElementById('admin-role-select'), guildData.roles, currentConfig.adminRoleId);
+                populateSelect(document.getElementById('mod-ping-role-select'), guildData.roles, currentConfig.modPingRoleId);
+
+                // Populate channel selects
+                const textChannels = guildData.channels.filter(c => c.type === 0); // Type 0 is GUILD_TEXT
+                populateSelect(document.getElementById('mod-log-channel-select'), textChannels, currentConfig.moderationLogChannelId);
+                populateSelect(document.getElementById('message-log-channel-select'), textChannels, currentConfig.messageLogChannelId);
+                populateSelect(document.getElementById('mod-alert-channel-select'), textChannels, currentConfig.modAlertChannelId);
+                populateSelect(document.getElementById('member-log-channel-select'), textChannels, currentConfig.memberLogChannelId);
+                populateSelect(document.getElementById('admin-log-channel-select'), textChannels, currentConfig.adminLogChannelId);
+                populateSelect(document.getElementById('join-leave-log-channel-select'), textChannels, currentConfig.joinLeaveLogChannelId);
+                populateSelect(document.getElementById('boost-log-channel-select'), textChannels, currentConfig.boostLogChannelId);
+                populateSelect(document.getElementById('counting-channel-select'), textChannels, currentConfig.countingChannelId);
+
+
+                configSection.style.display = 'block';
+                saveStatus.textContent = '';
+            } else {
+                throw new Error(configData.message || 'Failed to load guild configuration.');
             }
         } catch (error) {
-            // If botReadyPromise rejected (bot failed to start)
-            console.error('Bot failed to initialize. Returning 503.', error);
-            return res.status(503).json({ message: 'Bot backend failed to start. Please check logs.' });
+            console.error('Error loading guild config:', error);
+            saveStatus.textContent = `Error: ${error.message}`;
+            saveStatus.className = 'status-message error';
+            configSection.style.display = 'none';
         }
-    } else if (!botClient.isReady() || !botClient.db || !botClient.appId) {
-        // If botClient is assigned but not fully ready (e.g., Firebase failed after ready event)
-        console.warn('BotClient assigned but not fully ready. Returning 503.');
-        return res.status(503).json({ message: 'Bot backend is still starting up. Please try again in a moment.' });
     }
-    // If botClient is not null and isReady, proceed
-    next();
-};
 
+    // Event Listeners
+    loginButton.addEventListener('click', () => {
+        // Redirect to backend for Discord OAuth login
+        window.location.href = '/api/login';
+    });
 
-// API route to get current Discord user info
-app.get('/api/user', verifyDiscordToken, checkBotReadiness, (req, res) => {
-    res.json(req.discordUser);
-});
+    guildSelect.addEventListener('change', (event) => {
+        selectedGuildId = event.target.value;
+        if (selectedGuildId) {
+            loadGuildConfig(selectedGuildId);
+        } else {
+            configSection.style.display = 'none';
+            saveStatus.textContent = '';
+        }
+    });
 
-// API route to get guilds where the bot is present and the user has admin permissions
-app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) => {
-    try {
-        const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
-            headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
-        });
-        const userGuilds = guildsResponse.data;
+    configForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        saveStatus.textContent = 'Saving configuration...';
+        saveStatus.className = 'status-message';
+        saveConfigButton.disabled = true;
 
-        const botGuilds = botClient.guilds.cache;
-        console.log("User's guilds:", userGuilds.map(g => g.name)); // Debugging
-        console.log("Bot's guilds:", botGuilds.map(g => g.name)); // Debugging
+        const newConfig = {
+            modRoleId: document.getElementById('mod-role-select').value || null,
+            adminRoleId: document.getElementById('admin-role-select').value || null,
+            moderationLogChannelId: document.getElementById('mod-log-channel-select').value || null,
+            messageLogChannelId: document.getElementById('message-log-channel-select').value || null,
+            modAlertChannelId: document.getElementById('mod-alert-channel-select').value || null,
+            modPingRoleId: document.getElementById('mod-ping-role-select').value || null,
+            memberLogChannelId: document.getElementById('member-log-channel-select').value || null,
+            adminLogChannelId: document.getElementById('admin-log-channel-select').value || null,
+            joinLeaveLogChannelId: document.getElementById('join-leave-log-channel-select').value || null,
+            boostLogChannelId: document.getElementById('boost-log-channel-select').value || null,
+            countingChannelId: document.getElementById('counting-channel-select').value || null,
+        };
 
-        const manageableGuilds = userGuilds.filter(userGuild => {
-            const hasAdminPerms = (BigInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
-            const botInGuild = botGuilds.has(userGuild.id);
-            
-            // Debugging: Log why a guild is filtered out
-            if (!botInGuild) {
-                console.log(`Filtering out guild ${userGuild.name}: Bot not in guild.`);
-            } else if (!hasAdminPerms) {
-                console.log(`Filtering out guild ${userGuild.name}: User does not have admin permissions.`);
+        try {
+            const response = await fetch(`/api/save-config?guildId=${selectedGuildId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${discordAccessToken}`
+                },
+                body: JSON.stringify(newConfig)
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                saveStatus.textContent = 'Configuration saved successfully!';
+                saveStatus.className = 'status-message success';
+            } else {
+                throw new Error(data.message || 'Failed to save configuration.');
             }
-
-            return botInGuild && hasAdminPerms;
-        });
-
-        console.log("Manageable guilds sent to frontend:", manageableGuilds.map(g => g.name)); // Debugging
-        res.json(manageableGuilds);
-    } catch (error) {
-        console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
-        res.status(error.response?.status || 500).json({ message: 'Internal server error fetching guilds.' });
-    }
-});
-
-// API route to get a specific guild's roles and channels, and bot's current config
-app.get('/api/guild-config', verifyDiscordToken, checkBotReadiness, async (req, res) => {
-    const guildId = req.query.guildId;
-    if (!guildId) {
-        return res.status(400).json({ message: 'Guild ID is required.' });
-    }
-
-    try {
-        const guild = botClient.guilds.cache.get(guildId);
-        if (!guild) {
-            return res.status(404).json({ message: 'Bot is not in this guild or guild not found.' });
+        } catch (error) {
+            console.error('Error saving config:', error);
+            saveStatus.textContent = `Error: ${error.message}`;
+            saveStatus.className = 'status-message error';
+        } finally {
+            saveConfigButton.disabled = false;
         }
-
-        const member = await guild.members.fetch(req.discordUser.id).catch(() => null);
-        if (!member || !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return res.status(403).json({ message: 'You do not have administrator permissions in this guild.' });
-        }
-
-        const roles = guild.roles.cache.map(role => ({ id: role.id, name: role.name }));
-        const channels = guild.channels.cache
-            .filter(channel => channel.isTextBased())
-            .map(channel => ({ id: channel.id, name: channel.name, type: channel.type }));
-
-        const currentConfig = await botClient.getGuildConfig(guildId);
-
-        res.json({
-            guildData: {
-                id: guild.id,
-                name: guild.name,
-                roles: roles,
-                channels: channels
-            },
-            currentConfig: currentConfig
-        });
-
-    } catch (error) {
-        console.error(`Error fetching config for guild ${guildId}:`, error.response ? error.response.data : error.message);
-        res.status(error.response?.status || 500).json({ message: 'Internal server error fetching guild config.' });
-    }
-});
-
-// API route to save guild configuration
-app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, res) => {
-    const guildId = req.query.guildId;
-    const newConfig = req.body;
-
-    if (!guildId || !newConfig) {
-        return res.status(400).json({ message: 'Guild ID and config data are required.' });
-    }
-
-    try {
-        const guild = botClient.guilds.cache.get(guildId);
-        if (!guild) {
-            return res.status(404).json({ message: 'Bot is not in this guild or guild not found.' });
-        }
-
-        const member = await guild.members.fetch(req.discordUser.id).catch(() => null);
-        if (!member || !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return res.status(403).json({ message: 'You do not have administrator permissions in this guild to save settings.' });
-        }
-
-        const validConfig = {};
-        if (newConfig.modRoleId) validConfig.modRoleId = newConfig.modRoleId;
-        if (newConfig.adminRoleId) validConfig.adminRoleId = newConfig.adminRoleId;
-        if (newConfig.moderationLogChannelId) validConfig.moderationLogChannelId = newConfig.moderationLogChannelId;
-        if (newConfig.messageLogChannelId) validConfig.messageLogChannelId = newConfig.messageLogChannelId;
-        if (newConfig.modAlertChannelId) validConfig.modAlertChannelId = newConfig.modAlertChannelId;
-        if (newConfig.modPingRoleId) validConfig.modPingRoleId = newConfig.modPingRoleId;
-        if (newConfig.memberLogChannelId) validConfig.memberLogChannelId = newConfig.memberLogChannelId;
-        if (newConfig.adminLogChannelId) validConfig.adminLogChannelId = newConfig.adminLogChannelId;
-        if (newConfig.joinLeaveLogChannelId) validConfig.joinLeaveLogChannelId = newConfig.joinLeaveLogChannelId;
-        if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
-        if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
-
-        await botClient.saveGuildConfig(guildId, validConfig);
-        res.json({ message: 'Configuration saved successfully!' });
-
-    } catch (error) {
-        console.error(`Error saving config for guild ${guildId}:`, error.response ? error.response.data : error.message);
-        res.status(error.response?.status || 500).json({ message: 'Internal server error saving config.' });
-    }
+    });
 });
