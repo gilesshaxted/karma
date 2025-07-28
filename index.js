@@ -106,7 +106,7 @@ let botReadyPromise; // This promise will resolve when the bot is fully ready
 (async () => {
     try {
         const initializeAndGetClient = require('./bot'); // Import the default export
-        botReadyPromise = initializeAndGetClient(); // Call the function, store the promise
+        botReadyPromise = initializeAndGetClient(); // Call the default exported function
         botClient = await botReadyPromise; // Await the bot's full readiness
         
         console.log("Discord bot initialization completed and ready for API use.");
@@ -118,13 +118,13 @@ let botReadyPromise; // This promise will resolve when the bot is fully ready
 
 // Middleware to check if botClient is ready for API calls
 const checkBotReadiness = async (req, res, next) => {
-    if (!botClient) { // If botClient is still null, it means initializeAndGetClient hasn't resolved yet
+    // If botClient is not yet assigned, wait for the botReadyPromise to resolve
+    if (!botClient) {
         try {
-            // Wait for the bot to become ready
-            await botReadyPromise;
-            // After awaiting, botClient should now be assigned
+            await botReadyPromise; // Wait for the bot to become ready
+            // After awaiting, botClient should now be assigned.
+            // Re-check if it's actually ready (isReady() and Firebase initialized)
             if (!botClient || !botClient.isReady() || !botClient.db || !botClient.appId) {
-                // Should not happen if botReadyPromise resolves correctly, but as a fallback
                 console.warn('BotClient still not fully ready after awaiting botReadyPromise. Returning 503.');
                 return res.status(503).json({ message: 'Bot backend is still starting up. Please try again in a moment.' });
             }
@@ -133,6 +133,10 @@ const checkBotReadiness = async (req, res, next) => {
             console.error('Bot failed to initialize. Returning 503.', error);
             return res.status(503).json({ message: 'Bot backend failed to start. Please check logs.' });
         }
+    } else if (!botClient.isReady() || !botClient.db || !botClient.appId) {
+        // If botClient is assigned but not fully ready (e.g., Firebase failed after ready event)
+        console.warn('BotClient assigned but not fully ready. Returning 503.');
+        return res.status(503).json({ message: 'Bot backend is still starting up. Please try again in a moment.' });
     }
     // If botClient is not null and isReady, proceed
     next();
@@ -153,12 +157,24 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
         const userGuilds = guildsResponse.data;
 
         const botGuilds = botClient.guilds.cache;
+        console.log("User's guilds:", userGuilds.map(g => g.name)); // Debugging
+        console.log("Bot's guilds:", botGuilds.map(g => g.name)); // Debugging
 
         const manageableGuilds = userGuilds.filter(userGuild => {
             const hasAdminPerms = (BigInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
-            return botGuilds.has(userGuild.id) && hasAdminPerms;
+            const botInGuild = botGuilds.has(userGuild.id);
+            
+            // Debugging: Log why a guild is filtered out
+            if (!botInGuild) {
+                console.log(`Filtering out guild ${userGuild.name}: Bot not in guild.`);
+            } else if (!hasAdminPerms) {
+                console.log(`Filtering out guild ${userGuild.name}: User does not have admin permissions.`);
+            }
+
+            return botInGuild && hasAdminPerms;
         });
 
+        console.log("Manageable guilds sent to frontend:", manageableGuilds.map(g => g.name)); // Debugging
         res.json(manageableGuilds);
     } catch (error) {
         console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
