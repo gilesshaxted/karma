@@ -136,7 +136,7 @@ const logMessage = async (guild, message, flaggedBy, actionType, getGuildConfig)
         .setTimestamp(message.createdTimestamp || Date.now())
         .setColor(0xADD8E6); // Light blue for message logs
 
-    await logChannel.send({ embeds: [embed] });
+    await logChannel.send({ embeds: [embed] }).catch(console.error);
 };
 
 module.exports = {
