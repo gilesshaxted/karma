@@ -89,7 +89,7 @@ const handleMessageUpdate = async (oldMessage, newMessage, getGuildConfig, logMe
         .setTimestamp(newMessage.editedTimestamp || newMessage.createdTimestamp || Date.now())
         .setColor(0xFFA500); // Orange for edits
 
-    await logChannel.send({ embeds: [embed] });
+    await logChannel.send({ embeds: [embed] }).catch(console.error);
 };
 
 module.exports = {
