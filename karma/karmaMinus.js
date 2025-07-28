@@ -9,14 +9,14 @@ module.exports = {
             option.setName('target')
                 .setDescription('The user to remove Karma from')
                 .setRequired(true)),
-    async execute(interaction, { db, appId, getGuildConfig, hasPermission, subtractKarmaPoints }) { // Removed isExempt, logModerationAction
+    async execute(interaction, { db, appId, getGuildConfig, subtractKarmaPoints }) { // Removed hasPermission, isExempt, logModerationAction
         // interaction.deferReply() is handled by bot.js for all slash commands.
         // So, we use editReply here.
 
         const targetUser = interaction.options.getUser('target');
         const moderator = interaction.user;
         const guild = interaction.guild;
-        const guildConfig = await getGuildConfig(guild.id);
+        // const guildConfig = await getGuildConfig(guild.id); // Not needed for this command's logic directly
 
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
