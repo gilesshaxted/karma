@@ -26,55 +26,55 @@ document.addEventListener('DOMContentLoaded', () => {
     // Function to handle loading dashboard data with retry logic
     async function loadDashboardWithRetry(retries = 5, delay = 2000) {
         try {
+            // Fetch user info
             const userResponse = await fetch('/api/user', {
                 headers: { 'Authorization': `Bearer ${discordAccessToken}` }
             });
 
             if (userResponse.status === 503 && retries > 0) {
-                console.warn(`Bot backend not ready (503). Retrying in ${delay / 1000} seconds...`);
+                console.warn(`Bot backend not ready (503). Retrying user data fetch in ${delay / 1000} seconds...`);
                 saveStatus.textContent = `Bot is starting up... Retrying in ${delay / 1000}s.`;
                 saveStatus.className = 'status-message';
                 await new Promise(res => setTimeout(res, delay));
                 return loadDashboardWithRetry(retries - 1, delay * 1.5); // Exponential backoff
+            } else if (!userResponse.ok) {
+                throw new Error(await userResponse.text() || 'Failed to fetch user data');
             }
-
             const userData = await userResponse.json();
-            if (userResponse.ok) {
-                userDisplayName.textContent = userData.username;
-            } else {
-                throw new Error(userData.message || 'Failed to fetch user data');
-            }
+            userDisplayName.textContent = userData.username;
 
+
+            // Fetch guilds where bot is admin
             const guildsResponse = await fetch('/api/guilds', {
                 headers: { 'Authorization': `Bearer ${discordAccessToken}` }
             });
             if (guildsResponse.status === 503 && retries > 0) {
-                 console.warn(`Bot backend not ready (503). Retrying in ${delay / 1000} seconds...`);
+                 console.warn(`Bot backend not ready (503). Retrying guilds data fetch in ${delay / 1000} seconds...`);
                  saveStatus.textContent = `Bot is starting up... Retrying in ${delay / 1000}s.`;
                  saveStatus.className = 'status-message';
                  await new Promise(res => setTimeout(res, delay));
                  return loadDashboardWithRetry(retries - 1, delay * 1.5);
+            } else if (!guildsResponse.ok) {
+                 throw new Error(await guildsResponse.text() || 'Failed to fetch guilds');
             }
             const guildsData = await guildsResponse.json();
-            if (guildsResponse.ok) {
-                guildSelect.innerHTML = '<option value="">-- Select a Guild --</option>';
-                guildsData.forEach(guild => {
-                    const option = document.createElement('option');
-                    option.value = guild.id;
-                    option.textContent = guild.name;
-                    guildSelect.appendChild(option);
-                });
-                showDashboardSection();
-                saveStatus.textContent = ''; // Clear status once loaded
-            } else {
-                throw new Error(guildsData.message || 'Failed to fetch guilds');
-            }
+            
+            guildSelect.innerHTML = '<option value="">-- Select a Guild --</option>';
+            guildsData.forEach(guild => {
+                const option = document.createElement('option');
+                option.value = guild.id;
+                option.textContent = guild.name;
+                guildSelect.appendChild(option);
+            });
+            showDashboardSection();
+            saveStatus.textContent = ''; // Clear status once loaded
+
 
         } catch (error) {
             console.error('Error loading dashboard:', error);
             saveStatus.textContent = `Error loading dashboard: ${error.message}. Please log in again.`;
             saveStatus.className = 'status-message error';
-            localStorage.removeItem('discord_access_token');
+            localStorage.removeItem('discord_access_token'); // Clear invalid token
             showAuthSection();
         }
     }
