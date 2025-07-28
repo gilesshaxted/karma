@@ -75,7 +75,6 @@ const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([
 ]).bitfield.toString();
 
 // Helper function to get guild-specific config from Firestore
-// This function will be attached to the client instance
 const getGuildConfig = async (guildId) => {
     if (!client.db || !client.appId) {
         console.error('Firestore not initialized yet when getGuildConfig was called.');
@@ -109,7 +108,6 @@ const getGuildConfig = async (guildId) => {
 };
 
 // Helper function to save guild-specific config to Firestore
-// This function will be attached to the client instance
 const saveGuildConfig = async (guildId, newConfig) => {
     if (!client.db || !client.appId) {
         console.error('Firestore not initialized yet when saveGuildConfig was called.');
@@ -244,6 +242,11 @@ const verifyDiscordToken = async (req, res, next) => {
     }
 };
 
+// Start Express server FIRST
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Web server listening on port ${PORT}`);
+});
+
 // Middleware to check if botClient is ready for API calls
 const checkBotReadiness = async (req, res, next) => {
     const MAX_READY_RETRIES = 10; // Max attempts to wait for bot readiness
@@ -285,7 +288,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             
             // If bot's guild cache is still empty, and we have retries left, wait and retry.
             if (botGuilds.size === 0 && i < MAX_GUILD_FETCH_RETRIES - 1) {
-                console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
+                console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_RETRIES})`);
                 await new Promise(resolve => setTimeout(resolve, GUILD_FETCH_RETRY_DELAY_MS));
                 continue; // Retry the loop
             }
