@@ -150,36 +150,59 @@ app.get('/api/user', verifyDiscordToken, checkBotReadiness, (req, res) => {
 
 // API route to get guilds where the bot is present and the user has admin permissions
 app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) => {
-    try {
-        const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
-            headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
-        });
-        const userGuilds = guildsResponse.data;
+    const MAX_RETRIES = 5;
+    const RETRY_DELAY_MS = 2000; // 2 seconds
 
-        const botGuilds = botClient.guilds.cache;
-        console.log("User's guilds:", userGuilds.map(g => g.name)); // Debugging
-        console.log("Bot's guilds:", botGuilds.map(g => g.name)); // Debugging
+    for (let i = 0; i < MAX_RETRIES; i++) {
+        try {
+            const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
+                headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
+            });
+            const userGuilds = guildsResponse.data;
 
-        const manageableGuilds = userGuilds.filter(userGuild => {
-            const hasAdminPerms = (BigInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
-            const botInGuild = botGuilds.has(userGuild.id);
+            const botGuilds = botClient.guilds.cache;
             
-            // Debugging: Log why a guild is filtered out
-            if (!botInGuild) {
-                console.log(`Filtering out guild ${userGuild.name}: Bot not in guild.`);
-            } else if (!hasAdminPerms) {
-                console.log(`Filtering out guild ${userGuild.name}: User does not have admin permissions.`);
+            // Check if bot's guild cache is populated. If not, wait and retry.
+            if (botGuilds.size === 0 && i < MAX_RETRIES - 1) {
+                console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+                continue; // Retry the loop
             }
 
-            return botInGuild && hasAdminPerms;
-        });
+            console.log("User's guilds:", userGuilds.map(g => g.name)); // Debugging
+            console.log("Bot's guilds:", botGuilds.map(g => g.name)); // Debugging
 
-        console.log("Manageable guilds sent to frontend:", manageableGuilds.map(g => g.name)); // Debugging
-        res.json(manageableGuilds);
-    } catch (error) {
-        console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
-        res.status(error.response?.status || 500).json({ message: 'Internal server error fetching guilds.' });
+            const manageableGuilds = userGuilds.filter(userGuild => {
+                const hasAdminPerms = (BigInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
+                const botInGuild = botGuilds.has(userGuild.id);
+                
+                // Debugging: Log why a guild is filtered out
+                if (!botInGuild) {
+                    console.log(`Filtering out guild ${userGuild.name}: Bot not in guild.`);
+                } else if (!hasAdminPerms) {
+                    console.log(`Filtering out guild ${userGuild.name}: User does not have admin permissions.`);
+                }
+
+                return botInGuild && hasAdminPerms;
+            });
+
+            console.log("Manageable guilds sent to frontend:", manageableGuilds.map(g => g.name)); // Debugging
+            return res.json(manageableGuilds); // Success, send response and exit function
+
+        } catch (error) {
+            console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
+            // If it's a 503 or network error, retry. Otherwise, rethrow or handle.
+            if (error.response?.status === 503 && i < MAX_RETRIES - 1) {
+                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+                continue; // Retry the loop
+            }
+            // If it's another error or retries exhausted, send error response
+            return res.status(error.response?.status || 500).json({ message: 'Internal server error fetching guilds.' });
+        }
     }
+    // Fallback if loop finishes without success (e.g., max retries reached)
+    return res.status(500).json({ message: 'Failed to fetch guilds after multiple retries. Bot may not be fully ready.' });
 });
 
 // API route to get a specific guild's roles and channels, and bot's current config
