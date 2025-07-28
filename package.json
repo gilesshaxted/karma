@@ -1,6 +1,6 @@
 {
   "name": "karma-discord-bot",
-  "version": "0.9.16",
+  "version": "0.9.18",
   "description": "A Discord moderation bot named Karma, built with Node.js and Discord.js, using Firestore for configuration.",
   "main": "index.js",
   "scripts": {
