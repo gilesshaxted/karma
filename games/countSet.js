@@ -11,7 +11,7 @@ module.exports = {
                 .setRequired(true)),
     async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission }) {
         // interaction.deferReply() is now handled by index.js for all slash commands.
-        // REMOVED: await interaction.deferReply({ ephemeral: true });
+        // REMOVED: await interaction.deferReply({ ephemeral: true }); // This line is removed
 
         const newNumber = interaction.options.getInteger('number');
         const guild = interaction.guild;
