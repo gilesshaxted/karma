@@ -23,39 +23,38 @@ document.addEventListener('DOMContentLoaded', () => {
         return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
     };
 
-    // Function to handle loading dashboard data with retry logic
-    async function loadDashboardWithRetry(retries = 5, delay = 2000) {
+    // Function to load dashboard data (simplified, without aggressive retries/token clearing)
+    async function loadDashboard() {
+        showDashboardSection();
+        saveStatus.textContent = 'Loading dashboard...';
+        saveStatus.className = 'status-message';
+
         try {
             // Fetch user info
             const userResponse = await fetch('/api/user', {
                 headers: { 'Authorization': `Bearer ${discordAccessToken}` }
             });
 
-            if (userResponse.status === 503 && retries > 0) {
-                console.warn(`Bot backend not ready (503). Retrying user data fetch in ${delay / 1000} seconds...`);
-                saveStatus.textContent = `Bot is starting up... Retrying in ${delay / 1000}s.`;
-                saveStatus.className = 'status-message';
-                await new Promise(res => setTimeout(res, delay));
-                return loadDashboardWithRetry(retries - 1, delay * 1.5); // Exponential backoff
-            } else if (!userResponse.ok) {
+            if (!userResponse.ok) {
+                // Only clear token for explicit auth failures, not 503 (bot not ready)
+                if (userResponse.status === 401 || userResponse.status === 403) {
+                    localStorage.removeItem('discord_access_token');
+                }
                 throw new Error(await userResponse.text() || 'Failed to fetch user data');
             }
             const userData = await userResponse.json();
             userDisplayName.textContent = userData.username;
 
-
             // Fetch guilds where bot is admin
             const guildsResponse = await fetch('/api/guilds', {
                 headers: { 'Authorization': `Bearer ${discordAccessToken}` }
             });
-            if (guildsResponse.status === 503 && retries > 0) {
-                 console.warn(`Bot backend not ready (503). Retrying guilds data fetch in ${delay / 1000} seconds...`);
-                 saveStatus.textContent = `Bot is starting up... Retrying in ${delay / 1000}s.`;
-                 saveStatus.className = 'status-message';
-                 await new Promise(res => setTimeout(res, delay));
-                 return loadDashboardWithRetry(retries - 1, delay * 1.5);
-            } else if (!guildsResponse.ok) {
-                 throw new Error(await guildsResponse.text() || 'Failed to fetch guilds');
+            if (!guildsResponse.ok) {
+                // Only clear token for explicit auth failures, not 503 (bot not ready)
+                if (guildsResponse.status === 401 || guildsResponse.status === 403) {
+                    localStorage.removeItem('discord_access_token');
+                }
+                throw new Error(await guildsResponse.text() || 'Failed to fetch guilds');
             }
             const guildsData = await guildsResponse.json();
             
@@ -66,16 +65,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 option.textContent = guild.name;
                 guildSelect.appendChild(option);
             });
-            showDashboardSection();
             saveStatus.textContent = ''; // Clear status once loaded
 
 
         } catch (error) {
             console.error('Error loading dashboard:', error);
-            saveStatus.textContent = `Error loading dashboard: ${error.message}. Please log in again.`;
+            saveStatus.textContent = `Error loading dashboard: ${error.message}. Please try again.`;
             saveStatus.className = 'status-message error';
-            localStorage.removeItem('discord_access_token'); // Clear invalid token
-            showAuthSection();
+            // If it's a 503, the bot might still be starting, don't force re-login immediately.
+            // User can refresh or re-click login.
+            if (error.message.includes('503')) {
+                saveStatus.textContent = `Bot backend is starting up. Please wait a moment and refresh the page or re-select a guild.`;
+            } else {
+                showAuthSection(); // Go back to login for other errors
+            }
         }
     }
 
@@ -98,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 localStorage.setItem('discord_access_token', discordAccessToken);
                 // Remove code from URL
                 window.history.replaceState({}, document.title, "/");
-                loadDashboardWithRetry(); // Start loading dashboard with retry logic
+                loadDashboard(); // Start loading dashboard
             } else {
                 console.error('Failed to get access token:', data);
                 alert('Failed to log in with Discord. Please try again.');
@@ -114,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Check for existing token
         discordAccessToken = localStorage.getItem('discord_access_token');
         if (discordAccessToken) {
-            loadDashboardWithRetry(); // Start loading dashboard with retry logic
+            loadDashboard(); // Start loading dashboard
         } else {
             showAuthSection();
         }
@@ -159,8 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (configResponse.status === 503) {
                  saveStatus.textContent = `Bot is still starting up. Please try again in a moment.`;
                  saveStatus.className = 'status-message';
-                 // Don't retry automatically here, let user re-select or refresh
-                 return;
+                 return; // Don't proceed, let user re-select or refresh
             }
 
             const configData = await configResponse.json();
