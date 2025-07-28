@@ -13,7 +13,7 @@ module.exports = {
             option.setName('total')
                 .setDescription('The new total Karma points')
                 .setRequired(true)),
-    async execute(interaction, { db, appId, getGuildConfig, hasPermission, setKarmaPoints }) { // Removed isExempt, logModerationAction
+    async execute(interaction, { db, appId, getGuildConfig, setKarmaPoints }) { // Removed hasPermission, isExempt, logModerationAction
         // interaction.deferReply() is handled by bot.js for all slash commands.
         // So, we use editReply here.
 
@@ -21,7 +21,7 @@ module.exports = {
         const newTotal = interaction.options.getInteger('total');
         const moderator = interaction.user;
         const guild = interaction.guild;
-        const guildConfig = await getGuildConfig(guild.id);
+        // const guildConfig = await getGuildConfig(guild.id); // Not needed for this command's logic directly
 
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
