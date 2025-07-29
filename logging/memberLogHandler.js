@@ -93,7 +93,7 @@ const handleUserUpdate = async (oldUser, newUser, getGuildConfig, client) => {
         }
         // Discriminator change (if applicable, for old username system)
         if (oldUser.discriminator && oldUser.discriminator !== newUser.discriminator) {
-            description += `**Discriminator:** \`#${oldUser.discriminator}\` -> \`#${newUser.discriminator}\`\n`;
+            description += `**Discriminator:** \`#${oldUser.discriminator}\` -> \`${newUser.discriminator}\`\n`;
             changed = true;
         }
         // Avatar change
