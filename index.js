@@ -634,7 +634,7 @@ client.once('ready', async () => {
             }
         }
         // Pass newInvitesMap and oldInvitesMap to handler
-        await joinLeaveLogHandler.handleGuildMemberAdd(member, getGuildConfig, oldInvitesMap, newInvitesMap);
+        await joinLeaveLogHandler.handleGuildMemberAdd(member, getGuildConfig, oldInvitesMap, newInvitesMap, karmaSystem.sendKarmaAnnouncement, karmaSystem.addKarmaPoints, client.db, client.appId, client);
 
         // Update client.invites cache AFTER the handler has used the old state
         if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
@@ -648,7 +648,7 @@ client.once('ready', async () => {
                 // Give +1 Karma to the new member
                 const newKarma = await karmaSystem.addKarmaPoints(member.guild.id, member.user, 1, client.db, client.appId);
                 // Send a joyful greeting message to the Karma Channel
-                await karmaSystem.sendKarmaAnnouncement(member.guild, member.user.id, 1, newKarma, client);
+                await karmaSystem.sendKarmaAnnouncement(member.guild, member.user.id, 1, newKarma, client, true); // true for isNewMember
             } catch (error) {
                 console.error(`Error greeting new member ${member.user.tag} or giving initial karma:`, error);
             }
