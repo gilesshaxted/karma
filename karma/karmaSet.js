@@ -13,7 +13,7 @@ module.exports = {
             option.setName('total')
                 .setDescription('The new total Karma points')
                 .setRequired(true)),
-    async execute(interaction, { db, appId, getGuildConfig, setKarmaPoints, sendKarmaAnnouncement, client }) { // Added sendKarmaAnnouncement, client
+    async execute(interaction, { db, appId, getGuildConfig, setKarmaPoints, sendKarmaAnnouncement, getOrCreateUserKarma, client }) { // Added getOrCreateUserKarma, client
         // interaction.deferReply() is handled by index.js for all slash commands.
         // So, we use editReply here.
 
@@ -33,13 +33,18 @@ module.exports = {
         // No isExempt check for the target, as all users can receive karma
 
         try {
-            const oldKarmaData = await interaction.client.karmaSystem.getOrCreateUserKarma(guild.id, targetUser.id, db, appId);
+            // Using the getOrCreateUserKarma passed in arguments for consistency
+            const oldKarmaData = await getOrCreateUserKarma(guild.id, targetUser.id, db, appId);
             const oldKarma = oldKarmaData.karmaPoints;
 
             await setKarmaPoints(guild.id, targetUser, newTotal, db, appId);
 
+            // Calculate karmaChange for the announcement message (newTotal - oldKarma)
+            const karmaChange = newTotal - oldKarma;
+
             // Send announcement to Karma Channel
-            await sendKarmaAnnouncement(guild, targetUser.id, newTotal - oldKarma, newTotal, client);
+            // Pass getGuildConfig as the 5th argument
+            await sendKarmaAnnouncement(guild, targetUser.id, karmaChange, newTotal, getGuildConfig, client);
 
             await interaction.editReply(`Successfully set ${targetUser.tag}'s Karma to ${newTotal}. (Previously ${oldKarma})`);
 
