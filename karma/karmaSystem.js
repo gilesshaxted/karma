@@ -256,12 +256,11 @@ const newMemberGreetingMessages = [
  * @param {string} userId - The ID of the user whose karma changed.
  * @param {number} karmaChange - The amount of karma changed (+1, -1, etc.).
  * @param {number} newTotal - The user's new total karma.
- * @param {function} getGuildConfig - The function to retrieve guild configuration.
- * @param {Client} client - The Discord client instance (for fetching user, channels etc.)
+ * @param {function} getGuildConfig - The getGuildConfig helper function.
+ * @param {Client} client - The Discord client instance.
  * @param {boolean} [isNewMember=false] - True if this is a new member greeting.
  */
 const sendKarmaAnnouncement = async (guild, userId, karmaChange, newTotal, getGuildConfig, client, isNewMember = false) => {
-    // Now getGuildConfig is passed directly, not accessed via client
     const guildConfig = await getGuildConfig(guild.id);
     const karmaChannelId = guildConfig.karmaChannelId;
 
@@ -313,13 +312,17 @@ const sendKarmaAnnouncement = async (guild, userId, karmaChange, newTotal, getGu
  * Checks for members who haven't chatted in a week and deducts karma.
  * @param {Guild} guild - The Discord guild.
  * @param {Client} client - The Discord client instance.
- * @param {function} getGuildConfig - The function to retrieve guild configuration.
+ * @param {function} getGuildConfig - The getGuildConfig helper function.
+ * @param {object} db - Firestore database instance.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @param {function} sendKarmaAnnouncement - The sendKarmaAnnouncement helper function.
+ * @param {function} subtractKarmaPoints - The subtractKarmaPoints helper function.
  */
-const checkWeeklyInactivityKarma = async (guild, client, getGuildConfig) => {
+const checkWeeklyInactivityKarma = async (guild, client, getGuildConfig, db, appId, sendKarmaAnnouncement, subtractKarmaPoints) => {
     console.log(`Checking for inactive members in guild ${guild.name}...`);
     const oneWeekAgo = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000));
 
-    const karmaUsersRef = collection(client.db, `artifacts/${client.appId}/public/data/guilds/${guild.id}/karma_users`);
+    const karmaUsersRef = collection(db, `artifacts/${appId}/public/data/guilds/${guild.id}/karma_users`);
     const q = query(karmaUsersRef); // Fetch all karma users
 
     const querySnapshot = await getDocs(q);
@@ -331,9 +334,8 @@ const checkWeeklyInactivityKarma = async (guild, client, getGuildConfig) => {
         if (lastActivityDate && lastActivityDate < oneWeekAgo) {
             const targetUser = await client.users.fetch(karmaData.userId).catch(() => null);
             if (targetUser && !targetUser.bot) { // Only penalize human users
-                const newKarma = await subtractKarmaPoints(guild.id, targetUser, 1, client.db, client.appId);
+                const newKarma = await subtractKarmaPoints(guild.id, targetUser, 1, db, appId);
                 console.log(`Deducted 1 karma from ${targetUser.tag} for inactivity. New total: ${newKarma}`);
-                // Pass getGuildConfig to sendKarmaAnnouncement here
                 await sendKarmaAnnouncement(guild, targetUser.id, -1, newKarma, getGuildConfig, client);
             }
         }
