@@ -40,7 +40,7 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
     const guildConfig = await getGuildConfig(guild.id);
 
     // --- Moderation Emojis Handling ---
-    // Check if the reactor has permission for moderation/flagging
+    // Check if the reactor has permission for moderation/flagging or karma reactions
     if (hasPermission(reactorMember, guildConfig)) {
         const targetUser = message.author; // The author of the message being reacted to
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
@@ -92,7 +92,8 @@ module.exports = async (reaction, user, client, getGuildConfig, saveGuildConfig,
             try {
                 // No isExempt check for karma target as per new requirement: all users can receive karma
                 const newKarma = await karmaSystem.addKarmaPoints(guild.id, targetUser, karmaChange, client.db, client.appId);
-                await message.channel.send(`${actionText} for <@${targetUser.id}>. New total: ${newKarma} Karma.`).catch(console.error);
+                // Send announcement to Karma Channel
+                await karmaSystem.sendKarmaAnnouncement(guild, targetUser.id, karmaChange, newKarma, client);
             } catch (error) {
                 console.error(`Error adjusting karma for ${targetUser.tag} via emoji:`, error);
                 message.channel.send(`Failed to adjust Karma for <@${targetUser.id}>. An error occurred.`).catch(console.error);
