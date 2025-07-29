@@ -8,13 +8,15 @@ const { EmbedBuilder } = require('discord.js');
  * @param {function} logMessage - Core logging function.
  */
 const handleMessageDelete = async (message, getGuildConfig, logMessage) => {
-    // Ignore DMs or bot messages
-    if (!message.guild || message.author.bot) return;
+    // Ignore DMs
+    if (!message.guild) return;
+
+    // Safely check message.author.bot
+    if (message.author && message.author.bot) return; // Ignore bot messages
 
     // Ensure message content is available (might be null for uncached messages)
     if (!message.content && message.attachments.size === 0 && message.embeds.length === 0) {
         // If message has no content, attachments, or embeds, it might be a partial or uninteresting deletion.
-        // Or it could be a system message.
         return;
     }
 
@@ -89,7 +91,7 @@ const handleMessageUpdate = async (oldMessage, newMessage, getGuildConfig, logMe
         .setTimestamp(newMessage.editedTimestamp || newMessage.createdTimestamp || Date.now())
         .setColor(0xFFA500); // Orange for edits
 
-    await logChannel.send({ embeds: [embed] }).catch(console.error);
+    await logChannel.send({ embeds: [embed] });
 };
 
 module.exports = {
