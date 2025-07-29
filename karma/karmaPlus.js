@@ -31,7 +31,8 @@ module.exports = {
             const newKarma = await addKarmaPoints(guild.id, targetUser, 1, db, appId);
 
             // Send announcement to Karma Channel
-            await sendKarmaAnnouncement(guild, targetUser.id, 1, newKarma, client);
+            // Pass getGuildConfig as the 5th argument
+            await sendKarmaAnnouncement(guild, targetUser.id, 1, newKarma, getGuildConfig, client);
 
             await interaction.editReply(`Successfully added 1 Karma point to ${targetUser.tag}. Their new Karma total is ${newKarma}.`);
 
