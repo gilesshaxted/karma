@@ -63,8 +63,15 @@ Karma is a powerful and intuitive Discord moderation bot designed to help server
     * **Message Logs**: Edits and deletions of messages are logged to a `message-log` channel, along with messages deleted by moderation actions.
     * **Member Logs**: Changes to member profiles (username, nickname, avatar) and role assignments/removals are logged to a `member-log` channel.
     * **Admin Logs**: Comprehensive logging for server-level changes including channel creation/deletion/updates (including permissions), role creation/deletion/updates, emoji creation/deletion/updates, and scheduled event creation/deletion/updates.
-    * **Join/Leave Logs**: Tracks when members join or leave the guild, including **who invited them and which invite code was used (powered by `discord-invites-tracker`)**, logged to a `join-leave-log` channel.
+    * **Join/Leave Logs**: Tracks when members join or leave the guild, including who invited them and which invite code was used, logged to a `join-leave-log` channel.
     * **Boost Notifications**: Announces guild boosts in a designated `boost-notify` channel.
+
+* **Karma Channel & System Enhancements**:
+    * A dedicated "Karma Channel" can be set via the dashboard.
+    * **New Member Greeting**: New members are greeted with a joyful, varied, and colorful embed message in the Karma Channel upon joining.
+    * **Karma on Join**: New members automatically receive +1 Karma when they join.
+    * **Karma Announcements**: All karma gains and losses (from emoji reactions, `/karma plus`, `/karma minus`, `/karma set`, and inactivity) are announced in the Karma Channel with varied, contextual messages.
+    * **Weekly Inactivity Karma Loss**: Members who do not chat in a given week will automatically lose 1 Karma point.
 
 * **Counting Game**:
     * A designated "Counting Channel" where users post numbers sequentially (1, 2, 3...).
@@ -178,7 +185,7 @@ Karma is designed to be efficient, user-friendly, and highly effective in mainta
 7.  **Install Dependencies**: Open your terminal in the bot's root directory and run:
 
     ```bash
-    npm install discord.js dotenv firebase express axios discord-invites-tracker
+    npm install discord.js dotenv firebase express axios
     ```
 
 8.  **Run the Bot**:
