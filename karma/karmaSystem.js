@@ -256,11 +256,13 @@ const newMemberGreetingMessages = [
  * @param {string} userId - The ID of the user whose karma changed.
  * @param {number} karmaChange - The amount of karma changed (+1, -1, etc.).
  * @param {number} newTotal - The user's new total karma.
- * @param {Client} client - The Discord client instance.
+ * @param {function} getGuildConfig - The function to retrieve guild configuration.
+ * @param {Client} client - The Discord client instance (for fetching user, channels etc.)
  * @param {boolean} [isNewMember=false] - True if this is a new member greeting.
  */
-const sendKarmaAnnouncement = async (guild, userId, karmaChange, newTotal, client, isNewMember = false) => {
-    const guildConfig = await client.getGuildConfig(guild.id);
+const sendKarmaAnnouncement = async (guild, userId, karmaChange, newTotal, getGuildConfig, client, isNewMember = false) => {
+    // Now getGuildConfig is passed directly, not accessed via client
+    const guildConfig = await getGuildConfig(guild.id);
     const karmaChannelId = guildConfig.karmaChannelId;
 
     if (!karmaChannelId) {
@@ -311,8 +313,9 @@ const sendKarmaAnnouncement = async (guild, userId, karmaChange, newTotal, clien
  * Checks for members who haven't chatted in a week and deducts karma.
  * @param {Guild} guild - The Discord guild.
  * @param {Client} client - The Discord client instance.
+ * @param {function} getGuildConfig - The function to retrieve guild configuration.
  */
-const checkWeeklyInactivityKarma = async (guild, client) => {
+const checkWeeklyInactivityKarma = async (guild, client, getGuildConfig) => {
     console.log(`Checking for inactive members in guild ${guild.name}...`);
     const oneWeekAgo = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000));
 
@@ -330,7 +333,8 @@ const checkWeeklyInactivityKarma = async (guild, client) => {
             if (targetUser && !targetUser.bot) { // Only penalize human users
                 const newKarma = await subtractKarmaPoints(guild.id, targetUser, 1, client.db, client.appId);
                 console.log(`Deducted 1 karma from ${targetUser.tag} for inactivity. New total: ${newKarma}`);
-                await sendKarmaAnnouncement(guild, targetUser.id, -1, newKarma, client);
+                // Pass getGuildConfig to sendKarmaAnnouncement here
+                await sendKarmaAnnouncement(guild, targetUser.id, -1, newKarma, getGuildConfig, client);
             }
         }
     }
