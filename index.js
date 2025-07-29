@@ -94,11 +94,12 @@ const getGuildConfig = async (guildId) => {
             modAlertChannelId: null,
             modPingRoleId: null,
             memberLogChannelId: null, // New: Member log channel
-            adminLogChannelId: null,    // New: Admin log channel
+            adminLogChannelId: null,   // New: Admin log channel
             joinLeaveLogChannelId: null, // New: Join/Leave log channel
-            boostLogChannelId: null,    // New: Boost log channel
-            countingChannelId: null,    // New: Counting game channel
-            currentCount: 0,            // New: Counting game current count
+            boostLogChannelId: null,   // New: Boost log channel
+            karmaChannelId: null,      // New: Karma Channel
+            countingChannelId: null,   // New: Counting game channel
+            currentCount: 0,           // New: Counting game current count
             lastCountMessageId: null,  // New: Counting game last correct message ID
             caseNumber: 0
         };
@@ -284,7 +285,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             });
             const userGuilds = guildsResponse.data;
 
-            const botGuilds = client.guilds.cache; // Use client.guilds.cache directly
+            const botGuilds = client.guilds.cache;
             
             // If bot's guild cache is still empty, and we have retries left, wait and retry.
             if (botGuilds.size === 0 && i < MAX_GUILD_FETCH_RETRIES - 1) {
@@ -316,10 +317,9 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
         } catch (error) {
             console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
             // If it's a 503 or network error, retry. Otherwise, rethrow or handle.
-            // Note: RETRY_DELAY_MS was not defined globally, using GUILD_FETCH_RETRY_DELAY_MS instead.
             if (error.response?.status === 503 && i < MAX_GUILD_FETCH_RETRIES - 1) {
-                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, GUILD_FETCH_RETRY_DELAY_MS));
+                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
                 continue; // Retry the loop
             }
             // If it's another error or retries exhausted, send error response
@@ -404,8 +404,7 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
         if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
 
-        // Call the correctly scoped saveGuildConfig
-        await saveGuildConfig(guildId, validConfig);
+        await client.saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
 
     } catch (error) {
@@ -415,7 +414,49 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
 });
 
 // --- Discord Bot Client Setup ---
-// The duplicate declarations of getGuildConfig and saveGuildConfig have been removed from here.
+// Helper function to get guild-specific config from Firestore
+const getGuildConfig = async (guildId) => {
+    if (!client.db || !client.appId) {
+        console.error('Firestore not initialized yet when getGuildConfig was called.');
+        return null;
+    }
+    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
+    const configSnap = await getDoc(configRef);
+
+    if (configSnap.exists()) {
+        return configSnap.data();
+    } else {
+        const defaultConfig = {
+            modRoleId: null,
+            adminRoleId: null,
+            moderationLogChannelId: null,
+            messageLogChannelId: null,
+            modAlertChannelId: null,
+            modPingRoleId: null,
+            memberLogChannelId: null, // New: Member log channel
+            adminLogChannelId: null,   // New: Admin log channel
+            joinLeaveLogChannelId: null, // New: Join/Leave log channel
+            boostLogChannelId: null,   // New: Boost log channel
+            countingChannelId: null,   // New: Counting game channel
+            currentCount: 0,           // New: Counting game current count
+            lastCountMessageId: null,  // New: Counting game last correct message ID
+            caseNumber: 0
+        };
+        await setDoc(configRef, defaultConfig);
+        return defaultConfig;
+    }
+};
+
+// Helper function to save guild-specific config to Firestore
+const saveGuildConfig = async (guildId, newConfig) => {
+    if (!client.db || !client.appId) {
+        console.error('Firestore not initialized yet when saveGuildConfig was called.');
+        return;
+    }
+    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
+    await setDoc(configRef, newConfig, { merge: true });
+};
+
 
 // Event: Bot is ready
 client.once('ready', async () => {
@@ -515,13 +556,13 @@ client.once('ready', async () => {
             const author = message.author;
 
             // --- Counting Game Check (before auto-mod) ---
-            const guildConfig = await getGuildConfig(guild.id); // Use the global getGuildConfig
+            const guildConfig = await getGuildConfig(guild.id); // Use local getGuildConfig
             if (guildConfig.countingChannelId && message.channel.id === guildConfig.countingChannelId) {
                 const handledByCountingGame = await countingGame.checkCountMessage(
                     message,
                     client,
-                    getGuildConfig, // Pass the global getGuildConfig
-                    saveGuildConfig, // Pass the global saveGuildConfig
+                    getGuildConfig, // Pass local getGuildConfig
+                    saveGuildConfig, // Pass local saveGuildConfig
                     isExempt,
                     logging.logMessage
                 );
@@ -598,6 +639,19 @@ client.once('ready', async () => {
         // Update client.invites cache AFTER the handler has used the old state
         if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             client.invites.set(member.guild.id, newInvitesMap); // Store the latest uses map
+        }
+
+        // --- New Member Greeting and +1 Karma ---
+        const guildConfig = await getGuildConfig(member.guild.id);
+        if (guildConfig.karmaChannelId) {
+            try {
+                // Give +1 Karma to the new member
+                const newKarma = await karmaSystem.addKarmaPoints(member.guild.id, member.user, 1, client.db, client.appId);
+                // Send a joyful greeting message to the Karma Channel
+                await karmaSystem.sendKarmaAnnouncement(member.guild, member.user.id, 1, newKarma, client);
+            } catch (error) {
+                console.error(`Error greeting new member ${member.user.tag} or giving initial karma:`, error);
+            }
         }
     });
 
@@ -693,7 +747,7 @@ client.once('ready', async () => {
 
                 try {
                     const newKarma = await karmaSystem.addKarmaPoints(reaction.message.guild.id, targetUser, karmaChange, client.db, client.appId);
-                    await reaction.message.channel.send(`${actionText} for <@${targetUser.id}>. New total: ${newKarma} Karma.`).catch(console.error);
+                    await karmaSystem.sendKarmaAnnouncement(reaction.message.guild, targetUser.id, karmaChange, newKarma, client); // Send announcement
                 } catch (error) {
                     console.error(`Error adjusting karma for ${targetUser.tag} via emoji:`, error);
                     reaction.message.channel.send(`Failed to adjust Karma for <@${targetUser.id}>. An error occurred.`).catch(console.error);
