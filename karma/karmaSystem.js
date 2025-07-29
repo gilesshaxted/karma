@@ -1,6 +1,7 @@
 // karma/karmaSystem.js
 const { doc, getDoc, setDoc, updateDoc, collection, query, where, limit, getDocs } = require('firebase/firestore');
 const axios = require('axios'); // Use axios for API calls
+const { EmbedBuilder } = require('discord.js'); // For sending rich embeds
 
 /**
  * Helper function to get or create a user's karma document in Firestore.
@@ -226,6 +227,116 @@ const setKarmaPoints = async (guildId, targetUser, newTotal, db, appId) => {
     return newTotal;
 };
 
+const karmaGainMessages = [
+    "Way to go <@${userId}>! I just gave you +${karmaChange} Karma for being awesome!",
+    "Fantastic! <@${userId}> earned +${karmaChange} Karma. Keep up the great work!",
+    "Boom! +${karmaChange} Karma for <@${userId}>. You're on fire!",
+    "A well-deserved +${karmaChange} Karma for <@${userId}>. Nice one!",
+    "Karma's smiling on <@${userId}> with +${karmaChange} points! Total: ${newTotal}."
+];
+
+const karmaLossMessages = [
+    "Oh dear <@${userId}>, that is ${karmaChange} less karma for you. Be better!",
+    "Oops! <@${userId}> lost ${karmaChange} Karma. Better luck next time!",
+    "A moment of silence for <@${userId}>, who just lost ${karmaChange} Karma. Don't worry, you'll get it back!",
+    "Uh oh, <@${userId}> just took a hit of ${karmaChange} Karma. Total: ${newTotal}.",
+    "Looks like Karma wasn't on <@${userId}>'s side this time. -${karmaChange} Karma."
+];
+
+const newMemberGreetingMessages = [
+    "Welcome to the server, <@${userId}>! Here's +1 Karma to start your journey!",
+    "A warm welcome to <@${userId}>! You just got +1 Karma for joining our awesome community!",
+    "Hello, <@${userId}>! The Karma bot is happy to see you and has given you +1 Karma!",
+    "Glad to have you, <@${userId}>! Enjoy your stay, and here's +1 Karma on the house!"
+];
+
+/**
+ * Sends a varied karma announcement message to the configured Karma Channel.
+ * @param {Guild} guild - The Discord guild.
+ * @param {string} userId - The ID of the user whose karma changed.
+ * @param {number} karmaChange - The amount of karma changed (+1, -1, etc.).
+ * @param {number} newTotal - The user's new total karma.
+ * @param {Client} client - The Discord client instance.
+ * @param {boolean} [isNewMember=false] - True if this is a new member greeting.
+ */
+const sendKarmaAnnouncement = async (guild, userId, karmaChange, newTotal, client, isNewMember = false) => {
+    const guildConfig = await client.getGuildConfig(guild.id);
+    const karmaChannelId = guildConfig.karmaChannelId;
+
+    if (!karmaChannelId) {
+        console.warn(`Karma channel not set for guild ${guild.name}. Cannot send karma announcement.`);
+        return;
+    }
+
+    const karmaChannel = guild.channels.cache.get(karmaChannelId);
+    if (!karmaChannel) {
+        console.error(`Karma channel with ID ${karmaChannelId} not found in guild ${guild.name}. Cannot send karma announcement.`);
+        return;
+    }
+
+    let messageArray;
+    let color;
+
+    if (isNewMember) {
+        messageArray = newMemberGreetingMessages;
+        color = '#FFD700'; // Gold for new member
+    } else if (karmaChange > 0) {
+        messageArray = karmaGainMessages;
+        color = '#00FF00'; // Green for gain
+    } else {
+        messageArray = karmaLossMessages;
+        color = '#FF0000'; // Red for loss
+    }
+
+    const randomIndex = Math.floor(Math.random() * messageArray.length);
+    let messageContent = messageArray[randomIndex];
+
+    // Replace placeholders
+    messageContent = messageContent.replace(/\$\{(\w+)\}/g, (match, p1) => {
+        if (p1 === 'userId') return userId;
+        if (p1 === 'karmaChange') return Math.abs(karmaChange); // Always positive for display
+        if (p1 === 'newTotal') return newTotal;
+        return match;
+    });
+
+    const embed = new EmbedBuilder()
+        .setDescription(messageContent)
+        .setColor(color)
+        .setTimestamp();
+
+    await karmaChannel.send({ embeds: [embed] }).catch(console.error);
+};
+
+/**
+ * Checks for members who haven't chatted in a week and deducts karma.
+ * @param {Guild} guild - The Discord guild.
+ * @param {Client} client - The Discord client instance.
+ */
+const checkWeeklyInactivityKarma = async (guild, client) => {
+    console.log(`Checking for inactive members in guild ${guild.name}...`);
+    const oneWeekAgo = new Date(Date.now() - (7 * 24 * 60 * 60 * 1000));
+
+    const karmaUsersRef = collection(client.db, `artifacts/${client.appId}/public/data/guilds/${guild.id}/karma_users`);
+    const q = query(karmaUsersRef); // Fetch all karma users
+
+    const querySnapshot = await getDocs(q);
+
+    for (const docSnapshot of querySnapshot.docs) {
+        const karmaData = docSnapshot.data();
+        const lastActivityDate = karmaData.lastActivityDate ? karmaData.lastActivityDate.toDate() : null;
+
+        if (lastActivityDate && lastActivityDate < oneWeekAgo) {
+            const targetUser = await client.users.fetch(karmaData.userId).catch(() => null);
+            if (targetUser && !targetUser.bot) { // Only penalize human users
+                const newKarma = await subtractKarmaPoints(guild.id, targetUser, 1, client.db, client.appId);
+                console.log(`Deducted 1 karma from ${targetUser.tag} for inactivity. New total: ${newKarma}`);
+                await sendKarmaAnnouncement(guild, targetUser.id, -1, newKarma, client);
+            }
+        }
+    }
+    console.log(`Finished checking inactive members in guild ${guild.name}.`);
+};
+
 
 module.exports = {
     getOrCreateUserKarma,
@@ -235,5 +346,7 @@ module.exports = {
     calculateAndAwardKarma,
     addKarmaPoints,
     subtractKarmaPoints,
-    setKarmaPoints
+    setKarmaPoints,
+    sendKarmaAnnouncement, // Export new function
+    checkWeeklyInactivityKarma // Export new function
 };
