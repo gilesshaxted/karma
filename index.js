@@ -437,6 +437,7 @@ const getGuildConfig = async (guildId) => {
             adminLogChannelId: null,   // New: Admin log channel
             joinLeaveLogChannelId: null, // New: Join/Leave log channel
             boostLogChannelId: null,   // New: Boost log channel
+            karmaChannelId: null,      // New: Karma Channel
             countingChannelId: null,   // New: Counting game channel
             currentCount: 0,           // New: Counting game current count
             lastCountMessageId: null,  // New: Counting game last correct message ID
