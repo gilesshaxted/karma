@@ -414,49 +414,7 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
 });
 
 // --- Discord Bot Client Setup ---
-// Helper function to get guild-specific config from Firestore
-const getGuildConfig = async (guildId) => {
-    if (!client.db || !client.appId) {
-        console.error('Firestore not initialized yet when getGuildConfig was called.');
-        return null;
-    }
-    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    const configSnap = await getDoc(configRef);
-
-    if (configSnap.exists()) {
-        return configSnap.data();
-    } else {
-        const defaultConfig = {
-            modRoleId: null,
-            adminRoleId: null,
-            moderationLogChannelId: null,
-            messageLogChannelId: null,
-            modAlertChannelId: null,
-            modPingRoleId: null,
-            memberLogChannelId: null, // New: Member log channel
-            adminLogChannelId: null,    // New: Admin log channel
-            joinLeaveLogChannelId: null, // New: Join/Leave log channel
-            boostLogChannelId: null,    // New: Boost log channel
-            karmaChannelId: null,       // New: Karma Channel
-            countingChannelId: null,    // New: Counting game channel
-            currentCount: 0,            // New: Counting game current count
-            lastCountMessageId: null,   // New: Counting game last correct message ID
-            caseNumber: 0
-        };
-        await setDoc(configRef, defaultConfig);
-        return defaultConfig;
-    }
-};
-
-// Helper function to save guild-specific config to Firestore
-const saveGuildConfig = async (guildId, newConfig) => {
-    if (!client.db || !client.appId) {
-        console.error('Firestore not initialized yet when saveGuildConfig was called.');
-        return;
-    }
-    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    await setDoc(configRef, newConfig, { merge: true });
-};
+// The getGuildConfig and saveGuildConfig functions were here and are the duplicates.
 
 
 // Event: Bot is ready
