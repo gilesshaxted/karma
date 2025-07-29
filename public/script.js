@@ -23,59 +23,38 @@ document.addEventListener('DOMContentLoaded', () => {
         return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
     };
 
-    // Helper to handle authentication failure (clear token and show login)
-    function handleAuthFailure(message = 'Authentication failed. Please log in again.') {
-        localStorage.removeItem('discord_access_token');
-        alert(message);
-        showAuthSection();
-    }
+    // Function to handle loading dashboard data (simplified, without aggressive retries/token clearing)
+    async function loadDashboard() {
+        showDashboardSection();
+        saveStatus.textContent = 'Loading dashboard...';
+        saveStatus.className = 'status-message';
 
-    // Function to handle loading dashboard data with retry logic
-    async function loadDashboardWithRetry(retries = 15, delay = 3000) { // Increased retries and initial delay
         try {
             // Fetch user info
             const userResponse = await fetch('/api/user', {
                 headers: { 'Authorization': `Bearer ${discordAccessToken}` }
             });
 
-            if (userResponse.status === 503 && retries > 0) {
-                console.warn(`Bot backend not ready (503). Retrying user data fetch in ${delay / 1000} seconds...`);
-                saveStatus.textContent = `Bot is starting up... Retrying in ${delay / 1000}s.`;
-                saveStatus.className = 'status-message';
-                await new Promise(res => setTimeout(res, delay));
-                return loadDashboardWithRetry(retries - 1, delay * 1.5); // Exponential backoff
-            } else if (!userResponse.ok) {
-                // For non-OK responses, try to parse JSON for more specific error
-                const errorText = await userResponse.text();
-                // If it's an auth error, handle failure explicitly
+            if (!userResponse.ok) {
+                // Only clear token for explicit auth failures, not 503 (bot not ready)
                 if (userResponse.status === 401 || userResponse.status === 403) {
-                    handleAuthFailure(errorText || 'Invalid or expired access token. Please log in again.');
-                    return; // Stop further processing
+                    localStorage.removeItem('discord_access_token');
                 }
-                throw new Error(errorText || 'Failed to fetch user data');
+                throw new Error(await userResponse.text() || 'Failed to fetch user data');
             }
             const userData = await userResponse.json();
             userDisplayName.textContent = userData.username;
-
 
             // Fetch guilds where bot is admin
             const guildsResponse = await fetch('/api/guilds', {
                 headers: { 'Authorization': `Bearer ${discordAccessToken}` }
             });
-            if (guildsResponse.status === 503 && retries > 0) {
-                 console.warn(`Bot backend not ready (503). Retrying guilds data fetch in ${delay / 1000} seconds...`);
-                 saveStatus.textContent = `Bot is starting up... Retrying in ${delay / 1000}s.`;
-                 saveStatus.className = 'status-message';
-                 await new Promise(res => setTimeout(res, delay));
-                 return loadDashboardWithRetry(retries - 1, delay * 1.5);
-            } else if (!guildsResponse.ok) {
-                // For non-OK responses, try to parse JSON for more specific error
-                const errorText = await guildsResponse.text();
-                // If it's an auth error, handle failure explicitly
+            if (!guildsResponse.ok) {
+                // Only clear token for explicit auth failures, not 503 (bot not ready)
                 if (guildsResponse.status === 401 || guildsResponse.status === 403) {
                     localStorage.removeItem('discord_access_token');
                 }
-                 throw new Error(errorText || 'Failed to fetch guilds');
+                throw new Error(await guildsResponse.text() || 'Failed to fetch guilds');
             }
             const guildsData = await guildsResponse.json();
             
@@ -86,7 +65,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 option.textContent = guild.name;
                 guildSelect.appendChild(option);
             });
-            showDashboardSection();
             saveStatus.textContent = ''; // Clear status once loaded
 
 
@@ -121,21 +99,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 localStorage.setItem('discord_access_token', discordAccessToken);
                 // Remove code from URL
                 window.history.replaceState({}, document.title, "/");
-                loadDashboardWithRetry(); // Start loading dashboard with retry logic
+                loadDashboard(); // Start loading dashboard
             } else {
                 console.error('Failed to get access token:', data);
-                handleAuthFailure('Failed to get access token from Discord. Please try again.'); // Treat as auth failure
+                alert('Failed to log in with Discord. Please try again.');
+                showAuthSection();
             }
         })
         .catch(error => {
             console.error('Error during token exchange:', error);
-            handleAuthFailure('An error occurred during login. Please try again.'); // Treat as auth failure
+            alert('An error occurred during login. Please try again.');
+            showAuthSection();
         });
     } else {
         // Check for existing token
         discordAccessToken = localStorage.getItem('discord_access_token');
         if (discordAccessToken) {
-            loadDashboardWithRetry(); // Start loading dashboard with retry logic
+            loadDashboard(); // Start loading dashboard
         } else {
             showAuthSection();
         }
@@ -205,6 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 populateSelect(document.getElementById('admin-log-channel-select'), textChannels, currentConfig.adminLogChannelId);
                 populateSelect(document.getElementById('join-leave-log-channel-select'), textChannels, currentConfig.joinLeaveLogChannelId);
                 populateSelect(document.getElementById('boost-log-channel-select'), textChannels, currentConfig.boostLogChannelId);
+                populateSelect(document.getElementById('karma-channel-select'), textChannels, currentConfig.karmaChannelId); // New
                 populateSelect(document.getElementById('counting-channel-select'), textChannels, currentConfig.countingChannelId);
 
 
@@ -254,6 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
             adminLogChannelId: document.getElementById('admin-log-channel-select').value || null,
             joinLeaveLogChannelId: document.getElementById('join-leave-log-channel-select').value || null,
             boostLogChannelId: document.getElementById('boost-log-channel-select').value || null,
+            karmaChannelId: document.getElementById('karma-channel-select').value || null, // New
             countingChannelId: document.getElementById('counting-channel-select').value || null,
         };
 
