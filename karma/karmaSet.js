@@ -13,8 +13,8 @@ module.exports = {
             option.setName('total')
                 .setDescription('The new total Karma points')
                 .setRequired(true)),
-    async execute(interaction, { db, appId, getGuildConfig, setKarmaPoints }) { // Removed hasPermission, isExempt, logModerationAction
-        // interaction.deferReply() is handled by bot.js for all slash commands.
+    async execute(interaction, { db, appId, getGuildConfig, setKarmaPoints, sendKarmaAnnouncement, client }) { // Added sendKarmaAnnouncement, client
+        // interaction.deferReply() is handled by index.js for all slash commands.
         // So, we use editReply here.
 
         const targetUser = interaction.options.getUser('target');
@@ -29,7 +29,7 @@ module.exports = {
             return interaction.editReply('Could not find that user in this server.');
         }
 
-        // Permission check for the invoker is handled by bot.js
+        // Permission check for the invoker is handled by index.js
         // No isExempt check for the target, as all users can receive karma
 
         try {
@@ -38,8 +38,8 @@ module.exports = {
 
             await setKarmaPoints(guild.id, targetUser, newTotal, db, appId);
 
-            // No logging to mod-logs for karma commands
-            // No case number increment for karma commands
+            // Send announcement to Karma Channel
+            await sendKarmaAnnouncement(guild, targetUser.id, newTotal - oldKarma, newTotal, client);
 
             await interaction.editReply(`Successfully set ${targetUser.tag}'s Karma to ${newTotal}. (Previously ${oldKarma})`);
 
