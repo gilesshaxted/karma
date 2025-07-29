@@ -94,13 +94,13 @@ const getGuildConfig = async (guildId) => {
             modAlertChannelId: null,
             modPingRoleId: null,
             memberLogChannelId: null, // New: Member log channel
-            adminLogChannelId: null,   // New: Admin log channel
+            adminLogChannelId: null,    // New: Admin log channel
             joinLeaveLogChannelId: null, // New: Join/Leave log channel
-            boostLogChannelId: null,   // New: Boost log channel
-            karmaChannelId: null,      // New: Karma Channel
-            countingChannelId: null,   // New: Counting game channel
-            currentCount: 0,           // New: Counting game current count
-            lastCountMessageId: null,  // New: Counting game last correct message ID
+            boostLogChannelId: null,    // New: Boost log channel
+            karmaChannelId: null,       // New: Karma Channel
+            countingChannelId: null,    // New: Counting game channel
+            currentCount: 0,            // New: Counting game current count
+            lastCountMessageId: null,   // New: Counting game last correct message ID
             caseNumber: 0
         };
         await setDoc(configRef, defaultConfig);
@@ -318,8 +318,8 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
             // If it's a 503 or network error, retry. Otherwise, rethrow or handle.
             if (error.response?.status === 503 && i < MAX_GUILD_FETCH_RETRIES - 1) {
-                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`); // Corrected variable
+                await new Promise(resolve => setTimeout(resolve, GUILD_FETCH_RETRY_DELAY_MS)); // Corrected variable
                 continue; // Retry the loop
             }
             // If it's another error or retries exhausted, send error response
@@ -404,7 +404,7 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
         if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
 
-        await client.saveGuildConfig(guildId, validConfig);
+        await saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
 
     } catch (error) {
@@ -414,49 +414,7 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
 });
 
 // --- Discord Bot Client Setup ---
-// Helper function to get guild-specific config from Firestore
-const getGuildConfig = async (guildId) => {
-    if (!client.db || !client.appId) {
-        console.error('Firestore not initialized yet when getGuildConfig was called.');
-        return null;
-    }
-    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    const configSnap = await getDoc(configRef);
-
-    if (configSnap.exists()) {
-        return configSnap.data();
-    } else {
-        const defaultConfig = {
-            modRoleId: null,
-            adminRoleId: null,
-            moderationLogChannelId: null,
-            messageLogChannelId: null,
-            modAlertChannelId: null,
-            modPingRoleId: null,
-            memberLogChannelId: null, // New: Member log channel
-            adminLogChannelId: null,   // New: Admin log channel
-            joinLeaveLogChannelId: null, // New: Join/Leave log channel
-            boostLogChannelId: null,   // New: Boost log channel
-            karmaChannelId: null,      // New: Karma Channel
-            countingChannelId: null,   // New: Counting game channel
-            currentCount: 0,           // New: Counting game current count
-            lastCountMessageId: null,  // New: Counting game last correct message ID
-            caseNumber: 0
-        };
-        await setDoc(configRef, defaultConfig);
-        return defaultConfig;
-    }
-};
-
-// Helper function to save guild-specific config to Firestore
-const saveGuildConfig = async (guildId, newConfig) => {
-    if (!client.db || !client.appId) {
-        console.error('Firestore not initialized yet when saveGuildConfig was called.');
-        return;
-    }
-    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    await setDoc(configRef, newConfig, { merge: true });
-};
+// The getGuildConfig and saveGuildConfig functions were removed from here.
 
 
 // Event: Bot is ready
