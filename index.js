@@ -94,13 +94,13 @@ const getGuildConfig = async (guildId) => {
             modAlertChannelId: null,
             modPingRoleId: null,
             memberLogChannelId: null, // New: Member log channel
-            adminLogChannelId: null,   // New: Admin log channel
+            adminLogChannelId: null,    // New: Admin log channel
             joinLeaveLogChannelId: null, // New: Join/Leave log channel
-            boostLogChannelId: null,   // New: Boost log channel
-            karmaChannelId: null,      // New: Karma Channel
-            countingChannelId: null,   // New: Counting game channel
-            currentCount: 0,           // New: Counting game current count
-            lastCountMessageId: null,  // New: Counting game last correct message ID
+            boostLogChannelId: null,    // New: Boost log channel
+            karmaChannelId: null,       // New: Karma Channel
+            countingChannelId: null,    // New: Counting game channel
+            currentCount: 0,            // New: Counting game current count
+            lastCountMessageId: null,   // New: Counting game last correct message ID
             caseNumber: 0
         };
         await setDoc(configRef, defaultConfig);
@@ -404,7 +404,7 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
         if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
 
-        await client.saveGuildConfig(guildId, validConfig);
+        await saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
 
     } catch (error) {
@@ -414,49 +414,7 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
 });
 
 // --- Discord Bot Client Setup ---
-// Helper function to get guild-specific config from Firestore
-const getGuildConfig = async (guildId) => {
-    if (!client.db || !client.appId) {
-        console.error('Firestore not initialized yet when getGuildConfig was called.');
-        return null;
-    }
-    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    const configSnap = await getDoc(configRef);
-
-    if (configSnap.exists()) {
-        return configSnap.data();
-    } else {
-        const defaultConfig = {
-            modRoleId: null,
-            adminRoleId: null,
-            moderationLogChannelId: null,
-            messageLogChannelId: null,
-            modAlertChannelId: null,
-            modPingRoleId: null,
-            memberLogChannelId: null, // New: Member log channel
-            adminLogChannelId: null,   // New: Admin log channel
-            joinLeaveLogChannelId: null, // New: Join/Leave log channel
-            boostLogChannelId: null,   // New: Boost log channel
-            karmaChannelId: null,      // New: Karma Channel
-            countingChannelId: null,   // New: Counting game channel
-            currentCount: 0,           // New: Counting game current count
-            lastCountMessageId: null,  // New: Counting game last correct message ID
-            caseNumber: 0
-        };
-        await setDoc(configRef, defaultConfig);
-        return defaultConfig;
-    }
-};
-
-// Helper function to save guild-specific config to Firestore
-const saveGuildConfig = async (guildId, newConfig) => {
-    if (!client.db || !client.appId) {
-        console.error('Firestore not initialized yet when saveGuildConfig was called.');
-        return;
-    }
-    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    await setDoc(configRef, newConfig, { merge: true });
-};
+// THE DUPLICATE FUNCTIONS WERE HERE. I'VE REMOVED THEM IN THIS VERSION.
 
 
 // Event: Bot is ready
@@ -655,7 +613,8 @@ client.once('ready', async () => {
                 // Give +1 Karma to the new member
                 const newKarma = await karmaSystem.addKarmaPoints(member.guild.id, member.user, 1, client.db, client.appId);
                 // Send a joyful greeting message to the Karma Channel
-                await karmaSystem.sendKarmaAnnouncement(member.guild, member.user.id, 1, newKarma, client, true); // true for isNewMember
+                // Corrected call: Pass getGuildConfig
+                await karmaSystem.sendKarmaAnnouncement(member.guild, member.user.id, 1, newKarma, getGuildConfig, client, true); // true for isNewMember
             } catch (error) {
                 console.error(`Error greeting new member ${member.user.tag} or giving initial karma:`, error);
             }
@@ -754,7 +713,8 @@ client.once('ready', async () => {
 
                 try {
                     const newKarma = await karmaSystem.addKarmaPoints(reaction.message.guild.id, targetUser, karmaChange, client.db, client.appId);
-                    await karmaSystem.sendKarmaAnnouncement(reaction.message.guild, targetUser.id, karmaChange, newKarma, client); // Send announcement
+                    // Corrected call: Pass getGuildConfig
+                    await karmaSystem.sendKarmaAnnouncement(reaction.message.guild, targetUser.id, karmaChange, newKarma, getGuildConfig, client); // Send announcement
                 } catch (error) {
                     console.error(`Error adjusting karma for ${targetUser.tag} via emoji:`, error);
                     reaction.message.channel.send(`Failed to adjust Karma for <@${targetUser.id}>. An error occurred.`).catch(console.error);
@@ -779,7 +739,8 @@ client.once('ready', async () => {
             if (interaction.deferred || interaction.replied) {
                 await interaction.editReply({ content: 'Bot is still starting up, please try again in a moment.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
             } else {
-                await interaction.reply({ content: 'Bot is still starting up, please try again in a moment.', ephemeral: true }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
+                // Fix: Use flags instead of deprecated ephemeral property
+                await interaction.reply({ content: 'Bot is still starting up, please try again in a moment.', flags: MessageFlags.Ephemeral }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
             }
             return;
         }
@@ -794,7 +755,8 @@ client.once('ready', async () => {
             // Defer reply immediately, but handle potential failure
             let deferred = false;
             try {
-                await interaction.deferReply({ ephemeral: ephemeral }); // Use the determined ephemeral value
+                // Fix: Use flags instead of deprecated ephemeral property
+                await interaction.deferReply({ ephemeral: ephemeral, flags: ephemeral ? MessageFlags.Ephemeral : 0 });
                 deferred = true;
             } catch (deferError) {
                 if (deferError.code === 10062) { // Unknown interaction
@@ -812,7 +774,8 @@ client.once('ready', async () => {
                     if (deferred) {
                         return interaction.editReply({ content: 'No command matching that name was found.' });
                     } else {
-                        return interaction.reply({ content: 'No command matching that name was found.', ephemeral: true });
+                        // Fix: Use flags instead of deprecated ephemeral property
+                        return interaction.reply({ content: 'No command matching that name was found.', flags: MessageFlags.Ephemeral });
                     }
                 }
 
@@ -824,7 +787,8 @@ client.once('ready', async () => {
                         if (deferred) {
                             return interaction.editReply({ content: 'You do not have permission to use this karma command.' });
                         } else {
-                            return interaction.reply({ content: 'You do not have permission to use this karma command.', ephemeral: true });
+                            // Fix: Use flags instead of deprecated ephemeral property
+                            return interaction.reply({ content: 'You do not have permission to use this karma command.', flags: MessageFlags.Ephemeral });
                         }
                     }
                 } else { // For other moderation commands
@@ -832,7 +796,8 @@ client.once('ready', async () => {
                         if (deferred) {
                             return interaction.editReply({ content: 'You do not have permission to use this command.' });
                         } else {
-                            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+                            // Fix: Use flags instead of deprecated ephemeral property
+                            return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
                         }
                     }
                 }
@@ -844,17 +809,20 @@ client.once('ready', async () => {
                     isExempt, // isExempt is still passed, but individual karma commands will ignore it for target
                     logModerationAction: logging.logModerationAction,
                     logMessage: logging.logMessage,
-                    MessageFlags,
+                    MessageFlags, // Pass MessageFlags for deprecated warning fix
                     db: client.db,
                     appId: client.appId,
-                    getOrCreateUserKarma: karmaSystem.getOrCreateUserKarma,
-                    updateUserKarmaData: karmaSystem.updateUserKarmaData,
-                    calculateAndAwardKarma: karmaSystem.calculateAndAwardKarma,
-                    analyzeSentiment: karmaSystem.analyzeSentiment,
-                    addKarmaPoints: karmaSystem.addKarmaPoints, // Passed new karma functions
-                    subtractKarmaPoints: karmaSystem.subtractKarmaPoints, // Passed new karma functions
-                    setKarmaPoints: karmaSystem.setKarmaPoints, // Passed new karma functions
-                    client
+                    // Pass getGuildConfig here as well, because karmaSystem functions need it
+                    getOrCreateUserKarma: (...args) => karmaSystem.getOrCreateUserKarma(...args, client.db, client.appId),
+                    updateUserKarmaData: (...args) => karmaSystem.updateUserKarmaData(...args, client.db, client.appId),
+                    calculateAndAwardKarma: (...args) => karmaSystem.calculateAndAwardKarma(...args, client.db, client.appId, client.googleApiKey),
+                    analyzeSentiment: (...args) => karmaSystem.analyzeSentiment(...args, client.googleApiKey),
+                    addKarmaPoints: (...args) => karmaSystem.addKarmaPoints(...args, client.db, client.appId),
+                    subtractKarmaPoints: (...args) => karmaSystem.subtractKarmaPoints(...args, client.db, client.appId),
+                    setKarmaPoints: (...args) => karmaSystem.setKarmaPoints(...args, client.db, client.appId),
+                    // Ensure sendKarmaAnnouncement also receives getGuildConfig
+                    sendKarmaAnnouncement: (...args) => karmaSystem.sendKarmaAnnouncement(...args, getGuildConfig, client),
+                    client // Pass the client object
                 });
             } else if (interaction.isButton()) {
                 // For buttons, deferUpdate is usually sufficient and handled above.
@@ -865,7 +833,8 @@ client.once('ready', async () => {
             if (interaction.deferred || interaction.replied) {
                 await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply after error:', e));
             } else {
-                await interaction.reply({ content: 'An unexpected error occurred while processing your command.', ephemeral: true }).catch(e => console.error('Failed to reply after error:', e));
+                // Fix: Use flags instead of deprecated ephemeral property
+                await interaction.reply({ content: 'An unexpected error occurred while processing your command.', flags: MessageFlags.Ephemeral }).catch(e => console.error('Failed to reply after error:', e));
             }
         }
     });
