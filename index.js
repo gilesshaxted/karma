@@ -37,6 +37,9 @@ client.appId = null;
 client.googleApiKey = null;
 client.userId = null; // Also store userId on client
 
+// Load environment variables from a custom .env file
+// Assumes karma_bot.env is in the same directory as index.js
+require('dotenv').config({ path: path.resolve(__dirname, 'karma_bot.env') });
 
 // Import helper functions (relative to index.js)
 const { hasPermission, isExempt } = require('./helpers/permissions');
