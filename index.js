@@ -1,5 +1,7 @@
 // index.js - Main entry point for the combined web server and Discord bot
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, 'karma_bot.env') }); // Load environment variables from karma_bot.env
+
 const { Client, Collection, GatewayIntentBits, Partials, PermissionsBitField, MessageFlags } = require('discord.js');
 const { REST } = require('@discordjs/rest');
 const { Routes } = require('discord-api-types/v10');
@@ -35,11 +37,9 @@ client.db = null;
 client.auth = null;
 client.appId = null;
 client.googleApiKey = null;
+client.tenorApiKey = process.env.TENOR_API_KEY; // New environment variable for Tenor
 client.userId = null; // Also store userId on client
 
-// Load environment variables from a custom .env file
-// Assumes karma_bot.env is in the same directory as index.js
-require('dotenv').config({ path: path.resolve(__dirname, 'karma_bot.env') });
 
 // Import helper functions (relative to index.js)
 const { hasPermission, isExempt } = require('./helpers/permissions');
@@ -58,6 +58,8 @@ const boostLogHandler = require('./logging/boostLogHandler');
 // New game handlers
 const countingGame = require('./games/countingGame');
 
+// New event handlers
+const lemonsGame = require('./events/lemons');
 
 // --- Discord OAuth Configuration (Bot's Permissions for Invite) ---
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
@@ -78,7 +80,6 @@ const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([
 ]).bitfield.toString();
 
 // Helper function to get guild-specific config from Firestore
-// This is the single, canonical definition for getGuildConfig
 const getGuildConfig = async (guildId) => {
     if (!client.db || !client.appId) {
         console.error('Firestore not initialized yet when getGuildConfig was called.');
@@ -113,7 +114,6 @@ const getGuildConfig = async (guildId) => {
 };
 
 // Helper function to save guild-specific config to Firestore
-// This is the single, canonical definition for saveGuildConfig
 const saveGuildConfig = async (guildId, newConfig) => {
     if (!client.db || !client.appId) {
         console.error('Firestore not initialized yet when saveGuildConfig was called.');
@@ -291,7 +291,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             const userGuilds = guildsResponse.data;
 
             const botGuilds = client.guilds.cache;
-
+            
             // If bot's guild cache is still empty, and we have retries left, wait and retry.
             if (botGuilds.size === 0 && i < MAX_GUILD_FETCH_RETRIES - 1) {
                 console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
@@ -305,7 +305,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             const manageableGuilds = userGuilds.filter(userGuild => {
                 const hasAdminPerms = (BigInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
                 const botInGuild = botGuilds.has(userGuild.id);
-
+                
                 // Debugging: Log why a guild is filtered out
                 if (!botInGuild) {
                     console.log(`Filtering out guild ${userGuild.name}: Bot not in guild.`);
@@ -322,10 +322,9 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
         } catch (error) {
             console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
             // If it's a 503 or network error, retry. Otherwise, rethrow or handle.
-            // Using GUILD_FETCH_RETRY_DELAY_MS here, as RETRY_DELAY_MS was not defined.
             if (error.response?.status === 503 && i < MAX_GUILD_FETCH_RETRIES - 1) {
-                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, GUILD_FETCH_RETRY_DELAY_MS));
+                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
                 continue; // Retry the loop
             }
             // If it's another error or retries exhausted, send error response
@@ -359,7 +358,7 @@ app.get('/api/guild-config', verifyDiscordToken, checkBotReadiness, async (req, 
             .filter(channel => channel.isTextBased())
             .map(channel => ({ id: channel.id, name: channel.name, type: channel.type }));
 
-        const currentConfig = await getGuildConfig(guildId); // Use the single getGuildConfig
+        const currentConfig = await getGuildConfig(guildId);
 
         res.json({
             guildData: {
@@ -410,7 +409,7 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
         if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
 
-        await saveGuildConfig(guildId, validConfig); // Use the single saveGuildConfig
+        await client.saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
 
     } catch (error) {
@@ -420,17 +419,16 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
 });
 
 // --- Discord Bot Client Setup ---
-
 // Event: Bot is ready
 client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
 
     // Initialize Firebase and Google API Key
     try {
-        // __app_id is likely a global variable set by your hosting environment (e.g., Google Cloud Run)
-        // If running locally, ensure process.env.FIREBASE_APP_ID is correctly set.
-        client.appId = typeof __app_id !== 'undefined' ? __app_id : process.env.FIREBASE_APP_ID;
+        // Use FIREBASE_APP_ID environment variable for client.appId
+        client.appId = process.env.FIREBASE_APP_ID;
         client.googleApiKey = process.env.GOOGLE_API_KEY || "";
+        client.tenorApiKey = process.env.TENOR_API_KEY || "";
 
         const firebaseConfig = {
             apiKey: process.env.FIREBASE_API_KEY,
@@ -438,7 +436,7 @@ client.once('ready', async () => {
             projectId: process.env.FIREBASE_PROJECT_ID,
             storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
             messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-            appId: process.env.FIREBASE_APP_ID // This is for client-side Firebase, not the 'app_id' used for Firestore paths
+            appId: process.env.FIREBASE_APP_ID // Ensure this matches the App ID in Firebase Console
         };
 
         if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId || !firebaseConfig.authDomain) {
@@ -450,7 +448,6 @@ client.once('ready', async () => {
         client.db = getFirestore(firebaseApp);
         client.auth = getAuth(firebaseApp);
 
-        // __initial_auth_token is also likely from hosting environment for server authentication
         if (typeof __initial_auth_token !== 'undefined') {
             await signInWithCustomToken(client.auth, __initial_auth_token);
         } else {
@@ -519,6 +516,17 @@ client.once('ready', async () => {
                 console.warn(`Message ${message.id} has no author. Skipping message processing.`);
                 return;
             }
+            
+            // Check if the author is a partial user and fetch if necessary
+            if (message.author.partial) {
+                try {
+                    await message.author.fetch();
+                } catch (error) {
+                    console.error(`Failed to fetch partial author for message ${message.id}:`, error);
+                    return; // Skip message if author cannot be fetched
+                }
+            }
+
 
             if (!client.db || !client.appId || !client.googleApiKey) {
                 console.warn('Skipping message processing: Firebase or API keys not fully initialized yet.');
@@ -528,19 +536,25 @@ client.once('ready', async () => {
             const author = message.author;
 
             // --- Counting Game Check (before auto-mod) ---
-            const guildConfig = await getGuildConfig(guild.id); // Use the single getGuildConfig
+            const guildConfig = await getGuildConfig(guild.id); // Use the global getGuildConfig
             if (guildConfig.countingChannelId && message.channel.id === guildConfig.countingChannelId) {
                 const handledByCountingGame = await countingGame.checkCountMessage(
                     message,
                     client,
-                    getGuildConfig, // Pass the single getGuildConfig
-                    saveGuildConfig, // Pass the single saveGuildConfig
+                    getGuildConfig, // Pass the global getGuildConfig
+                    saveGuildConfig, // Pass the global saveGuildConfig
                     isExempt,
                     logging.logMessage
                 );
                 if (handledByCountingGame) {
                     return; // Message was handled by counting game, stop further processing
                 }
+            }
+            
+            // --- Lemon Game Check ---
+            if (lemonsGame.shouldHandle(message)) {
+                await lemonsGame.handleMessage(message, client.tenorApiKey);
+                return; // Stop further processing
             }
 
             await autoModeration.checkMessageForModeration(
@@ -573,22 +587,22 @@ client.once('ready', async () => {
 
     client.on('messageDelete', async message => {
         if (!message.guild) return;
-        await messageLogHandler.handleMessageDelete(message, getGuildConfig, logging.logMessage); // Use the single getGuildConfig
+        await messageLogHandler.handleMessageDelete(message, getGuildConfig, logging.logMessage);
     });
 
     client.on('messageUpdate', async (oldMessage, newMessage) => {
         if (!newMessage.guild) return;
-        await messageLogHandler.handleMessageUpdate(oldMessage, newMessage, getGuildConfig, logging.logMessage); // Use the single getGuildConfig
+        await messageLogHandler.handleMessageUpdate(oldMessage, newMessage, getGuildConfig, logging.logMessage);
     });
 
     // Member-related events
     client.on('guildMemberUpdate', async (oldMember, newMember) => {
-        await memberLogHandler.handleGuildMemberUpdate(oldMember, newMember, getGuildConfig); // Use the single getGuildConfig
-        await boostLogHandler.handleBoostUpdate(oldMember, newMember, getGuildConfig); // Use the single getGuildConfig
+        await memberLogHandler.handleGuildMemberUpdate(oldMember, newMember, getGuildConfig);
+        await boostLogHandler.handleBoostUpdate(oldMember, newMember, getGuildConfig);
     });
 
     client.on('userUpdate', async (oldUser, newUser) => {
-        await memberLogHandler.handleUserUpdate(oldUser, newUser, getGuildConfig, client); // Use the single getGuildConfig
+        await memberLogHandler.handleUserUpdate(oldUser, newUser, getGuildConfig, client);
     });
 
     client.on('guildMemberAdd', async member => {
@@ -606,7 +620,7 @@ client.once('ready', async () => {
             }
         }
         // Pass newInvitesMap and oldInvitesMap to handler
-        await joinLeaveLogHandler.handleGuildMemberAdd(member, getGuildConfig, oldInvitesMap, newInvitesMap, karmaSystem.sendKarmaAnnouncement, karmaSystem.addKarmaPoints, client.db, client.appId, client); // Use the single getGuildConfig
+        await joinLeaveLogHandler.handleGuildMemberAdd(member, getGuildConfig, oldInvitesMap, newInvitesMap, karmaSystem.sendKarmaAnnouncement, karmaSystem.addKarmaPoints, client.db, client.appId, client);
 
         // Update client.invites cache AFTER the handler has used the old state
         if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
@@ -614,13 +628,13 @@ client.once('ready', async () => {
         }
 
         // --- New Member Greeting and +1 Karma ---
-        const guildConfig = await getGuildConfig(member.guild.id); // Use the single getGuildConfig
+        const guildConfig = await getGuildConfig(member.guild.id);
         if (guildConfig.karmaChannelId) {
             try {
                 // Give +1 Karma to the new member
                 const newKarma = await karmaSystem.addKarmaPoints(member.guild.id, member.user, 1, client.db, client.appId);
                 // Send a joyful greeting message to the Karma Channel
-                await karmaSystem.sendKarmaAnnouncement(member.guild, member.user.id, 1, newKarma, getGuildConfig, client, true); // Use the single getGuildConfig // true for isNewMember
+                await karmaSystem.sendKarmaAnnouncement(member.guild, member.user.id, 1, newKarma, getGuildConfig, client, true); // true for isNewMember
             } catch (error) {
                 console.error(`Error greeting new member ${member.user.tag} or giving initial karma:`, error);
             }
@@ -628,48 +642,48 @@ client.once('ready', async () => {
     });
 
     client.on('guildMemberRemove', async member => {
-        await joinLeaveLogHandler.handleGuildMemberRemove(member, getGuildConfig); // Use the single getGuildConfig
+        await joinLeaveLogHandler.handleGuildMemberRemove(member, getGuildConfig);
     });
 
     // Admin-related events (channels, roles, emojis, scheduled events)
     client.on('channelCreate', async channel => {
-        await adminLogHandler.handleChannelCreate(channel, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleChannelCreate(channel, getGuildConfig);
     });
     client.on('channelDelete', async channel => {
-        await adminLogHandler.handleChannelDelete(channel, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleChannelDelete(channel, getGuildConfig);
     });
     client.on('channelUpdate', async (oldChannel, newChannel) => {
-        await adminLogHandler.handleChannelUpdate(oldChannel, newChannel, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleChannelUpdate(oldChannel, newChannel, getGuildConfig);
     });
     client.on('channelPinsUpdate', async (channel, time) => {
         // console.log(`Pins updated in channel ${channel.name} at ${time}`);
     });
     client.on('roleCreate', async role => {
-        await adminLogHandler.handleRoleCreate(role, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleRoleCreate(role, getGuildConfig);
     });
     client.on('roleDelete', async role => {
-        await adminLogHandler.handleRoleDelete(role, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleRoleDelete(role, getGuildConfig);
     });
     client.on('roleUpdate', async (oldRole, newRole) => {
-        await adminLogHandler.handleRoleUpdate(oldRole, newRole, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleRoleUpdate(oldRole, newRole, getGuildConfig);
     });
     client.on('emojiCreate', async emoji => {
-        await adminLogHandler.handleEmojiCreate(emoji, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleEmojiCreate(emoji, getGuildConfig);
     });
     client.on('emojiDelete', async emoji => {
-        await adminLogHandler.handleEmojiDelete(emoji, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleEmojiDelete(emoji, getGuildConfig);
     });
     client.on('emojiUpdate', async (oldEmoji, newEmoji) => {
-        await adminLogHandler.handleEmojiUpdate(oldEmoji, newEmoji, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleEmojiUpdate(oldEmoji, newEmoji, getGuildConfig);
     });
     client.on('guildScheduledEventCreate', async guildScheduledEvent => {
-        await adminLogHandler.handleGuildScheduledEventCreate(guildScheduledEvent, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleGuildScheduledEventCreate(guildScheduledEvent, getGuildConfig);
     });
     client.on('guildScheduledEventDelete', async guildScheduledEvent => {
-        await adminLogHandler.handleGuildScheduledEventDelete(guildScheduledEvent, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleGuildScheduledEventDelete(guildScheduledEvent, getGuildConfig);
     });
     client.on('guildScheduledEventUpdate', async (oldGuildScheduledEvent, newGuildScheduledEvent) => {
-        await adminLogHandler.handleGuildScheduledEventUpdate(oldGuildScheduledEvent, newGuildScheduledEvent, getGuildConfig); // Use the single getGuildConfig
+        await adminLogHandler.handleGuildScheduledEventUpdate(oldGuildScheduledEvent, newGuildScheduledEvent, getGuildConfig);
     });
 
     // Invite tracking events
@@ -701,7 +715,7 @@ client.once('ready', async () => {
         // Handle Karma reactions first
         if (['👍', '👎'].includes(reaction.emoji.name)) {
             const reactorMember = await reaction.message.guild.members.fetch(user.id).catch(() => null);
-            const guildConfig = await getGuildConfig(reaction.message.guild.id); // Use the single getGuildConfig
+            const guildConfig = await getGuildConfig(reaction.message.guild.id);
 
             // Only process karma reactions from moderators or admins
             if (reactorMember && hasPermission(reactorMember, guildConfig)) {
@@ -719,7 +733,7 @@ client.once('ready', async () => {
 
                 try {
                     const newKarma = await karmaSystem.addKarmaPoints(reaction.message.guild.id, targetUser, karmaChange, client.db, client.appId);
-                    await karmaSystem.sendKarmaAnnouncement(reaction.message.guild, targetUser.id, karmaChange, newKarma, getGuildConfig, client); // Use the single getGuildConfig // Send announcement
+                    await karmaSystem.sendKarmaAnnouncement(reaction.message.guild, targetUser.id, karmaChange, newKarma, getGuildConfig, client); // Send announcement
                 } catch (error) {
                     console.error(`Error adjusting karma for ${targetUser.tag} via emoji:`, error);
                     reaction.message.channel.send(`Failed to adjust Karma for <@${targetUser.id}>. An error occurred.`).catch(console.error);
@@ -733,14 +747,14 @@ client.once('ready', async () => {
 
         // Delegate to the external moderation/karma reaction handler if not a karma emoji
         await handleMessageReactionAdd(
-            reaction, user, client, getGuildConfig, saveGuildConfig, hasPermission, isExempt, logging.logModerationAction, logging.logMessage, karmaSystem // Use the single getGuildConfig and saveGuildConfig
+            reaction, user, client, getGuildConfig, saveGuildConfig, hasPermission, isExempt, logging.logModerationAction, logging.logMessage, karmaSystem
         );
     });
 
     // Event: Interaction created (for slash commands and buttons)
     client.on('interactionCreate', async interaction => {
         if (!client.db || !client.appId) {
-            console.warn('Skipping interaction processing: Firebase not fully initialized yet.');
+            console.warn('Skipping interaction processing: Firebase or API keys not fully initialized yet.');
             if (interaction.deferred || interaction.replied) {
                 await interaction.editReply({ content: 'Bot is still starting up, please try again in a moment.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
             } else {
@@ -755,7 +769,7 @@ client.once('ready', async () => {
             if (interaction.isCommand() && interaction.commandName === 'leaderboard') {
                 ephemeral = false; // Make leaderboard public
             }
-
+            
             // Defer reply immediately, but handle potential failure
             let deferred = false;
             try {
@@ -781,7 +795,7 @@ client.once('ready', async () => {
                     }
                 }
 
-                const guildConfig = await getGuildConfig(interaction.guildId); // Use the single getGuildConfig
+                const guildConfig = await getGuildConfig(interaction.guildId);
 
                 // Check permissions for karma commands
                 if (['karma_plus', 'karma_minus', 'karma_set'].includes(commandName)) {
@@ -803,8 +817,8 @@ client.once('ready', async () => {
                 }
 
                 await command.execute(interaction, {
-                    getGuildConfig: getGuildConfig, // Pass the single getGuildConfig
-                    saveGuildConfig: saveGuildConfig, // Pass the single saveGuildConfig
+                    getGuildConfig: getGuildConfig,
+                    saveGuildConfig: saveGuildConfig,
                     hasPermission,
                     isExempt, // isExempt is still passed, but individual karma commands will ignore it for target
                     logModerationAction: logging.logModerationAction,
@@ -830,7 +844,7 @@ client.once('ready', async () => {
             if (interaction.deferred || interaction.replied) {
                 await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply after error:', e));
             } else {
-                await interaction.reply({ content: 'An unexpected error occurred while processing your command.', ephemeral: true }).catch(e => console.error('Failed to reply after error:', e));
+                await interaction.reply({ content: 'An unexpected error occurred while processing your command.', ephemeral: true }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
             }
         }
     });
