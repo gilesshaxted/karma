@@ -285,5 +285,4 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
                 return botInGuild && hasAdminPerms;
             });
 
-            console.log("Manageable guilds sent to frontend:", manageableGuilds.map(g => g.name)); // Debugging
-            return res.json(managea
+            console.log("Manageable guilds sent to frontend:", manageabl
