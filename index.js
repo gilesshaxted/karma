@@ -62,69 +62,6 @@ const countingGame = require('./games/countingGame');
 // New event handlers
 const lemonsGame = require('./events/lemons');
 
-// --- Discord OAuth Configuration (Bot's Permissions for Invite) ---
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
-const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI;
-const DISCORD_OAUTH_SCOPES = 'identify guilds'; // Scopes for user identification and guild list
-const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([
-    PermissionsBitField.Flags.ManageChannels,
-    PermissionsBitField.Flags.ManageRoles,
-    PermissionsBitField.Flags.KickMembers,
-    PermissionsBitField.Flags.BanMembers,
-    PermissionsBitField.Flags.ModerateMembers,
-    PermissionsBitField.Flags.ReadMessageHistory,
-    PermissionsBitField.Flags.SendMessages,
-    PermissionsBitField.Flags.ManageMessages,
-    PermissionsBitField.Flags.ViewAuditLog, // Added for admin logging
-    PermissionsBitField.Flags.ManageGuild // Added for invite tracking
-]).bitfield.toString();
-
-// Helper function to get guild-specific config from Firestore
-const getGuildConfig = async (guildId) => {
-    if (!client.db || !client.appId) {
-        console.error('Firestore not initialized yet when getGuildConfig was called.');
-        return null;
-    }
-    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    const configSnap = await getDoc(configRef);
-
-    if (configSnap.exists()) {
-        return configSnap.data();
-    } else {
-        const defaultConfig = {
-            modRoleId: null,
-            adminRoleId: null,
-            moderationLogChannelId: null,
-            messageLogChannelId: null,
-            modAlertChannelId: null,
-            modPingRoleId: null,
-            memberLogChannelId: null, // New: Member log channel
-            adminLogChannelId: null,   // New: Admin log channel
-            joinLeaveLogChannelId: null, // New: Join/Leave log channel
-            boostLogChannelId: null,   // New: Boost log channel
-            karmaChannelId: null,      // New: Karma Channel
-            countingChannelId: null,   // New: Counting game channel
-            currentCount: 0,           // New: Counting game current count
-            lastCountMessageId: null,  // New: Counting game last correct message ID
-            caseNumber: 0
-        };
-        await setDoc(configRef, defaultConfig);
-        return defaultConfig;
-    }
-};
-
-// Helper function to save guild-specific config to Firestore
-const saveGuildConfig = async (guildId, newConfig) => {
-    if (!client.db || !client.appId) {
-        console.error('Firestore not initialized yet when saveGuildConfig was called.');
-        return;
-    }
-    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    await setDoc(configRef, newConfig, { merge: true });
-};
-
-
 // --- Dynamic Command Loading ---
 const commandsPath = path.join(__dirname, 'commands');
 const folders = fs.readdirSync(commandsPath);
@@ -292,7 +229,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
             // If it's a 503 or network error, retry. Otherwise, rethrow or handle.
             if (error.response?.status === 503 && i < MAX_GUILD_FETCH_RETRIES - 1) {
-                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
+                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RIES})`);
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
                 continue; // Retry the loop
             }
@@ -377,8 +314,9 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         if (newConfig.joinLeaveLogChannelId) validConfig.joinLeaveLogChannelId = newConfig.joinLeaveLogChannelId;
         if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
         if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
+        if (newConfig.karmaChannelId) validConfig.karmaChannelId = newConfig.karmaChannelId;
 
-        await client.saveGuildConfig(guildId, validConfig);
+        await saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
 
     } catch (error) {
@@ -567,7 +505,6 @@ client.once('ready', async () => {
     // Member-related events
     client.on('guildMemberUpdate', async (oldMember, newMember) => {
         await memberLogHandler.handleGuildMemberUpdate(oldMember, newMember, getGuildConfig);
-        await boostLogHandler.handleBoostUpdate(oldMember, newMember, getGuildConfig);
     });
 
     client.on('userUpdate', async (oldUser, newUser) => {
@@ -595,7 +532,7 @@ client.once('ready', async () => {
         if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             client.invites.set(member.guild.id, newInvitesMap); // Store the latest uses map
         }
-
+        
         // --- New Member Greeting and +1 Karma ---
         const guildConfig = await getGuildConfig(member.guild.id);
         if (guildConfig.karmaChannelId) {
@@ -660,7 +597,7 @@ client.once('ready', async () => {
         if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             try {
                 const newInvites = await invite.guild.invites.fetch();
-                client.invites.set(invite.guild.id, new Map(newInvites.map(i => [i.code, i.uses]))); // Store uses count
+                client.invites.set(guild.id, new Map(newInvites.map(i => [i.code, i.uses]))); // Store uses count
             } catch (error) {
                 console.warn(`Failed to update invite cache for guild ${invite.guild.name} after invite create:`, error);
             }
