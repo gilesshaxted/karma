@@ -583,7 +583,7 @@ client.once('ready', async () => {
         if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             try {
                 const fetchedInvites = await member.guild.invites.fetch();
-                newInvitesMap = new Map(fetchedInvites.map(invite => [invite.code, invite.uses])));
+                newInvitesMap = new Map(fetchedInvites.map(invite => [invite.code, invite.uses]));
             } catch (error) {
                 console.warn(`Failed to fetch latest invites for guild ${member.guild.name} on member join:`, error);
             }
