@@ -4,10 +4,14 @@ const axios = require('axios'); // Needed for making HTTP requests
 /**
  * Checks if a message should be handled by the lemons game.
  * @param {Message} message - The message to check.
- * @returns {boolean} - True if the message contains 'lemon' or 'lemons', false otherwise.
+ * @returns {boolean} - True if the message contains 'lemon' or 'lemons' and is in the correct channel, false otherwise.
  */
 const shouldHandle = (message) => {
-    return message.content.toLowerCase().includes('lemon') || message.content.toLowerCase().includes('lemons');
+    // The specific channel ID where the bot should respond
+    const LEMONS_CHANNEL_ID = '1400536719585181726';
+    
+    // Check if the message is in the correct channel AND contains the keywords
+    return message.channel.id === LEMONS_CHANNEL_ID && (message.content.toLowerCase().includes('lemon') || message.content.toLowerCase().includes('lemons'));
 };
 
 /**
@@ -59,3 +63,4 @@ module.exports = {
     shouldHandle,
     handleMessage
 };
+
