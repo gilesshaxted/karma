@@ -585,7 +585,7 @@ client.once('ready', async () => {
                 const fetchedInvites = await member.guild.invites.fetch();
                 newInvitesMap = new Map(fetchedInvites.map(invite => [invite.code, invite.uses])));
             } catch (error) {
-                console.warn(`Failed to update invite cache for guild ${member.guild.name} after invite create:`, error);
+                console.warn(`Failed to fetch latest invites for guild ${member.guild.name} on member join:`, error);
             }
         }
         // Pass newInvitesMap and oldInvitesMap to handler
@@ -660,7 +660,7 @@ client.once('ready', async () => {
         if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             try {
                 const newInvites = await invite.guild.invites.fetch();
-                client.invites.set(invite.guild.id, new Map(newInvites.map(i => [i.code, i.uses]))); // Store uses count
+                client.invites.set(guild.id, new Map(newInvites.map(i => [i.code, i.uses]))); // Store uses count
             } catch (error) {
                 console.warn(`Failed to update invite cache for guild ${invite.guild.name} after invite create:`, error);
             }
