@@ -134,7 +134,7 @@ for (const folder of folders) {
     if (fs.lstatSync(folderPath).isDirectory()) {
         const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith('.js'));
         for (const file of commandFiles) {
-            const command = require(path.join(commandsPath, folder, file));
+            const command = require(path.join(folderPath, file));
             if ('data' in command && 'execute' in command) {
                 client.commands.set(command.data.name, command);
             } else {
