@@ -9,14 +9,13 @@ module.exports = {
             option.setName('target')
                 .setDescription('The user to remove Karma from')
                 .setRequired(true)),
-    async execute(interaction, { db, appId, getGuildConfig, subtractKarmaPoints, sendKarmaAnnouncement, client }) { // Added sendKarmaAnnouncement, client
+    async execute(interaction, { db, appId, getGuildConfig, subtractKarmaPoints, sendKarmaAnnouncement, client }) {
         // interaction.deferReply() is handled by index.js for all slash commands.
-        // So, we use editReply here.
 
         const targetUser = interaction.options.getUser('target');
         const moderator = interaction.user;
         const guild = interaction.guild;
-        // const guildConfig = await getGuildConfig(guild.id); // Not needed for this command's logic directly
+        // getGuildConfig is passed here, so no need to call client.getGuildConfig directly
 
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
@@ -24,14 +23,11 @@ module.exports = {
             return interaction.editReply('Could not find that user in this server.');
         }
 
-        // Permission check for the invoker is handled by index.js
-        // No isExempt check for the target, as all users can receive karma
-
         try {
             const newKarma = await subtractKarmaPoints(guild.id, targetUser, 1, db, appId);
 
             // Send announcement to Karma Channel
-            // Pass getGuildConfig as the 5th argument
+            // The function now needs getGuildConfig and client passed to it
             await sendKarmaAnnouncement(guild, targetUser.id, -1, newKarma, getGuildConfig, client);
 
             await interaction.editReply(`Successfully subtracted 1 Karma point from ${targetUser.tag}. Their new Karma total is ${newKarma}.`);
