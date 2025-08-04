@@ -172,21 +172,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedGuildName.textContent = guildData.name;
 
                 // Populate role selects
-                populateSelect(document.getElementById('mod-role-select'), guildData.roles, currentConfig.modRoleId);
-                populateSelect(document.getElementById('admin-role-select'), guildData.roles, currentConfig.adminRoleId);
-                populateSelect(document.getElementById('mod-ping-role-select'), guildData.roles, currentConfig.modPingRoleId);
+                const sortedRoles = [...guildData.roles].sort((a, b) => b.position - a.position);
+                populateSelect(document.getElementById('mod-role-select'), sortedRoles, currentConfig.modRoleId);
+                populateSelect(document.getElementById('admin-role-select'), sortedRoles, currentConfig.adminRoleId);
+                populateSelect(document.getElementById('mod-ping-role-select'), sortedRoles, currentConfig.modPingRoleId);
 
                 // Populate channel selects
                 const textChannels = guildData.channels.filter(c => c.type === 0); // Type 0 is GUILD_TEXT
-                populateSelect(document.getElementById('mod-log-channel-select'), textChannels, currentConfig.moderationLogChannelId);
-                populateSelect(document.getElementById('message-log-channel-select'), textChannels, currentConfig.messageLogChannelId);
-                populateSelect(document.getElementById('mod-alert-channel-select'), textChannels, currentConfig.modAlertChannelId);
-                populateSelect(document.getElementById('member-log-channel-select'), textChannels, currentConfig.memberLogChannelId);
-                populateSelect(document.getElementById('admin-log-channel-select'), textChannels, currentConfig.adminLogChannelId);
-                populateSelect(document.getElementById('join-leave-log-channel-select'), textChannels, currentConfig.joinLeaveLogChannelId);
-                populateSelect(document.getElementById('boost-log-channel-select'), textChannels, currentConfig.boostLogChannelId);
-                populateSelect(document.getElementById('karma-channel-select'), textChannels, currentConfig.karmaChannelId); // New
-                populateSelect(document.getElementById('counting-channel-select'), textChannels, currentConfig.countingChannelId);
+                const sortedChannels = [...textChannels].sort((a, b) => a.position - b.position);
+                populateSelect(document.getElementById('mod-log-channel-select'), sortedChannels, currentConfig.moderationLogChannelId);
+                populateSelect(document.getElementById('message-log-channel-select'), sortedChannels, currentConfig.messageLogChannelId);
+                populateSelect(document.getElementById('mod-alert-channel-select'), sortedChannels, currentConfig.modAlertChannelId);
+                populateSelect(document.getElementById('member-log-channel-select'), sortedChannels, currentConfig.memberLogChannelId);
+                populateSelect(document.getElementById('admin-log-channel-select'), sortedChannels, currentConfig.adminLogChannelId);
+                populateSelect(document.getElementById('join-leave-log-channel-select'), sortedChannels, currentConfig.joinLeaveLogChannelId);
+                populateSelect(document.getElementById('boost-log-channel-select'), sortedChannels, currentConfig.boostLogChannelId);
+                populateSelect(document.getElementById('karma-channel-select'), sortedChannels, currentConfig.karmaChannelId);
+                populateSelect(document.getElementById('counting-channel-select'), sortedChannels, currentConfig.countingChannelId);
 
 
                 configSection.style.display = 'block';
@@ -235,7 +237,7 @@ document.addEventListener('DOMContentLoaded', () => {
             adminLogChannelId: document.getElementById('admin-log-channel-select').value || null,
             joinLeaveLogChannelId: document.getElementById('join-leave-log-channel-select').value || null,
             boostLogChannelId: document.getElementById('boost-log-channel-select').value || null,
-            karmaChannelId: document.getElementById('karma-channel-select').value || null, // New
+            karmaChannelId: document.getElementById('karma-channel-select').value || null,
             countingChannelId: document.getElementById('counting-channel-select').value || null,
         };
 
