@@ -330,6 +330,7 @@ app.get('/api/guild-config', verifyDiscordToken, checkBotReadiness, async (req, 
             .filter(channel => channel.isTextBased())
             .map(channel => ({ id: channel.id, name: channel.name, type: channel.type }));
 
+        // FIX: call the local function directly
         const currentConfig = await getGuildConfig(guildId);
 
         res.json({
@@ -381,7 +382,8 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
         if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
 
-        await client.saveGuildConfig(guildId, validConfig);
+        // FIX: call the local function directly
+        await saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
 
     } catch (error) {
