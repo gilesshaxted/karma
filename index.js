@@ -62,6 +62,69 @@ const countingGame = require('./games/countingGame');
 // New event handlers
 const lemonsGame = require('./events/lemons');
 
+// --- Discord OAuth Configuration (Bot's Permissions for Invite) ---
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
+const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI;
+const DISCORD_OAUTH_SCOPES = 'identify guilds'; // Scopes for user identification and guild list
+const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([
+    PermissionsBitField.Flags.ManageChannels,
+    PermissionsBitField.Flags.ManageRoles,
+    PermissionsBitField.Flags.KickMembers,
+    PermissionsBitField.Flags.BanMembers,
+    PermissionsBitField.Flags.ModerateMembers,
+    PermissionsBitField.Flags.ReadMessageHistory,
+    PermissionsBitField.Flags.SendMessages,
+    PermissionsBitField.Flags.ManageMessages,
+    PermissionsBitField.Flags.ViewAuditLog, // Added for admin logging
+    PermissionsBitField.Flags.ManageGuild // Added for invite tracking
+]).bitfield.toString();
+
+// Helper function to get guild-specific config from Firestore
+const getGuildConfig = async (guildId) => {
+    if (!client.db || !client.appId) {
+        console.error('Firestore not initialized yet when getGuildConfig was called.');
+        return null;
+    }
+    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
+    const configSnap = await getDoc(configRef);
+
+    if (configSnap.exists()) {
+        return configSnap.data();
+    } else {
+        const defaultConfig = {
+            modRoleId: null,
+            adminRoleId: null,
+            moderationLogChannelId: null,
+            messageLogChannelId: null,
+            modAlertChannelId: null,
+            modPingRoleId: null,
+            memberLogChannelId: null, // New: Member log channel
+            adminLogChannelId: null,   // New: Admin log channel
+            joinLeaveLogChannelId: null, // New: Join/Leave log channel
+            boostLogChannelId: null,   // New: Boost log channel
+            karmaChannelId: null,      // New: Karma Channel
+            countingChannelId: null,   // New: Counting game channel
+            currentCount: 0,           // New: Counting game current count
+            lastCountMessageId: null,  // New: Counting game last correct message ID
+            caseNumber: 0
+        };
+        await setDoc(configRef, defaultConfig);
+        return defaultConfig;
+    }
+};
+
+// Helper function to save guild-specific config to Firestore
+const saveGuildConfig = async (guildId, newConfig) => {
+    if (!client.db || !client.appId) {
+        console.error('Firestore not initialized yet when saveGuildConfig was called.');
+        return;
+    }
+    const configRef = doc(client.db, `artifacts/${client.appId}/public/data/guilds/${guildId}/configs`, 'settings');
+    await setDoc(configRef, newConfig, { merge: true });
+};
+
+
 // --- Dynamic Command Loading ---
 const commandsPath = path.join(__dirname, 'commands');
 const folders = fs.readdirSync(commandsPath);
@@ -129,7 +192,7 @@ app.post('/api/token', async (req, res) => {
         res.json(tokenResponse.data);
     } catch (error) {
         console.error('Error exchanging Discord OAuth code:', error.response ? error.response.data : error.message);
-        res.status(error.response?.status || 500).json({ message: error.response?.data?.error_description || 'Internal server error during OAuth.' });
+        res.status(error.response?.status || 500).json({ message: 'Internal server error during OAuth.' });
     }
 });
 
@@ -201,7 +264,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             // If bot's guild cache is still empty, and we have retries left, wait and retry.
             if (botGuilds.size === 0 && i < MAX_GUILD_FETCH_RIES - 1) {
                 console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RIES})`);
-                await new Promise(resolve => setTimeout(resolve, GUILD_FETCH_RETRY_DELAY_MS));
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
                 continue; // Retry the loop
             }
 
