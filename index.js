@@ -1,5 +1,6 @@
 // index.js - Main entry point for the combined web server and Discord bot
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, 'karma_bot.env') }); // Load environment variables from karma_bot.env
 
 const { Client, Collection, GatewayIntentBits, Partials, PermissionsBitField, MessageFlags } = require('discord.js');
@@ -124,57 +125,25 @@ const saveGuildConfig = async (guildId, newConfig) => {
 };
 
 
-// Dynamically load command files
-const moderationCommandFiles = [
-    'warn.js',
-    'timeout.js',
-    'kick.js',
-    'ban.js',
-    'warnings.js',
-    'warning.js',
-    'clearwarnings.js',
-    'clearwarning.js'
-];
+// --- Dynamic Command Loading ---
+const commandsPath = path.join(__dirname, 'commands');
+const folders = fs.readdirSync(commandsPath);
 
-const karmaCommandFiles = [
-    'karma.js',
-    'leaderboard.js',
-    'karmaPlus.js',
-    'karmaMinus.js',
-    'karmaSet.js'
-];
-
-const gameCommandFiles = [ // New array for game commands
-    'countReset.js',
-    'countSet.js'
-];
-
-for (const file of moderationCommandFiles) {
-    const command = require(`./moderation/${file}`);
-    if ('data' in command && 'execute' in command) {
-        client.commands.set(command.data.name, command);
-    } else {
-        console.log(`[WARNING] The moderation command in ${file} is missing a required "data" or "execute" property.`);
+for (const folder of folders) {
+    const folderPath = path.join(commandsPath, folder);
+    if (fs.lstatSync(folderPath).isDirectory()) {
+        const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith('.js'));
+        for (const file of commandFiles) {
+            const command = require(path.join(folderPath, file));
+            if ('data' in command && 'execute' in command) {
+                client.commands.set(command.data.name, command);
+            } else {
+                console.log(`[WARNING] The command at ${file} is missing a required "data" or "execute" property.`);
+            }
+        }
     }
 }
 
-for (const file of karmaCommandFiles) {
-    const command = require(`./karma/${file}`);
-    if ('data' in command && 'execute' in command) {
-        client.commands.set(command.data.name, command);
-    } else {
-        console.log(`[WARNING] The karma command in ${file} is missing a required "data" or "execute" property.`);
-    }
-}
-
-for (const file of gameCommandFiles) { // Load game commands
-    const command = require(`./games/${file}`);
-    if ('data' in command && 'execute' in command) {
-        client.commands.set(command.data.name, command);
-    } else {
-        console.log(`[WARNING] The game command in ${file} is missing a required "data" or "execute" property.`);
-    }
-}
 
 // --- Express Web Server Setup ---
 const app = express();
@@ -614,7 +583,7 @@ client.once('ready', async () => {
         if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             try {
                 const fetchedInvites = await member.guild.invites.fetch();
-                newInvitesMap = new Map(fetchedInvites.map(invite => [invite.code, invite.uses]));
+                newInvitesMap = new Map(fetchedInvites.map(invite => [invite.code, invite.uses])));
             } catch (error) {
                 console.warn(`Failed to fetch latest invites for guild ${member.guild.name} on member join:`, error);
             }
