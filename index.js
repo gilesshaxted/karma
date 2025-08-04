@@ -592,7 +592,7 @@ client.once('ready', async () => {
         await joinLeaveLogHandler.handleGuildMemberAdd(member, getGuildConfig, oldInvitesMap, newInvitesMap, karmaSystem.sendKarmaAnnouncement, karmaSystem.addKarmaPoints, client.db, client.appId, client);
 
         // Update client.invites cache AFTER the handler has used the old state
-        if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+        if (member.guild.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             client.invites.set(member.guild.id, newInvitesMap); // Store the latest uses map
         }
 
@@ -660,7 +660,7 @@ client.once('ready', async () => {
         if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             try {
                 const newInvites = await invite.guild.invites.fetch();
-                client.invites.set(invite.guild.id, new Map(newInvites.map(i => [i.code, i.uses]))); // Store uses count
+                client.invites.set(guild.id, new Map(newInvites.map(i => [i.code, i.uses]))); // Store uses count
             } catch (error) {
                 console.warn(`Failed to update invite cache for guild ${invite.guild.name} after invite create:`, error);
             }
