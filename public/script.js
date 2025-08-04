@@ -23,20 +23,47 @@ document.addEventListener('DOMContentLoaded', () => {
         return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
     };
 
-    // Function to handle loading dashboard data (simplified, without aggressive retries/token clearing)
+    // Function to handle loading dashboard data (with retries for 503 errors)
     async function loadDashboard() {
         showDashboardSection();
         saveStatus.textContent = 'Loading dashboard...';
         saveStatus.className = 'status-message';
+        
+        const MAX_RETRIES = 15;
+        const INITIAL_DELAY = 3000; // 3 seconds
+
+        async function fetchWithRetry(url, options, retries, delay) {
+            try {
+                const response = await fetch(url, options);
+                if (response.status === 503 && retries > 0) {
+                    console.warn(`Bot backend not ready (503). Retrying in ${delay / 1000} seconds...`);
+                    saveStatus.textContent = `Bot is starting up... Retrying in ${delay / 1000}s.`;
+                    saveStatus.className = 'status-message';
+                    await new Promise(res => setTimeout(res, delay));
+                    return fetchWithRetry(url, options, retries - 1, delay * 1.5);
+                }
+                return response;
+            } catch (error) {
+                console.error(`Fetch error on ${url}:`, error);
+                // A network error could also indicate a temporary issue.
+                if (retries > 0) {
+                    console.warn(`Network error. Retrying in ${delay / 1000} seconds...`);
+                    saveStatus.textContent = `Network error. Retrying in ${delay / 1000}s.`;
+                    saveStatus.className = 'status-message error';
+                    await new Promise(res => setTimeout(res, delay));
+                    return fetchWithRetry(url, options, retries - 1, delay * 1.5);
+                }
+                throw error;
+            }
+        }
 
         try {
-            // Fetch user info
-            const userResponse = await fetch('/api/user', {
+            // Fetch user info with retry
+            const userResponse = await fetchWithRetry('/api/user', {
                 headers: { 'Authorization': `Bearer ${discordAccessToken}` }
-            });
+            }, MAX_RETRIES, INITIAL_DELAY);
 
             if (!userResponse.ok) {
-                // Only clear token for explicit auth failures, not 503 (bot not ready)
                 if (userResponse.status === 401 || userResponse.status === 403) {
                     localStorage.removeItem('discord_access_token');
                 }
@@ -45,12 +72,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const userData = await userResponse.json();
             userDisplayName.textContent = userData.username;
 
-            // Fetch guilds where bot is admin
-            const guildsResponse = await fetch('/api/guilds', {
+            // Fetch guilds with retry
+            const guildsResponse = await fetchWithRetry('/api/guilds', {
                 headers: { 'Authorization': `Bearer ${discordAccessToken}` }
-            });
+            }, MAX_RETRIES, INITIAL_DELAY);
+            
             if (!guildsResponse.ok) {
-                // Only clear token for explicit auth failures, not 503 (bot not ready)
                 if (guildsResponse.status === 401 || guildsResponse.status === 403) {
                     localStorage.removeItem('discord_access_token');
                 }
@@ -67,14 +94,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             saveStatus.textContent = ''; // Clear status once loaded
 
-
         } catch (error) {
             console.error('Error loading dashboard:', error);
             saveStatus.textContent = `Error loading dashboard: ${error.message}. Please try again.`;
             saveStatus.className = 'status-message error';
-            // Only go back to auth section if it's not a 503 (bot starting up)
             if (!error.message.includes('503')) {
-                localStorage.removeItem('discord_access_token'); // Clear invalid token for non-503 errors
+                localStorage.removeItem('discord_access_token');
                 showAuthSection();
             }
         }
@@ -84,7 +109,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle OAuth callback
     const code = getUrlParameter('code');
     if (code) {
-        // Exchange code for token
         fetch('/api/token', {
             method: 'POST',
             headers: {
@@ -97,9 +121,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.access_token) {
                 discordAccessToken = data.access_token;
                 localStorage.setItem('discord_access_token', discordAccessToken);
-                // Remove code from URL
                 window.history.replaceState({}, document.title, "/");
-                loadDashboard(); // Start loading dashboard
+                loadDashboard();
             } else {
                 console.error('Failed to get access token:', data);
                 alert('Failed to log in with Discord. Please try again.');
@@ -112,10 +135,9 @@ document.addEventListener('DOMContentLoaded', () => {
             showAuthSection();
         });
     } else {
-        // Check for existing token
         discordAccessToken = localStorage.getItem('discord_access_token');
         if (discordAccessToken) {
-            loadDashboard(); // Start loading dashboard
+            loadDashboard();
         } else {
             showAuthSection();
         }
@@ -134,7 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Populate a select element with options (channels or roles)
     function populateSelect(selectElement, items, selectedId) {
-        selectElement.innerHTML = '<option value="">None</option>'; // Default option
+        selectElement.innerHTML = '<option value="">None</option>';
         items.forEach(item => {
             const option = document.createElement('option');
             option.value = item.id;
@@ -156,30 +178,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const configResponse = await fetch(`/api/guild-config?guildId=${guildId}`, {
                 headers: { 'Authorization': `Bearer ${discordAccessToken}` }
             });
-            // Handle 503 for guild-config as well
             if (configResponse.status === 503) {
                  saveStatus.textContent = `Bot is still starting up. Please try again in a moment.`;
                  saveStatus.className = 'status-message';
-                 return; // Don't proceed, let user re-select or refresh
+                 return;
             }
 
             const configData = await configResponse.json();
 
             if (configResponse.ok) {
-                guildData = configData.guildData; // Store all guild data (roles, channels)
-                const currentConfig = configData.currentConfig; // Current bot config
+                guildData = configData.guildData;
+                const currentConfig = configData.currentConfig;
 
                 selectedGuildName.textContent = guildData.name;
 
-                // Populate role selects
+                // Populate role selects, sorted hierarchically
                 const sortedRoles = [...guildData.roles].sort((a, b) => b.position - a.position);
                 populateSelect(document.getElementById('mod-role-select'), sortedRoles, currentConfig.modRoleId);
                 populateSelect(document.getElementById('admin-role-select'), sortedRoles, currentConfig.adminRoleId);
                 populateSelect(document.getElementById('mod-ping-role-select'), sortedRoles, currentConfig.modPingRoleId);
 
-                // Populate channel selects
-                const textChannels = guildData.channels.filter(c => c.type === 0); // Type 0 is GUILD_TEXT
-                const sortedChannels = [...textChannels].sort((a, b) => a.position - b.position);
+                // Populate channel selects, sorted visually
+                const textChannels = guildData.channels.filter(c => c.type === 0);
+                const sortedChannels = [...textChannels].sort((a, b) => {
+                    if (a.parentId === b.parentId) {
+                        return a.position - b.position;
+                    }
+                    if (a.parentId && !b.parentId) return 1;
+                    if (!a.parentId && b.parentId) return -1;
+                    return a.parentId.localeCompare(b.parentId);
+                });
                 populateSelect(document.getElementById('mod-log-channel-select'), sortedChannels, currentConfig.moderationLogChannelId);
                 populateSelect(document.getElementById('message-log-channel-select'), sortedChannels, currentConfig.messageLogChannelId);
                 populateSelect(document.getElementById('mod-alert-channel-select'), sortedChannels, currentConfig.modAlertChannelId);
@@ -206,7 +234,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Event Listeners
     loginButton.addEventListener('click', () => {
-        // Redirect to backend for Discord OAuth login
         window.location.href = '/api/login';
     });
 
