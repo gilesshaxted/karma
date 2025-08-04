@@ -567,7 +567,6 @@ client.once('ready', async () => {
     // Member-related events
     client.on('guildMemberUpdate', async (oldMember, newMember) => {
         await memberLogHandler.handleGuildMemberUpdate(oldMember, newMember, getGuildConfig);
-        await boostLogHandler.handleBoostUpdate(oldMember, newMember, getGuildConfig);
     });
 
     client.on('userUpdate', async (oldUser, newUser) => {
@@ -585,7 +584,7 @@ client.once('ready', async () => {
                 const fetchedInvites = await member.guild.invites.fetch();
                 newInvitesMap = new Map(fetchedInvites.map(invite => [invite.code, invite.uses]));
             } catch (error) {
-                console.warn(`Failed to update invite cache for guild ${member.guild.name} on member join:`, error);
+                console.warn(`Failed to fetch latest invites for guild ${member.guild.name} on member join:`, error);
             }
         }
         // Pass newInvitesMap and oldInvitesMap to handler
@@ -595,7 +594,7 @@ client.once('ready', async () => {
         if (member.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             client.invites.set(member.guild.id, newInvitesMap); // Store the latest uses map
         }
-
+        
         // --- New Member Greeting and +1 Karma ---
         const guildConfig = await getGuildConfig(member.guild.id);
         if (guildConfig.karmaChannelId) {
@@ -660,7 +659,7 @@ client.once('ready', async () => {
         if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             try {
                 const newInvites = await invite.guild.invites.fetch();
-                client.invites.set(invite.guild.id, new Map(newInvites.map(i => [i.code, i.uses]))); // Store uses count
+                client.invites.set(guild.id, new Map(newInvites.map(i => [i.code, i.uses]))); // Store uses count
             } catch (error) {
                 console.warn(`Failed to update invite cache for guild ${invite.guild.name} after invite create:`, error);
             }
@@ -811,7 +810,7 @@ client.once('ready', async () => {
         } catch (error) {
             console.error('Error during interaction processing:', error);
             if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply after error:', e));
+                await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
             } else {
                 await interaction.reply({ content: 'An unexpected error occurred while processing your command.', ephemeral: true }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
             }
