@@ -1,5 +1,4 @@
 // index.js - Main entry point for the combined web server and Discord bot
-const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, 'karma_bot.env') }); // Load environment variables from karma_bot.env
 
@@ -125,28 +124,57 @@ const saveGuildConfig = async (guildId, newConfig) => {
 };
 
 
-// --- START OF DYNAMIC COMMAND LOADING ---
-// This replaces the old hard-coded command arrays and loops.
+// Dynamically load command files
+const moderationCommandFiles = [
+    'warn.js',
+    'timeout.js',
+    'kick.js',
+    'ban.js',
+    'warnings.js',
+    'warning.js',
+    'clearwarnings.js',
+    'clearwarning.js'
+];
 
-// Dynamically load command files from subdirectories
-const foldersPath = path.join(__dirname, 'commands');
-const commandFolders = fs.readdirSync(foldersPath);
+const karmaCommandFiles = [
+    'karma.js',
+    'leaderboard.js',
+    'karmaPlus.js',
+    'karmaMinus.js',
+    'karmaSet.js'
+];
 
-for (const folder of commandFolders) {
-    const commandsPath = path.join(foldersPath, folder);
-    const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-    for (const file of commandFiles) {
-        const filePath = path.join(commandsPath, file);
-        const command = require(filePath);
-        if ('data' in command && 'execute' in command) {
-            client.commands.set(command.data.name, command);
-        } else {
-            console.log(`[WARNING] The command at ${filePath} is missing a required "data" or "execute" property.`);
-        }
+const gameCommandFiles = [ // New array for game commands
+    'countReset.js',
+    'countSet.js'
+];
+
+for (const file of moderationCommandFiles) {
+    const command = require(`./moderation/${file}`);
+    if ('data' in command && 'execute' in command) {
+        client.commands.set(command.data.name, command);
+    } else {
+        console.log(`[WARNING] The moderation command in ${file} is missing a required "data" or "execute" property.`);
     }
 }
-// --- END OF DYNAMIC COMMAND LOADING ---
 
+for (const file of karmaCommandFiles) {
+    const command = require(`./karma/${file}`);
+    if ('data' in command && 'execute' in command) {
+        client.commands.set(command.data.name, command);
+    } else {
+        console.log(`[WARNING] The karma command in ${file} is missing a required "data" or "execute" property.`);
+    }
+}
+
+for (const file of gameCommandFiles) { // Load game commands
+    const command = require(`./games/${file}`);
+    if ('data' in command && 'execute' in command) {
+        client.commands.set(command.data.name, command);
+    } else {
+        console.log(`[WARNING] The game command in ${file} is missing a required "data" or "execute" property.`);
+    }
+}
 
 // --- Express Web Server Setup ---
 const app = express();
@@ -263,7 +291,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             const userGuilds = guildsResponse.data;
 
             const botGuilds = client.guilds.cache;
-
+            
             // If bot's guild cache is still empty, and we have retries left, wait and retry.
             if (botGuilds.size === 0 && i < MAX_GUILD_FETCH_RETRIES - 1) {
                 console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
@@ -277,7 +305,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             const manageableGuilds = userGuilds.filter(userGuild => {
                 const hasAdminPerms = (BigInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
                 const botInGuild = botGuilds.has(userGuild.id);
-
+                
                 // Debugging: Log why a guild is filtered out
                 if (!botInGuild) {
                     console.log(`Filtering out guild ${userGuild.name}: Bot not in guild.`);
@@ -330,7 +358,6 @@ app.get('/api/guild-config', verifyDiscordToken, checkBotReadiness, async (req, 
             .filter(channel => channel.isTextBased())
             .map(channel => ({ id: channel.id, name: channel.name, type: channel.type }));
 
-        // FIX: call the local function directly
         const currentConfig = await getGuildConfig(guildId);
 
         res.json({
@@ -382,8 +409,7 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
         if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
 
-        // FIX: call the local function directly
-        await saveGuildConfig(guildId, validConfig);
+        await client.saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
 
     } catch (error) {
@@ -490,7 +516,7 @@ client.once('ready', async () => {
                 console.warn(`Message ${message.id} has no author. Skipping message processing.`);
                 return;
             }
-
+            
             // Check if the author is a partial user and fetch if necessary
             if (message.author.partial) {
                 try {
@@ -524,7 +550,7 @@ client.once('ready', async () => {
                     return; // Message was handled by counting game, stop further processing
                 }
             }
-
+            
             // --- Lemon Game Check ---
             if (lemonsGame.shouldHandle(message)) {
                 await lemonsGame.handleMessage(message, client.tenorApiKey);
@@ -743,7 +769,7 @@ client.once('ready', async () => {
             if (interaction.isCommand() && interaction.commandName === 'leaderboard') {
                 ephemeral = false; // Make leaderboard public
             }
-
+            
             // Defer reply immediately, but handle potential failure
             let deferred = false;
             try {
