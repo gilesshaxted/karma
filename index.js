@@ -585,7 +585,7 @@ client.once('ready', async () => {
                 const fetchedInvites = await member.guild.invites.fetch();
                 newInvitesMap = new Map(fetchedInvites.map(invite => [invite.code, invite.uses])));
             } catch (error) {
-                console.warn(`Failed to fetch latest invites for guild ${member.guild.name} on member join:`, error);
+                console.warn(`Failed to update invite cache for guild ${member.guild.name} after invite create:`, error);
             }
         }
         // Pass newInvitesMap and oldInvitesMap to handler
