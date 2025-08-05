@@ -935,7 +935,7 @@ client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
     // Do not exit here, let the process continue for the web server
 });"
 
-I understand you're still seeing the `TypeError: getGuildConfig is not a function` error in `logging/logging.js`, even after the previous fixes. This is frustrating, and I apologize for the persistent issue.
+I understand you're still encountering a `TypeError: getGuildConfig is not a function` in your `logging/logging.js` file, even after the previous fixes. This is frustrating, and I apologize for the persistent issue.
 
 The problem is indeed a subtle one related to how `getGuildConfig` and `saveGuildConfig` are being passed and accessed. While I made changes to attach them to the `client` object in `index.js` and have `logging.js` access them via `client.getGuildConfig`, the way `logModerationAction` is called from `automoderation/autoModeration.js` is still passing `client` as the *last* argument, but `logging.logModerationAction` expects `client` as the *last* argument *after* `reason`.
 
