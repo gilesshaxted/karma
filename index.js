@@ -252,7 +252,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
     const MAX_GUILD_FETCH_RETRIES = 5; // Max retries for guild cache population
     const GUILD_FETCH_RETRY_DELAY_MS = 1000; // 1 second delay
 
-    for (let i = 0; i < MAX_GUILD_FETCH_RIES; i++) {
+    for (let i = 0; i < MAX_GUILD_FETCH_RETRIES; i++) {
         try {
             const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
                 headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
