@@ -59,6 +59,19 @@
             border-radius: 10px;
             border: 2px solid var(--secondary-blue);
         }
+
+        .tab-button.active {
+            background-color: var(--secondary-blue);
+            border-color: var(--accent-gold);
+            color: var(--accent-gold);
+        }
+        .tab-button {
+            border-bottom-width: 0;
+        }
+        .tab-content {
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
+        }
     </style>
 </head>
 <body class="bg-primary-blue text-text-light font-inter">
@@ -66,7 +79,7 @@
     <div id="app" class="w-full max-w-6xl mx-auto flex flex-col items-center">
         <!-- Header with Logo and Title -->
         <header class="text-center mb-10 w-full">
-            <img src="Karmav1.png" alt="Karma Bot Logo" class="mx-auto w-32 h-32 rounded-full ring-4 ring-accent-gold mb-4 shadow-lg">
+            <img src="Karmav1.jpg" alt="Karma Bot Logo" class="mx-auto w-32 h-32 rounded-full ring-4 ring-accent-gold mb-4 shadow-lg">
             <h1 class="text-4xl font-extrabold text-accent-gold tracking-tight">Karma Bot Dashboard</h1>
             <p class="mt-2 text-lg text-gray-300">Manage your server's moderation and karma settings.</p>
         </header>
@@ -100,25 +113,44 @@
             </div>
 
             <!-- Dashboard View (initially hidden) -->
-            <div id="dashboard-view" class="hidden bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container w-full">
-                <div class="flex items-center mb-6">
-                    <img id="guild-icon-large" src="" alt="Server Icon" class="w-16 h-16 rounded-full ring-2 ring-accent-gold mr-4">
-                    <h2 id="guild-name-display" class="text-3xl font-bold text-accent-gold"></h2>
-                    <button id="back-to-servers" class="ml-auto flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-full shadow-md hover:bg-gray-700 transition-colors">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-                        <span>Back</span>
-                    </button>
-                </div>
-                
-                <h3 class="text-2xl font-bold text-gray-200 mb-4 border-b-2 border-accent-gold pb-2">Configuration Settings</h3>
-
-                <form id="config-form" class="space-y-6">
-                    <!-- Dynamic form fields will be inserted here -->
-                    
-                    <div class="flex justify-end pt-4 border-t border-gray-600 mt-6">
-                        <button type="submit" class="px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Save Settings</button>
+            <div id="dashboard-view" class="hidden w-full">
+                <div class="bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container w-full">
+                    <div class="flex items-center mb-6">
+                        <img id="guild-icon-large" src="" alt="Server Icon" class="w-16 h-16 rounded-full ring-2 ring-accent-gold mr-4">
+                        <h2 id="guild-name-display" class="text-3xl font-bold text-accent-gold"></h2>
+                        <button id="back-to-servers" class="ml-auto flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-full shadow-md hover:bg-gray-700 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                            <span>Back</span>
+                        </button>
                     </div>
-                </form>
+
+                    <h3 class="text-2xl font-bold text-gray-200 mb-4 border-b-2 border-accent-gold pb-2">Configuration Settings</h3>
+
+                    <!-- Tabbed Interface -->
+                    <div class="flex flex-wrap border-b border-gray-600 mb-6">
+                        <button class="tab-button active px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none bg-secondary-blue border-b-0 hover:bg-gray-700 transition-colors" data-tab="roles">Moderation & Roles</button>
+                        <button class="tab-button px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none hover:bg-gray-700 transition-colors" data-tab="logging">Logging Channels</button>
+                        <button class="tab-button px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none hover:bg-gray-700 transition-colors" data-tab="fun">Fun & Games</button>
+                    </div>
+
+                    <form id="config-form" class="space-y-6">
+                        <!-- Tab content will be rendered here -->
+                        <div id="tab-roles" class="tab-content">
+                            <!-- Roles Tab Content -->
+                        </div>
+                        <div id="tab-logging" class="tab-content hidden">
+                            <!-- Logging Channels Tab Content -->
+                        </div>
+                        <div id="tab-fun" class="tab-content hidden">
+                            <!-- Fun & Games Tab Content -->
+                        </div>
+                        
+                        <!-- Save Button -->
+                        <div class="flex justify-end pt-4 border-t border-gray-600 mt-6">
+                            <button type="submit" class="px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Save Settings</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </main>
     </div>
@@ -147,6 +179,7 @@
 
         let discordAccessToken = null;
         let selectedGuildId = null;
+        let cachedGuilds = [];
 
         // Function to show/hide sections
         function showSection(section) {
@@ -216,7 +249,8 @@
                 const guilds = await response.json();
 
                 if (response.ok) {
-                    renderServerSelection(guilds);
+                    cachedGuilds = guilds;
+                    renderServerSelection(cachedGuilds);
                 } else {
                     showErrorMessage(guilds.message || 'Failed to fetch servers.');
                 }
@@ -233,7 +267,7 @@
                 serverIconsGrid.innerHTML = `<p class="col-span-full text-center text-gray-300">The bot is not in any servers where you have administrator permissions. Please invite it to a server.</p>`;
             } else {
                 guilds.forEach(guild => {
-                    const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png` : `https://placehold.co/144x144/1C315E/FFC107?text=${guild.name.charAt(0)}`;
+                    const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=144` : `https://placehold.co/144x144/1C315E/FFC107?text=${guild.name.charAt(0)}`;
                     const serverCard = document.createElement('div');
                     serverCard.className = 'server-card flex flex-col items-center p-4 rounded-xl cursor-pointer transition-all duration-300 transform bg-secondary-blue shadow-lg border-2 border-transparent hover:border-accent-gold';
                     serverCard.innerHTML = `
@@ -275,9 +309,8 @@
             guildIconLarge.src = iconUrl;
             guildIconLarge.alt = `${guildData.name} icon`;
 
-            const configFieldsHtml = `
+            const rolesHtml = `
                 <div class="space-y-4">
-                    <h4 class="text-xl font-bold text-gray-300 pt-4 pb-2 border-b border-gray-600">Roles</h4>
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="modRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Role</label>
                         <select id="modRoleId" name="modRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -285,7 +318,6 @@
                             ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
                         </select>
                     </div>
-
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="adminRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Admin Role</label>
                         <select id="adminRoleId" name="adminRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -293,7 +325,6 @@
                             ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.adminRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
                         </select>
                     </div>
-
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="modPingRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Ping Role</label>
                         <select id="modPingRoleId" name="modPingRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -302,33 +333,9 @@
                         </select>
                     </div>
                 </div>
-
-                <div class="space-y-4 pt-6 mt-6 border-t border-gray-600">
-                    <h4 class="text-xl font-bold text-gray-300 pt-4 pb-2 border-b border-gray-600">Channels</h4>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="karmaChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Karma Channel</label>
-                        <select id="karmaChannelId" name="karmaChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.karmaChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="spamChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Spam Channel</label>
-                        <select id="spamChannelId" name="spamChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.spamChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="countingChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Counting Channel</label>
-                        <select id="countingChannelId" name="countingChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.countingChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-
+            `;
+            const loggingHtml = `
+                <div class="space-y-4">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="moderationLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Log Channel</label>
                         <select id="moderationLogChannelId" name="moderationLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -336,7 +343,6 @@
                             ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.moderationLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
                         </select>
                     </div>
-
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="messageLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Message Log Channel</label>
                         <select id="messageLogChannelId" name="messageLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -344,7 +350,6 @@
                             ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.messageLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
                         </select>
                     </div>
-
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="memberLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Member Log Channel</label>
                         <select id="memberLogChannelId" name="memberLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -352,7 +357,6 @@
                             ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.memberLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
                         </select>
                     </div>
-
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="adminLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Admin Log Channel</label>
                         <select id="adminLogChannelId" name="adminLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -360,7 +364,6 @@
                             ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.adminLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
                         </select>
                     </div>
-
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="joinLeaveLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Join/Leave Log Channel</label>
                         <select id="joinLeaveLogChannelId" name="joinLeaveLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -368,7 +371,6 @@
                             ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.joinLeaveLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
                         </select>
                     </div>
-
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="boostLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Boost Log Channel</label>
                         <select id="boostLogChannelId" name="boostLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -376,7 +378,6 @@
                             ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.boostLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
                         </select>
                     </div>
-
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="modAlertChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Alerts Channel</label>
                         <select id="modAlertChannelId" name="modAlertChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -385,17 +386,54 @@
                         </select>
                     </div>
                 </div>
-
-                <div class="space-y-4 pt-6 mt-6 border-t border-gray-600">
-                    <h4 class="text-xl font-bold text-gray-300 pt-4 pb-2 border-b border-gray-600">Spam Filter</h4>
+            `;
+            const funHtml = `
+                <div class="space-y-4">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="spamKeywords" class="w-full sm:w-1/3 text-lg font-semibold">Spam Keywords</label>
+                        <label for="karmaChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Karma Channel</label>
+                        <select id="karmaChannelId" name="karmaChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.karmaChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="countingChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Counting Channel</label>
+                        <select id="countingChannelId" name="countingChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.countingChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="spamChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun Channel</label>
+                        <select id="spamChannelId" name="spamChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.spamChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="spamKeywords" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun Keywords</label>
                         <input id="spamKeywords" name="spamKeywords" type="text" placeholder="e.g., keyword1, keyword2" value="${currentConfig.spamKeywords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
                     </div>
                 </div>
             `;
-            configForm.innerHTML = configFieldsHtml;
+            document.getElementById('tab-roles').innerHTML = rolesHtml;
+            document.getElementById('tab-logging').innerHTML = loggingHtml;
+            document.getElementById('tab-fun').innerHTML = funHtml;
+            
             showSection(dashboardView);
+            
+            // Set up tab switching logic
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+                    
+                    button.classList.add('active');
+                    document.getElementById(`tab-${button.dataset.tab}`).classList.remove('hidden');
+                });
+            });
+            // Make sure the first tab is active on load
+            document.querySelector('.tab-button[data-tab="roles"]').classList.add('active');
         }
 
         // Handle saving the form
