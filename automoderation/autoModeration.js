@@ -173,7 +173,14 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
     if (reason) {
         console.log(`[AUTOMOD] Rule triggered for ${message.author.tag} in ${message.guild.name}: ${reason}`); // Added for debugging
         try {
-            await message.delete().catch(err => console.error(`[AUTOMOD ERROR] Failed to delete message from ${message.author.tag}:`, err));
+            // FIX: Add specific error handling for Unknown Message
+            await message.delete().catch(err => {
+                if (err.code === 10008) { // DiscordAPIError[10008]: Unknown Message
+                    console.warn(`[AUTOMOD WARNING] Message from ${message.author.tag} already deleted or unknown. Skipping deletion.`);
+                } else {
+                    console.error(`[AUTOMOD ERROR] Failed to delete message from ${message.author.tag}:`, err);
+                }
+            });
             
             // Get or create user moderation data in Firestore
             const modRef = doc(collection(client.db, `artifacts/${client.appId}/public/data/guilds/${message.guild.id}/mod_data`), message.author.id);
