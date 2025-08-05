@@ -97,18 +97,18 @@ const getGuildConfig = async (guildId) => {
             moderationLevel: configData.moderationLevel || 'none',
             blacklistedWords: configData.blacklistedWords || '',
             whitelistedWords: configData.whitelistedWords || '',
-            spamDetectionEnabled: configData.spamDetectionEnabled || false,
-            maxMessages: configData.maxMessages || 5,
-            timeframeSeconds: configData.timeframeSeconds || 5,
-            repeatedTextEnabled: configData.repeatedTextEnabled || false,
-            externalLinksEnabled: configData.externalLinksEnabled || false,
-            discordInviteLinksEnabled: configData.discordInviteLinksEnabled || false,
-            excessiveEmojiEnabled: configData.excessiveEmojiEnabled || false,
-            excessiveEmojiCount: configData.excessiveEmojiCount || 5,
-            excessiveMentionsEnabled: configData.excessiveMentionsEnabled || false,
-            excessiveMentionsCount: configData.excessiveMentionsCount || 5,
-            excessiveCapsEnabled: configData.excessiveCapsEnabled || false,
-            excessiveCapsPercentage: configData.excessiveCapsPercentage || 70,
+            spamDetectionEnabled: configData.spamDetectionEnabled !== undefined ? configData.spamDetectionEnabled : false,
+            maxMessages: configData.maxMessages !== undefined ? configData.maxMessages : 5,
+            timeframeSeconds: configData.timeframeSeconds !== undefined ? configData.timeframeSeconds : 5,
+            repeatedTextEnabled: configData.repeatedTextEnabled !== undefined ? configData.repeatedTextEnabled : false,
+            externalLinksEnabled: configData.externalLinksEnabled !== undefined ? configData.externalLinksEnabled : false,
+            discordInviteLinksEnabled: configData.discordInviteLinksEnabled !== undefined ? configData.discordInviteLinksEnabled : false,
+            excessiveEmojiEnabled: configData.excessiveEmojiEnabled !== undefined ? configData.excessiveEmojiEnabled : false,
+            excessiveEmojiCount: configData.excessiveEmojiCount !== undefined ? configData.excessiveEmojiCount : 5,
+            excessiveMentionsEnabled: configData.excessiveMentionsEnabled !== undefined ? configData.excessiveMentionsEnabled : false,
+            excessiveMentionsCount: configData.excessiveMentionsCount !== undefined ? configData.excessiveMentionsCount : 5,
+            excessiveCapsEnabled: configData.excessiveCapsEnabled !== undefined ? configData.excessiveCapsEnabled : false,
+            excessiveCapsPercentage: configData.excessiveCapsPercentage !== undefined ? configData.excessiveCapsPercentage : 70,
             immuneRoles: configData.immuneRoles || '',
             immuneChannels: configData.immuneChannels || ''
         };
@@ -128,9 +128,9 @@ const getGuildConfig = async (guildId) => {
             countingChannelId: null,   // New: Counting game channel
             currentCount: 0,           // New: Counting game current count
             lastCountMessageId: null,  // New: Counting game last correct message ID
-            spamChannelId: null,      // NEW: Spam channel ID
-            spamKeywords: null,       // NEW: Spam keywords
-            spamEmojis: null,         // NEW: Spam emojis
+            spamChannelId: null,      // Spam channel ID
+            spamKeywords: null,       // Spam keywords
+            spamEmojis: null,         // Spam emojis
             caseNumber: 0,
             // NEW AUTO-MODERATION FIELDS
             moderationLevel: 'none', // high, medium, low
@@ -439,23 +439,23 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         if (newConfig.spamKeywords) validConfig.spamKeywords = newConfig.spamKeywords; // NEW: Save spam keywords
         if (newConfig.spamEmojis) validConfig.spamEmojis = newConfig.spamEmojis; // NEW: Save spam emojis
         // NEW AUTO-MODERATION FIELDS
-        if (newConfig.moderationLevel) validConfig.moderationLevel = newConfig.moderationLevel;
-        if (newConfig.blacklistedWords) validConfig.blacklistedWords = newConfig.blacklistedWords;
-        if (newConfig.whitelistedWords) validConfig.whitelistedWords = newConfig.whitelistedWords;
-        if (newConfig.spamDetectionEnabled) validConfig.spamDetectionEnabled = newConfig.spamDetectionEnabled;
-        if (newConfig.maxMessages) validConfig.maxMessages = newConfig.maxMessages;
-        if (newConfig.timeframeSeconds) validConfig.timeframeSeconds = newConfig.timeframeSeconds;
-        if (newConfig.repeatedTextEnabled) validConfig.repeatedTextEnabled = newConfig.repeatedTextEnabled;
-        if (newConfig.externalLinksEnabled) validConfig.externalLinksEnabled = newConfig.externalLinksEnabled;
-        if (newConfig.discordInviteLinksEnabled) validConfig.discordInviteLinksEnabled = newConfig.discordInviteLinksEnabled;
-        if (newConfig.excessiveEmojiEnabled) validConfig.excessiveEmojiEnabled = newConfig.excessiveEmojiEnabled;
-        if (newConfig.excessiveEmojiCount) validConfig.excessiveEmojiCount = newConfig.excessiveEmojiCount;
-        if (newConfig.excessiveMentionsEnabled) validConfig.excessiveMentionsEnabled = newConfig.excessiveMentionsEnabled;
-        if (newConfig.excessiveMentionsCount) validConfig.excessiveMentionsCount = newConfig.excessiveMentionsCount;
-        if (newConfig.excessiveCapsEnabled) validConfig.excessiveCapsEnabled = newConfig.excessiveCapsEnabled;
-        if (newConfig.excessiveCapsPercentage) validConfig.excessiveCapsPercentage = newConfig.excessiveCapsPercentage;
-        if (newConfig.immuneRoles) validConfig.immuneRoles = newConfig.immuneRoles;
-        if (newConfig.immuneChannels) validConfig.immuneChannels = newConfig.immuneChannels;
+        validConfig.moderationLevel = newConfig.moderationLevel; // Always save, even if null/empty
+        validConfig.blacklistedWords = newConfig.blacklistedWords;
+        validConfig.whitelistedWords = newConfig.whitelistedWords;
+        validConfig.spamDetectionEnabled = newConfig.spamDetectionEnabled;
+        validConfig.maxMessages = newConfig.maxMessages;
+        validConfig.timeframeSeconds = newConfig.timeframeSeconds;
+        validConfig.repeatedTextEnabled = newConfig.repeatedTextEnabled;
+        validConfig.externalLinksEnabled = newConfig.externalLinksEnabled;
+        validConfig.discordInviteLinksEnabled = newConfig.discordInviteLinksEnabled;
+        validConfig.excessiveEmojiEnabled = newConfig.excessiveEmojiEnabled;
+        validConfig.excessiveEmojiCount = newConfig.excessiveEmojiCount;
+        validConfig.excessiveMentionsEnabled = newConfig.excessiveMentionsEnabled;
+        validConfig.excessiveMentionsCount = newConfig.excessiveMentionsCount;
+        validConfig.excessiveCapsEnabled = newConfig.excessiveCapsEnabled;
+        validConfig.excessiveCapsPercentage = newConfig.excessiveCapsPercentage;
+        validConfig.immuneRoles = newConfig.immuneRoles;
+        validConfig.immuneChannels = newConfig.immuneChannels;
 
         await saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
