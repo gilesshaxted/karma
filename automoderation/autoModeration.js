@@ -7,6 +7,25 @@ const cooldowns = new Map(); // In-memory map for spam cooldowns
 // Load word lists from JSON file
 const wordlists = JSON.parse(fs.readFileSync(path.join(__dirname, 'wordlists.json'), 'utf8'));
 
+// Define regex patterns for common sensitive words to catch variations
+// These patterns account for spaces, common leet speak (i, l, 1; a, @, 4; e, 3; o, 0; s, 5), and repeated characters.
+const sensitiveWordRegex = {
+    // Example: "fuck" with variations
+    fuck: /(f[\s\.]*[uUu*][\s\.]*c[\s\.]*k)/i,
+    // Example: "shit" with variations
+    shit: /(s[\s\.]*h[\s\.]*i[\s\.]*t)/i,
+    // Example: "bitch" with variations
+    bitch: /(b[\s\.]*i[\s\.]*t[\s\.]*c[\s\.]*h)/i,
+    // Example: "nigger" with variations (using non-capturing groups and character classes)
+    nigger: /(n[\s\.]*[iI1!][\s\.]*g[\s\.]*[gG6][\s\.]*[eE3@a][\s\.]*r?)/i,
+    // Example: "faggot" with variations
+    faggot: /(f[\s\.]*[aA@4][\s\.]*g[\s\.]*[gG6][\s\.]*[oO0][\s\.]*t)/i,
+    // Example: "cunt" with variations
+    cunt: /(c[\s\.]*[uU*][\s\.]*n[\s\.]*t)/i,
+    // Add more sensitive words with their regex patterns as needed
+};
+
+
 /**
  * Checks a message against all configured moderation rules and takes action.
  * @param {Message} message - The message object.
@@ -41,7 +60,7 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
         return; // Whitelisted content overrides all other rules.
     }
 
-    // --- Check Blacklisted Words & Tiers ---
+    // --- Check Blacklisted Words & Tiers (now using regex for sensitive words) ---
     const blacklistedWords = new Set();
     // Add words based on moderation tier
     if (guildConfig.moderationLevel === 'high') {
@@ -56,13 +75,29 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
         guildConfig.blacklistedWords.split(',').map(w => w.trim().toLowerCase()).forEach(w => blacklistedWords.add(w));
     }
 
-    for (const word of blacklistedWords) {
-        if (messageContent.includes(word)) {
-            reason = `Blacklisted word "${word}" used.`;
-            rule = 'Blacklisted Words';
-            break;
+    // First, check against specific sensitive words using regex
+    for (const key in sensitiveWordRegex) {
+        if (sensitiveWordRegex.hasOwnProperty(key)) {
+            if (messageContent.match(sensitiveWordRegex[key])) {
+                reason = `Sensitive word variation detected: "${message.content.substring(messageContent.match(sensitiveWordRegex[key]).index, messageContent.match(sensitiveWordRegex[key]).index + messageContent.match(sensitiveWordRegex[key])[0].length)}".`;
+                rule = 'Sensitive Word Detection (Regex)';
+                break; // Found a match, no need to check further regex
+            }
         }
     }
+
+    // If no sensitive regex match, then check general blacklisted words
+    if (!reason) {
+        for (const word of blacklistedWords) {
+            // For general blacklisted words, we can still use simple includes or more generic regex if needed
+            if (messageContent.includes(word)) {
+                reason = `Blacklisted word "${word}" used.`;
+                rule = 'Blacklisted Words';
+                break;
+            }
+        }
+    }
+
 
     // --- Check Repeated Text ---
     if (!reason && guildConfig.repeatedTextEnabled) {
@@ -104,10 +139,13 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
 
     // --- Check Excessive Caps ---
     if (!reason && guildConfig.excessiveCapsEnabled) {
-        const capsPercentage = (message.content.replace(/[^a-zA-Z]/g, '').match(/[A-Z]/g) || []).length / message.content.replace(/[^a-zA-Z]/g, '').length * 100;
-        if (capsPercentage > (guildConfig.excessiveCapsPercentage || 70)) {
-            reason = `Excessive caps (${capsPercentage.toFixed(0)}%/${guildConfig.excessiveCapsPercentage}%).`;
-            rule = 'Excessive Caps';
+        const letters = message.content.replace(/[^a-zA-Z]/g, '');
+        if (letters.length > 0) { // Avoid division by zero for messages without letters
+            const capsPercentage = (letters.match(/[A-Z]/g) || []).length / letters.length * 100;
+            if (capsPercentage > (guildConfig.excessiveCapsPercentage || 70)) {
+                reason = `Excessive caps (${capsPercentage.toFixed(0)}%/${guildConfig.excessiveCapsPercentage}%).`;
+                rule = 'Excessive Caps';
+            }
         }
     }
 
@@ -170,7 +208,7 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                 if (guildConfig.modAlertChannelId) {
                     const modAlertChannel = message.guild.channels.cache.get(guildConfig.modAlertChannelId);
                     if (modAlertChannel) {
-                         const alertEmbed = new EmbedBuilder()
+                           const alertEmbed = new EmbedBuilder()
                             .setColor('#FF0000')
                             .setTitle('Severe Moderation Alert')
                             .setDescription(`User ${message.author.tag} (<@${message.author.id}>) has been timed out for 7 days after receiving 5 timeouts in one month.`)
@@ -192,4 +230,3 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
 module.exports = {
     checkMessageForModeration
 };
-
