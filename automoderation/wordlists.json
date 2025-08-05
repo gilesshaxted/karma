@@ -1,0 +1,26 @@
+{
+  "curseWords": [
+    "fuck", "shit", "bitch", "asshole", "bastard", "cunt", "dick", "pussy", "whore"
+  ],
+  "hateSpeech": [
+    "nigger", "faggot", "dyke", "tranny", "chink", "kike", "spic", "coon", "gook", "wetback", "gypsy"
+  ],
+  "racialSlurs": [
+    "nigger", "chink", "kike", "spic", "coon", "gook", "wetback"
+  ],
+  "homophobicSlurs": [
+    "faggot", "dyke"
+  ],
+  "sexistMisogynistic": [
+    "bitch", "whore", "cunt"
+  ],
+  "highLevel": [
+    "fuck", "shit", "bitch", "asshole", "bastard", "cunt", "dick", "pussy", "whore", "nigger", "faggot", "dyke", "tranny", "chink", "kike", "spic", "coon", "gook", "wetback", "gypsy"
+  ],
+  "mediumLevel": [
+    "nigger", "faggot", "dyke", "chink", "kike", "spic", "coon", "gook", "wetback", "gypsy"
+  ],
+  "lowLevel": [
+    "nigger", "faggot", "chink", "kike"
+  ]
+}
