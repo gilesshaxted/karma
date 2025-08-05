@@ -60,7 +60,7 @@ const boostLogHandler = require('./logging/boostLogHandler');
 const countingGame = require('./games/countingGame');
 
 // New event handlers
-const lemonsGame = require('./events/lemons');
+const spamGame = require('./events/spamFun'); // Updated from lemons to spamFun
 
 // --- Discord OAuth Configuration (Bot's Permissions for Invite) ---
 const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
@@ -107,6 +107,8 @@ const getGuildConfig = async (guildId) => {
             countingChannelId: null,   // New: Counting game channel
             currentCount: 0,           // New: Counting game current count
             lastCountMessageId: null,  // New: Counting game last correct message ID
+            spamChannelId: null,      // NEW: Spam channel ID
+            spamKeywords: null,       // NEW: Spam keywords
             caseNumber: 0
         };
         await setDoc(configRef, defaultConfig);
@@ -373,16 +375,18 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         const validConfig = {};
         if (newConfig.modRoleId) validConfig.modRoleId = newConfig.modRoleId;
         if (newConfig.adminRoleId) validConfig.adminRoleId = newConfig.adminRoleId;
+        if (newConfig.modPingRoleId) validConfig.modPingRoleId = newConfig.modPingRoleId;
+        if (newConfig.karmaChannelId) validConfig.karmaChannelId = newConfig.karmaChannelId;
+        if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
         if (newConfig.moderationLogChannelId) validConfig.moderationLogChannelId = newConfig.moderationLogChannelId;
         if (newConfig.messageLogChannelId) validConfig.messageLogChannelId = newConfig.messageLogChannelId;
-        if (newConfig.modAlertChannelId) validConfig.modAlertChannelId = newConfig.modAlertChannelId;
-        if (newConfig.modPingRoleId) validConfig.modPingRoleId = newConfig.modPingRoleId;
         if (newConfig.memberLogChannelId) validConfig.memberLogChannelId = newConfig.memberLogChannelId;
         if (newConfig.adminLogChannelId) validConfig.adminLogChannelId = newConfig.adminLogChannelId;
         if (newConfig.joinLeaveLogChannelId) validConfig.joinLeaveLogChannelId = newConfig.joinLeaveLogChannelId;
         if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
-        if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
-        if (newConfig.karmaChannelId) validConfig.karmaChannelId = newConfig.karmaChannelId;
+        if (newConfig.modAlertChannelId) validConfig.modAlertChannelId = newConfig.modAlertChannelId;
+        if (newConfig.spamChannelId) validConfig.spamChannelId = newConfig.spamChannelId; // NEW: Save spam channel ID
+        if (newConfig.spamKeywords) validConfig.spamKeywords = newConfig.spamKeywords; // NEW: Save spam keywords
 
         await saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
@@ -510,8 +514,14 @@ client.once('ready', async () => {
             const guild = message.guild;
             const author = message.author;
 
-            // --- Counting Game Check (before auto-mod) ---
+            // --- Spam Fun Game Check ---
             const guildConfig = await getGuildConfig(guild.id); // Use the global getGuildConfig
+            if (spamGame.shouldHandle(message, guildConfig)) { // Updated from lemonsGame to spamGame and passing config
+                await spamGame.handleMessage(message, client.tenorApiKey); // Updated from lemonsGame to spamGame
+                return; // Stop further processing
+            }
+
+            // --- Counting Game Check (after auto-mod) ---
             if (guildConfig.countingChannelId && message.channel.id === guildConfig.countingChannelId) {
                 const handledByCountingGame = await countingGame.checkCountMessage(
                     message,
@@ -526,12 +536,6 @@ client.once('ready', async () => {
                 }
             }
             
-            // --- Lemon Game Check ---
-            if (lemonsGame.shouldHandle(message)) {
-                await lemonsGame.handleMessage(message, client.tenorApiKey);
-                return; // Stop further processing
-            }
-
             await autoModeration.checkMessageForModeration(
                 message, client, getGuildConfig, saveGuildConfig, isExempt, logging.logModerationAction, logging.logMessage, client.googleApiKey
             );
