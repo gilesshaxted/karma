@@ -209,7 +209,8 @@ app.get('/', (req, res) => {
 
 // Discord OAuth Login Route
 app.get('/api/login', (req, res) => {
-    const authorizeUrl = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(DISCORD_REDIRECT_URI)}}&response_type=code&scope=${encodeURIComponent(DISCORD_OAUTH_SCOPES)}&permissions=${DISCORD_BOT_PERMISSIONS}`;
+    // FIX: Removed the extra '}' from the end of encodeURIComponent(DISCORD_REDIRECT_URI)
+    const authorizeUrl = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(DISCORD_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(DISCORD_OAUTH_SCOPES)}&permissions=${DISCORD_BOT_PERMISSIONS}`;
     res.redirect(authorizeUrl);
 });
 
@@ -226,7 +227,6 @@ app.post('/api/token', async (req, res) => {
     }
 
     try {
-        // FIX: Corrected URL string by removing Markdown link syntax
         const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
             client_id: DISCORD_CLIENT_ID,
             client_secret: DISCORD_CLIENT_SECRET,
@@ -256,7 +256,6 @@ const verifyDiscordToken = async (req, res, next) => {
     const accessToken = authHeader.split(' ')[1];
 
     try {
-        // FIX: Corrected URL string by removing Markdown link syntax
         const userResponse = await axios.get('https://discord.com/api/users/@me', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
@@ -308,7 +307,6 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
 
     for (let i = 0; i < MAX_GUILD_FETCH_RETRIES; i++) {
         try {
-            // FIX: Corrected URL string by removing Markdown link syntax
             const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
                 headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
             });
@@ -758,7 +756,7 @@ client.once('ready', async () => {
 
     client.on('inviteDelete', async invite => {
         if (invite.guild && client.invites.has(invite.guild.id)) {
-            client.invites.get(guild.id).delete(invite.code); // Changed to client.invites.get(guild.id)
+            client.invites.get(invite.guild.id).delete(invite.code);
         }
     });
 
