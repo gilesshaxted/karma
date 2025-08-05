@@ -1,6 +1,6 @@
 // logging/logging.js
 const { EmbedBuilder } = require('discord.js');
-// No direct Firestore imports needed here as saveGuildConfig is passed as a function.
+// No direct Firestore imports needed here as getGuildConfig and saveGuildConfig are passed directly.
 
 /**
  * Logs a moderation action to the configured moderation log channel.
@@ -9,11 +9,22 @@ const { EmbedBuilder } = require('discord.js');
  * @param {User} targetUser - The user who was targeted by the action.
  * @param {User} moderator - The user who performed the action (bot or human).
  * @param {string} reason - The reason for the action.
- * @param {Function} getGuildConfig - Function to get the guild's config.
- * @param {Function} saveGuildConfig - Function to save the guild's config. // ADDED saveGuildConfig to signature
+ * @param {Client} client - The Discord client instance (contains getGuildConfig and saveGuildConfig). // Keep client for other potential uses if needed
+ * @param {Function} getGuildConfig - Function to get the guild's config. // Explicitly passed
+ * @param {Function} saveGuildConfig - Function to save the guild's config. // Explicitly passed
  */
-const logModerationAction = async (actionType, guild, targetUser, moderator, reason, getGuildConfig, saveGuildConfig) => {
+const logModerationAction = async (actionType, guild, targetUser, moderator, reason, client, getGuildConfig, saveGuildConfig) => {
     try {
+        // Now getGuildConfig and saveGuildConfig are directly available from parameters
+        if (typeof getGuildConfig !== 'function') {
+            console.error(`[LOGGING ERROR] getGuildConfig is not a function.`);
+            return;
+        }
+        if (typeof saveGuildConfig !== 'function') {
+            console.error(`[LOGGING ERROR] saveGuildConfig is not a function.`);
+            return;
+        }
+
         const guildConfig = await getGuildConfig(guild.id);
         const logChannelId = guildConfig.moderationLogChannelId;
 
@@ -44,7 +55,6 @@ const logModerationAction = async (actionType, guild, targetUser, moderator, rea
         await logChannel.send({ embeds: [embed] });
 
         // Increment case number in Firestore
-        // FIX: saveGuildConfig is now available and used correctly
         await saveGuildConfig(guild.id, { caseNumber: (guildConfig.caseNumber || 0) + 1 });
 
     } catch (error) {
