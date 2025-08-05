@@ -1,253 +1,195 @@
-// automoderation/automoderation.js - Rule-based moderation system
-const { PermissionsBitField, EmbedBuilder } = require('discord.js');
+// automoderation/autoModeration.js
+const { EmbedBuilder } = require('discord.js');
+const fs = require('fs');
+const path = require('path');
+const cooldowns = new Map(); // In-memory map for spam cooldowns
 
-const wordLists = {
-    high: [
-        // A comprehensive list of curse words, slurs, and hate speech
-        'fuck', 'shit', 'cunt', 'bitch', 'asshole', 'nigger', 'faggot', 'retard',
-        'chink', 'gook', 'pussy', 'dick', 'cock', 'whore', 'slut', 'tranny', 'spic',
-        'wetback', 'kike', 'dyke', 'hate speech', 'kill yourself', 'kys'
-    ],
-    medium: [
-        // A more targeted list focused on severe hate speech
-        'nigger', 'faggot', 'retard', 'chink', 'gook', 'kike', 'dyke',
-        'kill yourself', 'kys', 'hate speech', 'tranny'
-    ],
-    low: [
-        // A very minimal list of only the most severe slurs
-        'nigger', 'faggot', 'kike'
-    ]
-};
-
-// Map to store user warnings and timeouts
-const userWarnings = new Map();
-const userTimeouts = new Map();
+// Load word lists from JSON file
+const wordlists = JSON.parse(fs.readFileSync(path.join(__dirname, 'wordlists.json'), 'utf8'));
 
 /**
- * Checks a message against the configured auto-moderation rules.
- * @param {Message} message - The message to check.
+ * Checks a message against all configured moderation rules and takes action.
+ * @param {Message} message - The message object.
  * @param {Client} client - The Discord client.
- * @param {Function} getGuildConfig - Function to get guild config.
- * @param {Function} saveGuildConfig - Function to save guild config.
- * @param {Function} isExempt - Function to check if a member/channel is immune.
+ * @param {Function} getGuildConfig - Function to get the guild's config.
+ * @param {Function} saveGuildConfig - Function to save the guild's config.
+ * @param {Function} isExempt - Function to check for user/role immunity.
  * @param {Function} logModerationAction - Function to log moderation actions.
- * @returns {Promise<boolean>} - True if the message was moderated, false otherwise.
+ * @param {Function} logMessage - Function to log general messages.
  */
-const checkMessageForModeration = async (message, client, getGuildConfig, saveGuildConfig, isExempt, logModerationAction) => {
-    // Do not moderate if the author is a bot or is exempt
-    if (message.author.bot || isExempt(message.member, await getGuildConfig(message.guild.id), message.channel.id)) {
-        return false;
+const checkMessageForModeration = async (message, client, getGuildConfig, saveGuildConfig, isExempt, logModerationAction, logMessage) => {
+    // Ignore bots and DMs
+    if (message.author.bot || !message.guild) {
+        return;
     }
 
     const guildConfig = await getGuildConfig(message.guild.id);
-    const infraction = await getInfraction(message, guildConfig);
+    const member = message.member;
 
-    if (infraction) {
+    // Check for immunity (Admins/Mods are always immune)
+    if (isExempt(member, guildConfig)) {
+        return;
+    }
+
+    const messageContent = message.content.toLowerCase();
+    let reason = null;
+    let rule = null;
+
+    // --- Check Whitelisted Words (Override) ---
+    const whitelist = guildConfig.whitelistedWords ? guildConfig.whitelistedWords.split(',').map(w => w.trim().toLowerCase()) : [];
+    if (whitelist.some(w => messageContent.includes(w))) {
+        return; // Whitelisted content overrides all other rules.
+    }
+
+    // --- Check Blacklisted Words & Tiers ---
+    const blacklistedWords = new Set();
+    // Add words based on moderation tier
+    if (guildConfig.moderationLevel === 'high') {
+        wordlists.highLevel.forEach(w => blacklistedWords.add(w));
+    } else if (guildConfig.moderationLevel === 'medium') {
+        wordlists.mediumLevel.forEach(w => blacklistedWords.add(w));
+    } else if (guildConfig.moderationLevel === 'low') {
+        wordlists.lowLevel.forEach(w => blacklistedWords.add(w));
+    }
+    // Add custom blacklisted words from config
+    if (guildConfig.blacklistedWords) {
+        guildConfig.blacklistedWords.split(',').map(w => w.trim().toLowerCase()).forEach(w => blacklistedWords.add(w));
+    }
+
+    for (const word of blacklistedWords) {
+        if (messageContent.includes(word)) {
+            reason = `Blacklisted word "${word}" used.`;
+            rule = 'Blacklisted Words';
+            break;
+        }
+    }
+
+    // --- Check Repeated Text ---
+    if (!reason && guildConfig.repeatedTextEnabled) {
+        const lastMessage = await message.channel.messages.fetch({ limit: 2 }).then(msgs => msgs.last()).catch(() => null);
+        if (lastMessage && lastMessage.author.id === message.author.id && lastMessage.content === message.content) {
+            reason = 'Repeated text.';
+            rule = 'Repeated Text';
+        }
+    }
+
+    // --- Check External Links ---
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    if (!reason && guildConfig.externalLinksEnabled && messageContent.match(urlRegex)) {
+        reason = 'External link posted.';
+        rule = 'External Links';
+    }
+
+    // --- Check Discord Invite Links ---
+    const inviteRegex = /(discord\.gg\/|discordapp\.com\/invite\/)/g;
+    if (!reason && guildConfig.discordInviteLinksEnabled && messageContent.match(inviteRegex)) {
+        reason = 'Discord invite link posted.';
+        rule = 'Discord Invites';
+    }
+
+    // --- Check Excessive Emojis ---
+    if (!reason && guildConfig.excessiveEmojiEnabled) {
+        const emojiCount = (message.content.match(/(<a?:[a-zA-Z0-9_]+:\d+>|[\u00A9\u00AE\u2000-\u3300\uD83C-\uDBFF\uDC00-\uDFFF])/g) || []).length;
+        if (emojiCount > (guildConfig.excessiveEmojiCount || 5)) {
+            reason = `Excessive emojis (${emojiCount}/${guildConfig.excessiveEmojiCount}).`;
+            rule = 'Excessive Emojis';
+        }
+    }
+    
+    // --- Check Excessive Mentions ---
+    if (!reason && guildConfig.excessiveMentionsEnabled && message.mentions.users.size + message.mentions.roles.size > (guildConfig.excessiveMentionsCount || 5)) {
+        reason = `Excessive mentions (${message.mentions.users.size + message.mentions.roles.size}/${guildConfig.excessiveMentionsCount}).`;
+        rule = 'Excessive Mentions';
+    }
+
+    // --- Check Excessive Caps ---
+    if (!reason && guildConfig.excessiveCapsEnabled) {
+        const capsPercentage = (message.content.replace(/[^a-zA-Z]/g, '').match(/[A-Z]/g) || []).length / message.content.replace(/[^a-zA-Z]/g, '').length * 100;
+        if (capsPercentage > (guildConfig.excessiveCapsPercentage || 70)) {
+            reason = `Excessive caps (${capsPercentage.toFixed(0)}%/${guildConfig.excessiveCapsPercentage}%).`;
+            rule = 'Excessive Caps';
+        }
+    }
+
+    // --- Spam Detection ---
+    if (!reason && guildConfig.spamDetectionEnabled) {
+        const now = Date.now();
+        const userCooldown = cooldowns.get(message.author.id) || { messages: [], lastTimeout: 0, timeouts: [] };
+        
+        // Filter out old messages
+        userCooldown.messages = userCooldown.messages.filter(time => now - time < (guildConfig.timeframeSeconds * 1000 || 5000));
+        userCooldown.messages.push(now);
+
+        if (userCooldown.messages.length > (guildConfig.maxMessages || 5)) {
+            reason = `Spamming detected (${userCooldown.messages.length} messages in ${guildConfig.timeframeSeconds || 5}s).`;
+            rule = 'Spam Detection';
+            // Reset message counter after a penalty
+            userCooldown.messages = [];
+        }
+
+        cooldowns.set(message.author.id, userCooldown);
+    }
+    
+    // --- Apply Moderation Action if a rule was triggered ---
+    if (reason) {
         try {
-            // Delete the message
             await message.delete();
-
-            // Send a warning to the user
-            const warningMessage = `Your message was flagged for: **${infraction.reason}**. Repeated violations will result in a timeout.`;
-            await message.channel.send(`<@${message.author.id}>, ${warningMessage}`);
-
-            // Log the moderation action
-            await logModerationAction(message.guild, 'Automoderation', infraction.reason, message.author, message.author, {
-                messageContent: message.content
-            });
             
-            // Check for warnings and timeouts
-            await handleInfractions(message.guild, message.author, client, getGuildConfig);
+            // Get or create user moderation data in Firestore
+            const modRef = client.db.collection(`artifacts/${client.appId}/public/data/guilds/${message.guild.id}/mod_data`).doc(message.author.id);
+            const modSnap = await modRef.get();
+            const modData = modSnap.exists ? modSnap.data() : { warnings: [], timeouts: [] };
 
-            return true;
-        } catch (error) {
-            console.error(`Failed to apply moderation action for ${message.author.tag}:`, error);
-        }
-    }
-    
-    return false;
-};
+            // Add new warning
+            const warningTimestamp = Date.now();
+            modData.warnings.push({ timestamp: warningTimestamp, rule, reason, messageContent: message.content });
 
-/**
- * Checks a message for any infractions based on the guild's configuration.
- * @param {Message} message - The message to check.
- * @param {Object} guildConfig - The guild's configuration.
- * @returns {Promise<{reason: string}|null>} - The infraction reason or null if no infraction.
- */
-const getInfraction = async (message, guildConfig) => {
-    const content = message.content;
-    const authorId = message.author.id;
-    const guildId = message.guild.id;
-
-    // --- Check Word-based Filters (Blacklist, Whitelist, Tiers) ---
-    const tierWords = guildConfig.moderationTier ? wordLists[guildConfig.moderationTier] : [];
-    const blacklistedWords = guildConfig.blacklistedWords ? guildConfig.blacklistedWords.split(',').map(w => w.trim().toLowerCase()) : [];
-    const whitelistedWords = guildConfig.whitelistedWords ? guildConfig.whitelistedWords.split(',').map(w => w.trim().toLowerCase()) : [];
-
-    // Check against whitelisted words first (they override all other rules)
-    if (whitelistedWords.some(word => content.toLowerCase().includes(word))) {
-        return null; // Whitelisted, no infraction
-    }
-
-    // Check against blacklisted words
-    if (blacklistedWords.some(word => content.toLowerCase().includes(word))) {
-        return { reason: 'Blacklisted word detected.' };
-    }
-
-    // Check against moderation tier words
-    if (tierWords.some(word => content.toLowerCase().includes(word))) {
-        return { reason: `Content flagged by moderation tier: ${guildConfig.moderationTier}.` };
-    }
-    
-    // --- Check other message filters ---
-    // Repeated Text
-    if (guildConfig.repeatedTextToggle) {
-        const lastMessage = await message.channel.messages.fetch({ limit: 2 }).then(messages => messages.last());
-        if (lastMessage && lastMessage.author.id === authorId && lastMessage.content.trim() === content.trim()) {
-            return { reason: 'Repeated text detected.' };
-        }
-    }
-
-    // Spam Detection
-    if (guildConfig.spamDetectionToggle && guildConfig.spamMessageCount && guildConfig.spamTimeframe) {
-        const messages = await message.channel.messages.fetch({ limit: parseInt(guildConfig.spamMessageCount, 10) });
-        const recentMessages = messages.filter(m => 
-            m.author.id === authorId && (message.createdTimestamp - m.createdTimestamp) < (parseInt(guildConfig.spamTimeframe, 10) * 1000)
-        );
-        if (recentMessages.size >= parseInt(guildConfig.spamMessageCount, 10)) {
-            return { reason: 'Spam detected (sending too many messages in a short period).' };
-        }
-    }
-
-    // External Links
-    if (guildConfig.externalLinksToggle) {
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        if (urlRegex.test(content)) {
-            return { reason: 'External links are not allowed.' };
-        }
-    }
-
-    // Discord Invites
-    if (guildConfig.discordInvitesToggle) {
-        const inviteRegex = /(discord\.gg\/[a-zA-Z0-9]+|discord\.com\/invite\/[a-zA-Z0-9]+)/g;
-        if (inviteRegex.test(content)) {
-            return { reason: 'Discord invite links are not allowed.' };
-        }
-    }
-
-    // Excessive Emojis
-    if (guildConfig.excessiveEmojiToggle && guildConfig.excessiveEmojiCount) {
-        const emojiRegex = /<a?:.+?:\d+>|[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu;
-        const emojiCount = (content.match(emojiRegex) || []).length;
-        if (emojiCount > parseInt(guildConfig.excessiveEmojiCount, 10)) {
-            return { reason: 'Excessive use of emojis detected.' };
-        }
-    }
-
-    // Excessive Mentions
-    if (guildConfig.excessiveMentionsToggle && guildConfig.excessiveMentionsCount) {
-        if (message.mentions.users.size > parseInt(guildConfig.excessiveMentionsCount, 10) || message.mentions.roles.size > parseInt(guildConfig.excessiveMentionsCount, 10)) {
-            return { reason: 'Excessive mentions detected.' };
-        }
-    }
-
-    // Excessive Caps
-    if (guildConfig.excessiveCapsToggle && guildConfig.excessiveCapsPercentage) {
-        const textWithoutSpaces = content.replace(/\s/g, '');
-        if (textWithoutSpaces.length > 20) { // Only check longer messages
-            const uppercaseCount = (textWithoutSpaces.match(/[A-Z]/g) || []).length;
-            const uppercasePercentage = (uppercaseCount / textWithoutSpaces.length) * 100;
-            if (uppercasePercentage > parseInt(guildConfig.excessiveCapsPercentage, 10)) {
-                return { reason: 'Excessive use of capital letters detected.' };
+            // Check for 3 warnings in the last hour
+            const recentWarnings = modData.warnings.filter(w => warningTimestamp - w.timestamp < 3600000); // 1 hour
+            if (recentWarnings.length >= 3) {
+                // Time out the user for 6 hours
+                const timeoutUntil = new Date(Date.now() + 6 * 3600000); // 6 hours
+                await member.timeout(6 * 3600000, `Automoderation: 3 warnings in 1 hour.`);
+                modData.timeouts.push({ timestamp: warningTimestamp, duration: '6 hours' });
+                logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 6 hours for 3 warnings in 1 hour.`, reason);
+                modData.warnings = []; // Clear warnings after timeout
+            } else {
+                logModerationAction('Warning', message.guild, message.author, client.user, reason);
             }
-        }
-    }
-    
-    return null;
-};
 
-/**
- * Handles user infractions by applying warnings and timeouts.
- * @param {Guild} guild - The guild object.
- * @param {User} user - The user who committed the infraction.
- * @param {Client} client - The Discord client.
- * @param {Function} getGuildConfig - Function to get guild config.
- */
-const handleInfractions = async (guild, user, client, getGuildConfig) => {
-    const guildId = guild.id;
-    const userId = user.id;
-
-    // Initialize userWarnings for the user if it doesn't exist
-    if (!userWarnings.has(userId)) {
-        userWarnings.set(userId, []);
-    }
-    const warnings = userWarnings.get(userId);
-
-    // Add a new warning with a timestamp
-    warnings.push(Date.now());
-
-    // Filter out old warnings (older than 1 hour)
-    const oneHourAgo = Date.now() - (60 * 60 * 1000);
-    const recentWarnings = warnings.filter(timestamp => timestamp > oneHourAgo);
-    userWarnings.set(userId, recentWarnings);
-
-    // Check if the user has 3 or more warnings in the last hour
-    if (recentWarnings.length >= 3) {
-        const member = await guild.members.fetch(userId);
-        if (member) {
-            try {
-                // Timeout for 6 hours
-                await member.timeout(6 * 60 * 60 * 1000, 'Repeated warnings from automoderation');
+            // Check for 5 timeouts in the last month
+            const recentTimeouts = modData.timeouts.filter(t => warningTimestamp - t.timestamp < 2592000000); // 1 month
+            if (recentTimeouts.length >= 5) {
+                // Time out for 7 days and alert mods
+                const timeoutUntil = new Date(Date.now() + 7 * 24 * 3600000); // 7 days
+                await member.timeout(7 * 24 * 3600000, `Automoderation: 5 timeouts in 1 month.`);
+                logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason);
+                modData.timeouts = []; // Clear timeouts after 7-day penalty
                 
-                // Log the timeout
-                await logModerationAction(guild, 'Timeout', 'Repeated warnings from automoderation', user, client.user, { duration: '6 hours' });
-
-                // Update the user's timeout history
-                if (!userTimeouts.has(userId)) {
-                    userTimeouts.set(userId, []);
-                }
-                const timeouts = userTimeouts.get(userId);
-                timeouts.push(Date.now());
-                
-                // Clear recent warnings after a timeout is issued
-                userWarnings.set(userId, []);
-                
-                // Check if the user has 5 timeouts in the last month
-                const oneMonthAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-                const recentTimeouts = timeouts.filter(timestamp => timestamp > oneMonthAgo);
-                userTimeouts.set(userId, recentTimeouts);
-
-                if (recentTimeouts.length >= 5) {
-                    await member.timeout(7 * 24 * 60 * 60 * 1000, 'Repeated timeouts from automoderation');
-                    await logModerationAction(guild, 'Timeout', 'Repeated timeouts from automoderation', user, client.user, { duration: '7 days' });
-
-                    const guildConfig = await getGuildConfig(guild.id);
-                    if (guildConfig.modAlertChannelId) {
-                        const alertChannel = guild.channels.cache.get(guildConfig.modAlertChannelId);
-                        if (alertChannel) {
-                            const embed = new EmbedBuilder()
-                                .setColor('#FFD700')
-                                .setTitle('Automoderation Alert')
-                                .setDescription(`User ${user.tag} has been timed out for 7 days due to excessive moderation warnings and timeouts.`)
-                                .addFields(
-                                    { name: 'User', value: `<@${user.id}>`, inline: true },
-                                    { name: 'Reason', value: 'Repeated violations' },
-                                    { name: 'Action', value: '7-day timeout' }
-                                )
-                                .setTimestamp();
-                            alertChannel.send({ embeds: [embed] });
-                        }
+                // Send alert to mod channel
+                if (guildConfig.modAlertChannelId) {
+                    const modAlertChannel = message.guild.channels.cache.get(guildConfig.modAlertChannelId);
+                    if (modAlertChannel) {
+                         const alertEmbed = new EmbedBuilder()
+                            .setColor('#FF0000')
+                            .setTitle('Severe Moderation Alert')
+                            .setDescription(`User ${message.author.tag} (<@${message.author.id}>) has been timed out for 7 days after receiving 5 timeouts in one month.`)
+                            .setTimestamp();
+                        modAlertChannel.send({ embeds: [alertEmbed] });
                     }
                 }
-                
-            } catch (error) {
-                console.error(`Failed to timeout user ${user.tag}:`, error);
             }
+
+            // Save updated moderation data to Firestore
+            await modRef.set(modData, { merge: true });
+
+        } catch (error) {
+            console.error(`Failed to moderate message from ${message.author.tag}:`, error);
         }
     }
 };
 
 module.exports = {
-    checkMessageForModeration,
-    getInfraction
+    checkMessageForModeration
 };
+
