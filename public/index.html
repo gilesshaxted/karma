@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Karma Bot Dashboard</title>
+    <!-- Favicon from logo -->
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -287,7 +288,7 @@
                 serverIconsGrid.innerHTML = `<p class="col-span-full text-center text-gray-300">The bot is not in any servers where you have administrator permissions. Please invite it to a server.</p>`;
             } else {
                 guilds.forEach(guild => {
-                    const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=144` : `https://placehold.co/144x144/1C315E/FFC107?text=${guild.name.charAt(0)}`;
+                    const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png` : `https://placehold.co/144x144/1C315E/FFC107?text=${guild.name.charAt(0)}`;
                     const serverCard = document.createElement('div');
                     serverCard.className = 'server-card flex flex-col items-center p-4 rounded-xl cursor-pointer transition-all duration-300 transform bg-secondary-blue shadow-lg border-2 border-transparent hover:border-accent-gold';
                     serverCard.innerHTML = `
@@ -542,7 +543,7 @@
             // Add event listener for default emojis button
             document.getElementById('add-default-emojis').addEventListener('click', (e) => {
                 e.preventDefault();
-                const defaultEmojis = ['🎉', '🥳', '🎊', '✨', '🎈', '❤️', '🤩', '�', '😊'];
+                const defaultEmojis = ['🎉', '🥳', '🎊', '✨', '🎈', '❤️', '🤩', '👍', '😊'];
                 defaultEmojis.forEach(emoji => selectedEmojis.add(emoji));
                 renderEmojiTags();
             });
@@ -616,4 +617,3 @@
     </script>
 </body>
 </html>
-�
