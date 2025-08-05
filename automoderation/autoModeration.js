@@ -1,222 +1,253 @@
-// automoderation/autoModeration.js
-const { EmbedBuilder } = require('discord.js');
-const axios = require('axios'); // Use axios for API calls
+// automoderation/automoderation.js - Rule-based moderation system
+const { PermissionsBitField, EmbedBuilder } = require('discord.js');
 
-/**
- * LLM-powered check for offensive content.
- * @param {string} text - The text to check.
- * @param {string} googleApiKey - The Google API key for Gemini.
- * @returns {Promise<string>} - 'yes' if offensive, 'no' otherwise.
- */
-const isContentOffensive = async (text, googleApiKey) => {
-    try {
-        const chatHistory = [{ role: "user", parts: [{ text: `Is the following text hate speech, a racial slur, homophobic, or otherwise severely offensive? Respond with "yes" or "no".\n\nText: "${text}"` }] }];
-        const payload = { contents: chatHistory };
-        const apiKey = googleApiKey || "";
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-        const response = await axios.post(apiUrl, payload, { // Use axios.post
-            headers: { 'Content-Type': 'application/json' },
-        });
-
-        if (response.status !== 200) { // Check response status
-            console.error(`Gemini API offensive content check error: ${response.status} - ${response.data}`);
-            return 'no';
-        }
-
-        const result = response.data; // axios puts response data in .data
-        if (result.candidates && result.candidates.length > 0 &&
-            result.candidates[0].content && result.candidates[0].content.parts &&
-            result.candidates[0].content.parts.length > 0) {
-            const decision = result.candidates[0].content.parts[0].text.toLowerCase().trim();
-            return decision === 'yes' ? 'yes' : 'no';
-        }
-        console.warn('Gemini API offensive content check response structure unexpected or content missing. Falling back to no.');
-        return 'no';
-    } catch (error) {
-        console.error('Error calling Gemini API for offensive content check:', error.response ? error.response.data : error.message);
-        return 'no';
-    }
+const wordLists = {
+    high: [
+        // A comprehensive list of curse words, slurs, and hate speech
+        'fuck', 'shit', 'cunt', 'bitch', 'asshole', 'nigger', 'faggot', 'retard',
+        'chink', 'gook', 'pussy', 'dick', 'cock', 'whore', 'slut', 'tranny', 'spic',
+        'wetback', 'kike', 'dyke', 'hate speech', 'kill yourself', 'kys'
+    ],
+    medium: [
+        // A more targeted list focused on severe hate speech
+        'nigger', 'faggot', 'retard', 'chink', 'gook', 'kike', 'dyke',
+        'kill yourself', 'kys', 'hate speech', 'tranny'
+    ],
+    low: [
+        // A very minimal list of only the most severe slurs
+        'nigger', 'faggot', 'kike'
+    ]
 };
 
-// Regex patterns for specific hate speech/slurs (EMPTY - relying on LLM and keywords)
-const hateSpeechRegexes = [];
-
-// Specific keywords for hate speech/slurs
-const hateSpeechKeywords = [
-    'fag', 'faggot', 'gypsy', 'homo', 'kike', 'nigg', 'nigger', 'retard', 'spic', 'spick', 'yn', 'yns'
-];
+// Map to store user warnings and timeouts
+const userWarnings = new Map();
+const userTimeouts = new Map();
 
 /**
- * Helper function to send a moderation alert to the designated channel.
- * @param {Guild} guild - The Discord guild.
- * @param {Message} message - The message that was flagged.
- * @param {string} reason - The reason for flagging.
- * @param {User|ClientUser} flaggedBy - The user or bot who flagged the message.
- * @param {string} messageLink - Link to the original message.
- * @param {string} pingRoleId - The ID of the role to ping for alerts.
- * @param {function} getGuildConfig - Function to retrieve guild config.
+ * Checks a message against the configured auto-moderation rules.
+ * @param {Message} message - The message to check.
+ * @param {Client} client - The Discord client.
+ * @param {Function} getGuildConfig - Function to get guild config.
+ * @param {Function} saveGuildConfig - Function to save guild config.
+ * @param {Function} isExempt - Function to check if a member/channel is immune.
+ * @param {Function} logModerationAction - Function to log moderation actions.
+ * @returns {Promise<boolean>} - True if the message was moderated, false otherwise.
  */
-const sendModAlert = async (guild, message, reason, flaggedBy, messageLink, pingRoleId, getGuildConfig) => {
-    const guildConfig = await getGuildConfig(guild.id);
-    const alertChannelId = guildConfig.modAlertChannelId;
-
-    if (!alertChannelId) {
-        console.log(`Mod alert channel not set for guild ${guild.name}. Cannot send alert.`);
-        return;
+const checkMessageForModeration = async (message, client, getGuildConfig, saveGuildConfig, isExempt, logModerationAction) => {
+    // Do not moderate if the author is a bot or is exempt
+    if (message.author.bot || isExempt(message.member, await getGuildConfig(message.guild.id), message.channel.id)) {
+        return false;
     }
 
-    const alertChannel = guild.channels.cache.get(alertChannelId);
-    if (!alertChannel) {
-        console.error(`Mod alert channel with ID ${alertChannelId} not found in guild ${guild.name}. Cannot send alert.`);
-        return;
-    }
+    const guildConfig = await getGuildConfig(message.guild.id);
+    const infraction = await getInfraction(message, guildConfig);
 
-    // Safely get author ID and tag
-    let resolvedAuthor = message.author;
-    if (resolvedAuthor && resolvedAuthor.partial) {
+    if (infraction) {
         try {
-            resolvedAuthor = await resolvedAuthor.fetch();
-        } catch (err) {
-            console.warn(`Could not fetch partial author for message ${message.id} in sendModAlert:`, err);
-            resolvedAuthor = null;
+            // Delete the message
+            await message.delete();
+
+            // Send a warning to the user
+            const warningMessage = `Your message was flagged for: **${infraction.reason}**. Repeated violations will result in a timeout.`;
+            await message.channel.send(`<@${message.author.id}>, ${warningMessage}`);
+
+            // Log the moderation action
+            await logModerationAction(message.guild, 'Automoderation', infraction.reason, message.author, message.author, {
+                messageContent: message.content
+            });
+            
+            // Check for warnings and timeouts
+            await handleInfractions(message.guild, message.author, client, getGuildConfig);
+
+            return true;
+        } catch (error) {
+            console.error(`Failed to apply moderation action for ${message.author.tag}:`, error);
         }
     }
-    const authorId = resolvedAuthor?.id || 'Unknown ID';
-    const authorTag = resolvedAuthor?.tag || 'Unknown User';
-
-    // Safely get channel ID and name
-    let resolvedChannel = message.channel;
-    if (resolvedChannel && resolvedChannel.partial) {
-        try {
-            resolvedChannel = await resolvedChannel.fetch();
-        } catch (err) {
-            console.warn(`Could not fetch partial channel for message ${message.id} in sendModAlert:`, err);
-            resolvedChannel = null;
-        }
-    }
-    const channelId = resolvedChannel?.id || 'Unknown Channel ID';
-    const channelName = resolvedChannel?.name || 'Unknown Channel';
-
-
-    const embed = new EmbedBuilder()
-        .setTitle('Message Flagged')
-        .setDescription(
-            `**Channel:** <#${channelId}> (${channelName})\n` +
-            `**Author:** <@${authorId}>\n` +
-            `**Flag Reason:** ${reason}\n\n[Jump to Message](${messageLink})\n\n**Message Content:**\n\`\`\`\n${message.content || 'No content'}\n\`\`\``
-        )
-        .setColor(0xFFFF00) // Yellow for alert
-        .setTimestamp();
-
-    // Set footer based on who flagged
-    const flaggedById = flaggedBy?.id || 'Unknown ID';
-    const flaggedByName = flaggedBy?.tag || flaggedBy?.username || 'Unknown User';
-    embed.setFooter({ text: `Who Flagged ID: ${flaggedByName} (${flaggedById})` });
-
-    let pingMessage = '';
-    if (pingRoleId) {
-        const pingRole = guild.roles.cache.get(pingRoleId);
-        if (pingRole) {
-            pingMessage = `<@&${pingRoleId}>`;
-        } else {
-            console.warn(`Mod ping role with ID ${pingRoleId} not found in guild ${guild.name}.`);
-        }
-    } else {
-        console.log(`Mod ping role not set for guild ${guild.name}.`);
-    }
-
-    await alertChannel.send({ content: pingMessage, embeds: [embed] });
+    
+    return false;
 };
 
 /**
- * Main auto-moderation logic function to check messages for offensive content.
- * @param {Message} message - The Discord message to check.
- * @param {Client} client - The Discord client instance (for bot user).
- * @param {function} getGuildConfig - Function to retrieve guild config.
- * @param {function} saveGuildConfig - Function to save guild config.
- * @param {function} isExempt - Function to check if a user is exempt.
- * @param {function} logModerationAction - Function to log moderation actions.
- * @param {function} logMessage - Function to log deleted messages.
- * @param {string} googleApiKey - The Google API key for Gemini.
+ * Checks a message for any infractions based on the guild's configuration.
+ * @param {Message} message - The message to check.
+ * @param {Object} guildConfig - The guild's configuration.
+ * @returns {Promise<{reason: string}|null>} - The infraction reason or null if no infraction.
  */
-const checkMessageForModeration = async (message, client, getGuildConfig, saveGuildConfig, isExempt, logModerationAction, logMessage, googleApiKey) => {
-    const guild = message.guild;
-    const guildConfig = await getGuildConfig(guild.id);
-    const author = message.author;
-
-    // Don't moderate bots or exempt users
-    const authorMember = await guild.members.fetch(author.id).catch(() => null);
-    if (!authorMember || isExempt(authorMember, guildConfig)) {
-        return;
-    }
-
+const getInfraction = async (message, guildConfig) => {
     const content = message.content;
-    let flaggedReason = null;
-    let autoPunish = false; // Flag for immediate punishment
+    const authorId = message.author.id;
+    const guildId = message.guild.id;
 
-    // 1. Keyword Checks (for definite offenses)
-    for (const keyword of hateSpeechKeywords) {
-        const keywordRegex = new RegExp(`\\b${keyword}\\b`, 'i');
-        if (keywordRegex.test(content)) {
-            flaggedReason = `Matched keyword: \`${keyword}\``;
-            autoPunish = true;
-            break;
+    // --- Check Word-based Filters (Blacklist, Whitelist, Tiers) ---
+    const tierWords = guildConfig.moderationTier ? wordLists[guildConfig.moderationTier] : [];
+    const blacklistedWords = guildConfig.blacklistedWords ? guildConfig.blacklistedWords.split(',').map(w => w.trim().toLowerCase()) : [];
+    const whitelistedWords = guildConfig.whitelistedWords ? guildConfig.whitelistedWords.split(',').map(w => w.trim().toLowerCase()) : [];
+
+    // Check against whitelisted words first (they override all other rules)
+    if (whitelistedWords.some(word => content.toLowerCase().includes(word))) {
+        return null; // Whitelisted, no infraction
+    }
+
+    // Check against blacklisted words
+    if (blacklistedWords.some(word => content.toLowerCase().includes(word))) {
+        return { reason: 'Blacklisted word detected.' };
+    }
+
+    // Check against moderation tier words
+    if (tierWords.some(word => content.toLowerCase().includes(word))) {
+        return { reason: `Content flagged by moderation tier: ${guildConfig.moderationTier}.` };
+    }
+    
+    // --- Check other message filters ---
+    // Repeated Text
+    if (guildConfig.repeatedTextToggle) {
+        const lastMessage = await message.channel.messages.fetch({ limit: 2 }).then(messages => messages.last());
+        if (lastMessage && lastMessage.author.id === authorId && lastMessage.content.trim() === content.trim()) {
+            return { reason: 'Repeated text detected.' };
         }
     }
 
-    // 2. LLM Check (for general bad language / unsure cases)
-    if (!autoPunish) { // Only run LLM if not already flagged by keywords for auto-punishment
-        const llmOffensive = await isContentOffensive(content, googleApiKey);
-        if (llmOffensive === 'yes') {
-            flaggedReason = flaggedReason ? `${flaggedReason} & LLM deemed offensive` : 'LLM deemed offensive';
-            autoPunish = true;
+    // Spam Detection
+    if (guildConfig.spamDetectionToggle && guildConfig.spamMessageCount && guildConfig.spamTimeframe) {
+        const messages = await message.channel.messages.fetch({ limit: parseInt(guildConfig.spamMessageCount, 10) });
+        const recentMessages = messages.filter(m => 
+            m.author.id === authorId && (message.createdTimestamp - m.createdTimestamp) < (parseInt(guildConfig.spamTimeframe, 10) * 1000)
+        );
+        if (recentMessages.size >= parseInt(guildConfig.spamMessageCount, 10)) {
+            return { reason: 'Spam detected (sending too many messages in a short period).' };
         }
     }
 
-    if (flaggedReason) {
-        const messageLink = `https://discord.com/channels/${guild.id}/${message.channel?.id || 'Unknown Channel ID'}/${message.id}`;
+    // External Links
+    if (guildConfig.externalLinksToggle) {
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        if (urlRegex.test(content)) {
+            return { reason: 'External links are not allowed.' };
+        }
+    }
 
-        if (autoPunish) {
-            const timeoutDurationMinutes = 10;
-            const timeoutReason = `Auto-moderation: ${flaggedReason}`;
+    // Discord Invites
+    if (guildConfig.discordInvitesToggle) {
+        const inviteRegex = /(discord\.gg\/[a-zA-Z0-9]+|discord\.com\/invite\/[a-zA-Z0-9]+)/g;
+        if (inviteRegex.test(content)) {
+            return { reason: 'Discord invite links are not allowed.' };
+        }
+    }
 
-            try {
-                guildConfig.caseNumber++;
-                await saveGuildConfig(guild.id, guildConfig);
-                const caseNumber = guildConfig.caseNumber;
+    // Excessive Emojis
+    if (guildConfig.excessiveEmojiToggle && guildConfig.excessiveEmojiCount) {
+        const emojiRegex = /<a?:.+?:\d+>|[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu;
+        const emojiCount = (content.match(emojiRegex) || []).length;
+        if (emojiCount > parseInt(guildConfig.excessiveEmojiCount, 10)) {
+            return { reason: 'Excessive use of emojis detected.' };
+        }
+    }
 
-                await authorMember.timeout(timeoutDurationMinutes * 60 * 1000, timeoutReason);
-                await message.delete().catch(console.error);
-                await logMessage(guild, message, client.user, 'Auto-Deleted', getGuildConfig);
+    // Excessive Mentions
+    if (guildConfig.excessiveMentionsToggle && guildConfig.excessiveMentionsCount) {
+        if (message.mentions.users.size > parseInt(guildConfig.excessiveMentionsCount, 10) || message.mentions.roles.size > parseInt(guildConfig.excessiveMentionsCount, 10)) {
+            return { reason: 'Excessive mentions detected.' };
+        }
+    }
 
-                const dmEmbed = new EmbedBuilder()
-                    .setTitle('You have been automatically timed out!')
-                    .setDescription(`Your message in **${guild.name}** was flagged by auto-moderation for violating server rules.`)
-                    .addFields(
-                        { name: 'Reason', value: timeoutReason },
-                        { name: 'Duration', value: `${timeoutDurationMinutes} minutes` }
-                    )
-                    .setColor(0xFF0000)
-                    .setTimestamp();
-                await author.send({ embeds: [dmEmbed] }).catch(console.error);
-
-                await logModerationAction(guild, `Auto-Timeout (${timeoutDurationMinutes}m)`, author, timeoutReason, client.user, caseNumber, `${timeoutDurationMinutes}m`, messageLink, getGuildConfig, client.db, client.appId);
-                console.log(`Auto-timed out ${author.tag} for: ${timeoutReason}`);
-            } catch (error) {
-                console.error(`Error during auto-timeout for ${author.tag}:`, error);
-                await sendModAlert(guild, message, `Failed auto-punishment: ${flaggedReason}`, client.user, messageLink, guildConfig.modPingRoleId, getGuildConfig);
+    // Excessive Caps
+    if (guildConfig.excessiveCapsToggle && guildConfig.excessiveCapsPercentage) {
+        const textWithoutSpaces = content.replace(/\s/g, '');
+        if (textWithoutSpaces.length > 20) { // Only check longer messages
+            const uppercaseCount = (textWithoutSpaces.match(/[A-Z]/g) || []).length;
+            const uppercasePercentage = (uppercaseCount / textWithoutSpaces.length) * 100;
+            if (uppercasePercentage > parseInt(guildConfig.excessiveCapsPercentage, 10)) {
+                return { reason: 'Excessive use of capital letters detected.' };
             }
-        } else {
-            await sendModAlert(guild, message, flaggedReason, client.user, messageLink, guildConfig.modPingRoleId, getGuildConfig);
+        }
+    }
+    
+    return null;
+};
+
+/**
+ * Handles user infractions by applying warnings and timeouts.
+ * @param {Guild} guild - The guild object.
+ * @param {User} user - The user who committed the infraction.
+ * @param {Client} client - The Discord client.
+ * @param {Function} getGuildConfig - Function to get guild config.
+ */
+const handleInfractions = async (guild, user, client, getGuildConfig) => {
+    const guildId = guild.id;
+    const userId = user.id;
+
+    // Initialize userWarnings for the user if it doesn't exist
+    if (!userWarnings.has(userId)) {
+        userWarnings.set(userId, []);
+    }
+    const warnings = userWarnings.get(userId);
+
+    // Add a new warning with a timestamp
+    warnings.push(Date.now());
+
+    // Filter out old warnings (older than 1 hour)
+    const oneHourAgo = Date.now() - (60 * 60 * 1000);
+    const recentWarnings = warnings.filter(timestamp => timestamp > oneHourAgo);
+    userWarnings.set(userId, recentWarnings);
+
+    // Check if the user has 3 or more warnings in the last hour
+    if (recentWarnings.length >= 3) {
+        const member = await guild.members.fetch(userId);
+        if (member) {
+            try {
+                // Timeout for 6 hours
+                await member.timeout(6 * 60 * 60 * 1000, 'Repeated warnings from automoderation');
+                
+                // Log the timeout
+                await logModerationAction(guild, 'Timeout', 'Repeated warnings from automoderation', user, client.user, { duration: '6 hours' });
+
+                // Update the user's timeout history
+                if (!userTimeouts.has(userId)) {
+                    userTimeouts.set(userId, []);
+                }
+                const timeouts = userTimeouts.get(userId);
+                timeouts.push(Date.now());
+                
+                // Clear recent warnings after a timeout is issued
+                userWarnings.set(userId, []);
+                
+                // Check if the user has 5 timeouts in the last month
+                const oneMonthAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+                const recentTimeouts = timeouts.filter(timestamp => timestamp > oneMonthAgo);
+                userTimeouts.set(userId, recentTimeouts);
+
+                if (recentTimeouts.length >= 5) {
+                    await member.timeout(7 * 24 * 60 * 60 * 1000, 'Repeated timeouts from automoderation');
+                    await logModerationAction(guild, 'Timeout', 'Repeated timeouts from automoderation', user, client.user, { duration: '7 days' });
+
+                    const guildConfig = await getGuildConfig(guild.id);
+                    if (guildConfig.modAlertChannelId) {
+                        const alertChannel = guild.channels.cache.get(guildConfig.modAlertChannelId);
+                        if (alertChannel) {
+                            const embed = new EmbedBuilder()
+                                .setColor('#FFD700')
+                                .setTitle('Automoderation Alert')
+                                .setDescription(`User ${user.tag} has been timed out for 7 days due to excessive moderation warnings and timeouts.`)
+                                .addFields(
+                                    { name: 'User', value: `<@${user.id}>`, inline: true },
+                                    { name: 'Reason', value: 'Repeated violations' },
+                                    { name: 'Action', value: '7-day timeout' }
+                                )
+                                .setTimestamp();
+                            alertChannel.send({ embeds: [embed] });
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                console.error(`Failed to timeout user ${user.tag}:`, error);
+            }
         }
     }
 };
 
 module.exports = {
-    isContentOffensive,
-    hateSpeechRegexes,
-    hateSpeechKeywords,
-    sendModAlert,
-    checkMessageForModeration
+    checkMessageForModeration,
+    getInfraction
 };
