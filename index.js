@@ -516,8 +516,8 @@ client.once('ready', async () => {
 
             // --- Spam Fun Game Check ---
             const guildConfig = await getGuildConfig(guild.id); // Use the global getGuildConfig
-            if (spamGame.shouldHandle(message, guildConfig)) { // Updated from lemonsGame to spamGame and passing config
-                await spamGame.handleMessage(message, client.tenorApiKey); // Updated from lemonsGame to spamGame
+            if (spamGame.shouldHandle(message, guildConfig)) {
+                await spamGame.handleMessage(message, client.tenorApiKey, guildConfig.spamKeywords); // Pass keywords to the handler
                 return; // Stop further processing
             }
 
