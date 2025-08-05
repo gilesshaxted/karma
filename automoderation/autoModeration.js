@@ -2,6 +2,7 @@
 const { EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
+const { collection, doc, getDoc, setDoc } = require('firebase/firestore'); // Import Firestore functions
 const cooldowns = new Map(); // In-memory map for spam cooldowns
 
 // Load word lists from JSON file
@@ -170,12 +171,14 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
     
     // --- Apply Moderation Action if a rule was triggered ---
     if (reason) {
+        console.log(`[AUTOMOD] Rule triggered for ${message.author.tag} in ${message.guild.name}: ${reason}`); // Added for debugging
         try {
-            await message.delete().catch(err => console.error(`Failed to delete message from ${message.author.tag}:`, err));
+            await message.delete().catch(err => console.error(`[AUTOMOD ERROR] Failed to delete message from ${message.author.tag}:`, err));
             
             // Get or create user moderation data in Firestore
-            const modRef = client.db.collection(`artifacts/${client.appId}/public/data/guilds/${message.guild.id}/mod_data`).doc(message.author.id);
-            const modSnap = await modRef.get();
+            // FIX: Corrected Firestore collection and doc reference syntax
+            const modRef = doc(collection(client.db, `artifacts/${client.appId}/public/data/guilds/${message.guild.id}/mod_data`), message.author.id);
+            const modSnap = await getDoc(modRef);
             const modData = modSnap.exists ? modSnap.data() : { warnings: [], timeouts: [] };
 
             // Add new warning
@@ -185,11 +188,12 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
             // Check for 3 warnings in the last hour
             const recentWarnings = modData.warnings.filter(w => warningTimestamp - w.timestamp < 3600000); // 1 hour
             if (recentWarnings.length >= 3) {
+                console.log(`[AUTOMOD] ${message.author.tag} reached 3 warnings. Applying 6-hour timeout.`); // Added for debugging
                 // Time out the user for 6 hours
                 const timeoutDuration = 6 * 3600000; // 6 hours
                 try {
                     await member.timeout(timeoutDuration, `Automoderation: 3 warnings in 1 hour.`).catch(err => {
-                        console.error(`Failed to timeout member ${member.user.tag}:`, err);
+                        console.error(`[AUTOMOD ERROR] Failed to timeout member ${member.user.tag}:`, err);
                         // Attempt to send a message to the channel if timeout fails
                         message.channel.send(`Failed to timeout <@${member.user.id}>. Please check bot permissions.`).catch(console.error);
                     });
@@ -200,9 +204,10 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                     await message.author.send(`You have been timed out in **${message.guild.name}** for 6 hours due to repeated rule violations. Reason: ${reason}`).catch(console.error);
 
                 } catch (timeoutError) {
-                    console.error(`Error during member timeout for ${member.user.tag}:`, timeoutError);
+                    console.error(`[AUTOMOD ERROR] Error during member timeout for ${member.user.tag}:`, timeoutError);
                 }
             } else {
+                console.log(`[AUTOMOD] ${message.author.tag} received a warning.`); // Added for debugging
                 // Log individual warning
                 logModerationAction('Warning', message.guild, message.author, client.user, reason);
                 // Notify user about warning
@@ -212,11 +217,12 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
             // Check for 5 timeouts in the last month
             const recentTimeouts = modData.timeouts.filter(t => warningTimestamp - t.timestamp < 2592000000); // 1 month
             if (recentTimeouts.length >= 5) {
+                console.log(`[AUTOMOD] ${message.author.tag} reached 5 timeouts. Applying 7-day severe timeout.`); // Added for debugging
                 // Time out for 7 days and alert mods
                 const severeTimeoutDuration = 7 * 24 * 3600000; // 7 days
                 try {
                     await member.timeout(severeTimeoutDuration, `Automoderation: 5 timeouts in 1 month.`).catch(err => {
-                        console.error(`Failed to apply severe timeout to member ${member.user.tag}:`, err);
+                        console.error(`[AUTOMOD ERROR] Failed to apply severe timeout to member ${member.user.tag}:`, err);
                         message.channel.send(`Failed to apply severe timeout to <@${member.user.id}>. Please check bot permissions.`).catch(console.error);
                     });
                     logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason);
@@ -237,15 +243,15 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                         }
                     }
                 } catch (severeTimeoutError) {
-                    console.error(`Error during severe member timeout for ${member.user.tag}:`, severeTimeoutError);
+                    console.error(`[AUTOMOD ERROR] Error during severe member timeout for ${member.user.tag}:`, severeTimeoutError);
                 }
             }
 
             // Save updated moderation data to Firestore
-            await modRef.set(modData, { merge: true }).catch(err => console.error(`Failed to save moderation data for ${message.author.tag} to Firestore:`, err));
+            await setDoc(modRef, modData, { merge: true }).catch(err => console.error(`[AUTOMOD ERROR] Failed to save moderation data for ${message.author.tag} to Firestore:`, err));
 
         } catch (error) {
-            console.error(`Failed to process automoderation for message from ${message.author.tag}:`, error);
+            console.error(`[AUTOMOD ERROR] Failed to process automoderation for message from ${message.author.tag}:`, error);
         }
     }
 };
