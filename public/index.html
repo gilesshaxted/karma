@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Karma Bot Dashboard</title>
+    <!-- Favicon from logo -->
+    <link rel="icon" href="Karmav1.ng" type="image/png">
     <!-- Google Fonts: Poppins for headings, Inter for body text -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -40,7 +42,7 @@
 
         .server-card:hover {
             transform: translateY(-5px) scale(1.02);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4-6px -2px rgba(0, 0, 0, 0.1);
             background-color: #4c71b3;
         }
         
@@ -72,6 +74,21 @@
             border-top-left-radius: 0;
             border-top-right-radius: 0;
         }
+
+        .emoji-tag {
+            background-color: var(--accent-gold);
+            color: var(--primary-blue);
+            border-radius: 9999px; /* Tailwind's rounded-full */
+            padding: 0.25rem 0.75rem; /* Tailwind's px-3 py-1 */
+            font-size: 0.875rem; /* Tailwind's text-sm */
+            font-weight: 600; /* Tailwind's font-semibold */
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .emoji-tag:hover {
+            opacity: 0.8;
+            transform: scale(0.95);
+        }
     </style>
 </head>
 <body class="bg-primary-blue text-text-light font-inter">
@@ -79,7 +96,7 @@
     <div id="app" class="w-full max-w-6xl mx-auto flex flex-col items-center">
         <!-- Header with Logo and Title -->
         <header class="text-center mb-10 w-full">
-            <img src="Karmav1.jpg" alt="Karma Bot Logo" class="mx-auto w-32 h-32 rounded-full ring-4 ring-accent-gold mb-4 shadow-lg">
+            <img src="Karmav1.png" alt="Karma Bot Logo" class="mx-auto w-32 h-32 rounded-full ring-4 ring-accent-gold mb-4 shadow-lg">
             <h1 class="text-4xl font-extrabold text-accent-gold tracking-tight">Karma Bot Dashboard</h1>
             <p class="mt-2 text-lg text-gray-300">Manage your server's moderation and karma settings.</p>
         </header>
@@ -180,6 +197,7 @@
         let discordAccessToken = null;
         let selectedGuildId = null;
         let cachedGuilds = [];
+        let selectedEmojis = new Set(); // To track selected emojis as tags
 
         // Function to show/hide sections
         function showSection(section) {
@@ -302,14 +320,65 @@
                 showErrorMessage('An error occurred while fetching server configuration.');
             }
         }
+        
+        // Function to render the emoji tags
+        function renderEmojiTags() {
+            const emojiTagsContainer = document.getElementById('selected-emojis-container');
+            const hiddenInput = document.getElementById('spamEmojis');
+            emojiTagsContainer.innerHTML = '';
+            hiddenInput.value = Array.from(selectedEmojis).join(',');
+
+            if (selectedEmojis.size === 0) {
+                emojiTagsContainer.innerHTML = '<span class="text-sm text-gray-400">No emojis selected.</span>';
+            } else {
+                selectedEmojis.forEach(emoji => {
+                    const isCustom = emoji.startsWith('<');
+                    const emojiTag = document.createElement('span');
+                    emojiTag.className = 'emoji-tag flex items-center space-x-1';
+                    emojiTag.dataset.emoji = emoji;
+
+                    if (isCustom) {
+                        const parts = emoji.match(/<a?:(\w+):(\d+)>/);
+                        const animated = parts[0].includes('a:');
+                        const emojiName = parts[1];
+                        const emojiId = parts[2];
+                        const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? 'gif' : 'png'}`;
+                        emojiTag.innerHTML = `
+                            <img src="${imageUrl}" alt="${emojiName}" class="w-5 h-5">
+                            <span class="text-sm">x</span>
+                        `;
+                    } else {
+                        emojiTag.innerHTML = `
+                            <span>${emoji}</span>
+                            <span class="text-sm">x</span>
+                        `;
+                    }
+
+                    emojiTag.addEventListener('click', () => {
+                        selectedEmojis.delete(emoji);
+                        renderEmojiTags();
+                    });
+                    emojiTagsContainer.appendChild(emojiTag);
+                });
+            }
+        }
 
         // Function to render the dashboard view
         function renderDashboard(guildData, currentConfig, iconUrl) {
             guildNameDisplay.textContent = guildData.name;
             guildIconLarge.src = iconUrl;
             guildIconLarge.alt = `${guildData.name} icon`;
-            
-            // --- TAB CONTENT HTML ---
+
+            // Initialize selected emojis from current config
+            selectedEmojis = new Set();
+            if (currentConfig.spamEmojis) {
+                currentConfig.spamEmojis.split(',').forEach(emoji => {
+                    if (emoji.trim() !== '') {
+                        selectedEmojis.add(emoji.trim());
+                    }
+                });
+            }
+
             const rolesHtml = `
                 <div class="space-y-4">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
@@ -415,25 +484,25 @@
                         <label for="spamKeywords" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun GIF Keywords</label>
                         <input id="spamKeywords" name="spamKeywords" type="text" placeholder="e.g., keyword1, keyword2" value="${currentConfig.spamKeywords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
                     </div>
-                    <!-- NEW EMOJI SELECTOR FIELD -->
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="spamEmojis" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun Emojis</label>
-                        <input id="spamEmojis" name="spamEmojis" type="text" placeholder="e.g., 🎉,🥳,🎊" value="${currentConfig.spamEmojis || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
-                    </div>
-                    <div class="mt-4">
-                        <h5 class="font-semibold text-gray-300">Server Emojis (click to add):</h5>
-                        <div id="emoji-list-container" class="mt-2 flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-2">
-                           ${guildData.emojis.length > 0 ? 
+                    <!-- NEW EMOJI SELECTOR SECTION -->
+                    <div class="space-y-2">
+                        <label class="block text-lg font-semibold">Spam Fun Emojis</label>
+                        <div id="selected-emojis-container" class="flex flex-wrap gap-2 p-2 bg-gray-700 rounded-lg min-h-[40px] items-center">
+                            <!-- Emojis will be rendered here as tags -->
+                        </div>
+                        <input type="hidden" id="spamEmojis" name="spamEmojis" value="${currentConfig.spamEmojis || ''}">
+                        <div class="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-2">
+                            <button type="button" id="add-default-emojis" class="px-3 py-1 text-sm bg-gray-600 rounded-full hover:bg-gray-700 transition-colors">Add Default</button>
+                            ${guildData.emojis.length > 0 ? 
                                guildData.emojis.map(emoji => `
-                                <img src="${emoji.url}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="${emoji.identifier}" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
+                                <img src="${emoji.url}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
                                `).join('') 
-                               : '<p class="text-sm text-gray-400">No custom emojis found in this server.</p>'
+                               : ''
                            }
                         </div>
                     </div>
                 </div>
             `;
-            // --- END TAB CONTENT HTML ---
             
             document.getElementById('tab-roles').innerHTML = rolesHtml;
             document.getElementById('tab-logging').innerHTML = loggingHtml;
@@ -453,19 +522,27 @@
             });
             // Make sure the first tab is active on load
             document.querySelector('.tab-button[data-tab="roles"]').classList.add('active');
+
+            // Initial render of emoji tags
+            renderEmojiTags();
             
-            // Add event listener for emoji clicks
-            document.getElementById('emoji-list-container').addEventListener('click', (e) => {
-                if (e.target.tagName === 'IMG') {
-                    const emojiInput = document.getElementById('spamEmojis');
+            // Add event listener for emoji clicks in the selection list
+            document.getElementById('tab-fun').addEventListener('click', (e) => {
+                if (e.target.tagName === 'IMG' && e.target.closest('#emoji-list-container, #tab-fun')) {
                     const emojiIdentifier = e.target.dataset.emojiIdentifier;
-                    const currentValue = emojiInput.value;
-                    if (currentValue === '') {
-                        emojiInput.value = emojiIdentifier;
-                    } else if (!currentValue.includes(emojiIdentifier)) {
-                        emojiInput.value = `${currentValue},${emojiIdentifier}`;
+                    if (emojiIdentifier && !selectedEmojis.has(emojiIdentifier)) {
+                        selectedEmojis.add(emojiIdentifier);
+                        renderEmojiTags();
                     }
                 }
+            });
+
+            // Add event listener for default emojis button
+            document.getElementById('add-default-emojis').addEventListener('click', (e) => {
+                e.preventDefault();
+                const defaultEmojis = ['🎉', '🥳', '🎊', '✨', '🎈', '❤️', '🤩', '�', '😊'];
+                defaultEmojis.forEach(emoji => selectedEmojis.add(emoji));
+                renderEmojiTags();
             });
         }
 
@@ -473,6 +550,7 @@
         configForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const formElements = e.target.elements;
+            
             const newConfig = {
                 modRoleId: formElements.modRoleId.value || null,
                 adminRoleId: formElements.adminRoleId.value || null,
@@ -536,3 +614,4 @@
     </script>
 </body>
 </html>
+�
