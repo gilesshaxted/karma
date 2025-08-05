@@ -26,14 +26,19 @@ const shouldTriggerGame = (message, guildConfig) => {
  * Handles a message containing a spam keyword by replying with emojis or a GIF.
  * @param {Message} message - The message to handle.
  * @param {string} tenorApiKey - The API key for the Tenor API.
+ * @param {string} spamKeywords - The comma-separated list of keywords from the dashboard.
  */
-const handleSpamMessage = async (message, tenorApiKey) => {
+const handleSpamMessage = async (message, tenorApiKey, spamKeywords) => {
     const isGif = Math.random() < 0.5; // 50% chance to send a GIF
-    
-    if (isGif && tenorApiKey) {
-        // Send a random "fun" GIF from Tenor using the keyword 'spam fun'
+    const keywordsArray = spamKeywords.split(',').map(keyword => keyword.trim());
+    const randomKeyword = keywordsArray[Math.floor(Math.random() * keywordsArray.length)];
+
+    if (isGif && tenorApiKey && randomKeyword) {
+        // Use the randomly selected keyword from the dashboard for the GIF search
         try {
-            const tenorUrl = `https://tenor.googleapis.com/v2/search?q=spam%20fun&key=${tenorApiKey}&client_key=my_app_name&limit=50&random=true`;
+            // Encode the keyword for the URL
+            const encodedKeyword = encodeURIComponent(randomKeyword);
+            const tenorUrl = `https://tenor.googleapis.com/v2/search?q=${encodedKeyword}&key=${tenorApiKey}&client_key=my_app_name&limit=50&random=true`;
             const response = await axios.get(tenorUrl);
             const gifs = response.data.results;
             
@@ -63,7 +68,7 @@ const sendSpamEmojis = async (message) => {
     const minEmojis = 6;
     const maxEmojis = 18;
     const emojiCount = Math.floor(Math.random() * (maxEmojis - minEmojis + 1)) + minEmojis;
-    const funEmojis = ['🎉', '🥳', '🎊', '✨', '🎈'];
+    const funEmojis = ['🎉', '🥳', '🎊', '✨', '🎈', '❤️', '🤩', '👍', '😊'];
     let emojis = '';
     for (let i = 0; i < emojiCount; i++) {
         emojis += funEmojis[Math.floor(Math.random() * funEmojis.length)];
