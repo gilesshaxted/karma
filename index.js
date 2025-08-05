@@ -37,7 +37,6 @@ client.invites = new Collection();
 client.db = null;
 client.auth = null;
 client.appId = null;
-client.googleApiKey = null;
 client.tenorApiKey = process.env.TENOR_API_KEY; // New environment variable for Tenor
 client.userId = null; // Also store userId on client
 
@@ -46,7 +45,7 @@ client.userId = null; // Also store userId on client
 const { hasPermission, isExempt } = require('./helpers/permissions');
 const logging = require('./logging/logging'); // Core logging functions
 const karmaSystem = require('./karma/karmaSystem'); // Karma system functions
-const autoModeration = require('./automoderation/autoModeration'); // Auto-moderation functions
+const autoModeration = require('./automoderation/automoderation'); // Auto-moderation functions
 const handleMessageReactionAdd = require('./events/messageReactionAdd'); // Emoji reaction handler
 
 // New logging handlers
@@ -99,17 +98,35 @@ const getGuildConfig = async (guildId) => {
             messageLogChannelId: null,
             modAlertChannelId: null,
             modPingRoleId: null,
-            memberLogChannelId: null, // New: Member log channel
-            adminLogChannelId: null,   // New: Admin log channel
-            joinLeaveLogChannelId: null, // New: Join/Leave log channel
-            boostLogChannelId: null,   // New: Boost log channel
-            karmaChannelId: null,      // New: Karma Channel
-            countingChannelId: null,   // New: Counting game channel
-            currentCount: 0,           // New: Counting game current count
-            lastCountMessageId: null,  // New: Counting game last correct message ID
-            spamChannelId: null,      // NEW: Spam channel ID
-            spamKeywords: null,       // NEW: Spam keywords
-            spamEmojis: null,         // NEW: Spam emojis
+            memberLogChannelId: null,
+            adminLogChannelId: null,
+            joinLeaveLogChannelId: null,
+            boostLogChannelId: null,
+            karmaChannelId: null,
+            countingChannelId: null,
+            currentCount: 0,
+            lastCountMessageId: null,
+            spamChannelId: null,
+            spamKeywords: null,
+            spamEmojis: null,
+            // New automoderation configuration
+            moderationTier: 'medium',
+            blacklistedWords: null,
+            whitelistedWords: null,
+            spamDetectionToggle: false,
+            spamMessageCount: 5,
+            spamTimeframe: 10,
+            repeatedTextToggle: false,
+            externalLinksToggle: false,
+            discordInvitesToggle: false,
+            excessiveEmojiToggle: false,
+            excessiveEmojiCount: 5,
+            excessiveMentionsToggle: false,
+            excessiveMentionsCount: 5,
+            excessiveCapsToggle: false,
+            excessiveCapsPercentage: 70,
+            immuneRoles: [],
+            immuneChannels: [],
             caseNumber: 0
         };
         await setDoc(configRef, defaultConfig);
@@ -399,6 +416,24 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         if (newConfig.spamChannelId) validConfig.spamChannelId = newConfig.spamChannelId; // NEW: Save spam channel ID
         if (newConfig.spamKeywords) validConfig.spamKeywords = newConfig.spamKeywords; // NEW: Save spam keywords
         if (newConfig.spamEmojis) validConfig.spamEmojis = newConfig.spamEmojis; // NEW: Save spam emojis
+        // NEW: Save automoderation configuration
+        validConfig.moderationTier = newConfig.moderationTier;
+        validConfig.blacklistedWords = newConfig.blacklistedWords;
+        validConfig.whitelistedWords = newConfig.whitelistedWords;
+        validConfig.spamDetectionToggle = newConfig.spamDetectionToggle;
+        validConfig.spamMessageCount = newConfig.spamMessageCount;
+        validConfig.spamTimeframe = newConfig.spamTimeframe;
+        validConfig.repeatedTextToggle = newConfig.repeatedTextToggle;
+        validConfig.externalLinksToggle = newConfig.externalLinksToggle;
+        validConfig.discordInvitesToggle = newConfig.discordInvitesToggle;
+        validConfig.excessiveEmojiToggle = newConfig.excessiveEmojiToggle;
+        validConfig.excessiveEmojiCount = newConfig.excessiveEmojiCount;
+        validConfig.excessiveMentionsToggle = newConfig.excessiveMentionsToggle;
+        validConfig.excessiveMentionsCount = newConfig.excessiveMentionsCount;
+        validConfig.excessiveCapsToggle = newConfig.excessiveCapsToggle;
+        validConfig.excessiveCapsPercentage = newConfig.excessiveCapsPercentage;
+        validConfig.immuneRoles = newConfig.immuneRoles;
+        validConfig.immuneChannels = newConfig.immuneChannels;
 
         await saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
@@ -418,7 +453,6 @@ client.once('ready', async () => {
     try {
         // Use FIREBASE_APP_ID environment variable for client.appId
         client.appId = process.env.FIREBASE_APP_ID;
-        client.googleApiKey = process.env.GOOGLE_API_KEY || "";
         client.tenorApiKey = process.env.TENOR_API_KEY || "";
 
         const firebaseConfig = {
@@ -502,13 +536,10 @@ client.once('ready', async () => {
     // Message-related events
     client.on('messageCreate', async message => {
         if (!message.author.bot && message.guild) { // Ignore bot messages and DMs
-            // Ensure message.author is not null/undefined before accessing properties
             if (!message.author) {
                 console.warn(`Message ${message.id} has no author. Skipping message processing.`);
                 return;
             }
-            
-            // Check if the author is a partial user and fetch if necessary
             if (message.author.partial) {
                 try {
                     await message.author.fetch();
@@ -519,55 +550,61 @@ client.once('ready', async () => {
             }
 
 
-            if (!client.db || !client.appId || !client.googleApiKey) {
-                console.warn('Skipping message processing: Firebase or API keys not fully initialized yet.');
+            if (!client.db || !client.appId) {
+                console.warn('Skipping message processing: Firebase not fully initialized yet.');
                 return;
             }
             const guild = message.guild;
             const author = message.author;
+            const guildConfig = await getGuildConfig(guild.id);
 
-            // --- Spam Fun Game Check ---
-            const guildConfig = await getGuildConfig(guild.id); // Use the global getGuildConfig
+            // Check if the user/channel is exempt from automoderation
+            if (isExempt(message.member, guildConfig, message.channel.id)) {
+                return;
+            }
+            
+            // --- Automoderation Check (priority over other features) ---
+            const moderated = await autoModeration.checkMessageForModeration(
+                message, client, getGuildConfig, saveGuildConfig, isExempt, logging.logModerationAction
+            );
+            if (moderated) {
+                return; // Stop all further processing if the message was moderated.
+            }
+            
+            // --- Spam Fun Game Check (if not moderated) ---
             if (spamGame.shouldHandle(message, guildConfig)) {
-                await spamGame.handleMessage(message, client.tenorApiKey, guildConfig.spamKeywords, guildConfig.spamEmojis); // Pass keywords and emojis
-                return; // Stop further processing
+                await spamGame.handleMessage(message, client.tenorApiKey, guildConfig.spamKeywords, guildConfig.spamEmojis);
+                return;
             }
 
-            // --- Counting Game Check (after auto-mod) ---
+            // --- Counting Game Check (if not moderated or spammed) ---
             if (guildConfig.countingChannelId && message.channel.id === guildConfig.countingChannelId) {
                 const handledByCountingGame = await countingGame.checkCountMessage(
                     message,
                     client,
-                    getGuildConfig, // Pass the global getGuildConfig
-                    saveGuildConfig, // Pass the global saveGuildConfig
+                    getGuildConfig,
+                    saveGuildConfig,
                     isExempt,
                     logging.logMessage
                 );
                 if (handledByCountingGame) {
-                    return; // Message was handled by counting game, stop further processing
+                    return;
                 }
             }
             
-            await autoModeration.checkMessageForModeration(
-                message, client, getGuildConfig, saveGuildConfig, isExempt, logging.logModerationAction, logging.logMessage, client.googleApiKey
-            );
+            // --- Karma System (if not moderated, spammed, or part of a game) ---
             try {
                 const authorKarmaData = await karmaSystem.getOrCreateUserKarma(guild.id, author.id, client.db, client.appId);
                 await karmaSystem.updateUserKarmaData(guild.id, author.id, { messagesToday: (authorKarmaData.messagesToday || 0) + 1, lastActivityDate: new Date() }, client.db, client.appId);
-                await karmaSystem.calculateAndAwardKarma(guild, author, { ...authorKarmaData, messagesToday: (authorKarmaData.messagesToday || 0) + 1 }, client.db, client.appId, client.googleApiKey);
+                await karmaSystem.calculateAndAwardKarma(guild, author, { ...authorKarmaData, messagesToday: (authorKarmaData.messagesToday || 0) + 1 }, client.db, client.appId);
 
                 if (message.reference && message.reference.messageId) {
                     const repliedToMessage = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
-                    if (repliedToMessage && !repliedToMessage.author.bot && repliedToMessage.author.id !== author.id) {
+                    if (repliedToMessage && repliedToMessage.author && !repliedToMessage.author.bot && repliedToMessage.author.id !== author.id) {
                         const repliedToAuthor = repliedToMessage.author;
                         const repliedToKarmaData = await karmaSystem.getOrCreateUserKarma(guild.id, repliedToAuthor.id, client.db, client.appId);
-                        const sentiment = await karmaSystem.analyzeSentiment(message.content, client.googleApiKey);
-                        if (sentiment === 'negative') {
-                            console.log(`Negative reply sentiment detected for message from ${author.tag} to ${repliedToAuthor.tag}. Skipping karma gain for reply.`);
-                        } else {
-                            await karmaSystem.updateUserKarmaData(guild.id, repliedToAuthor.id, { repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1, lastActivityDate: new Date() }, client.db, client.appId);
-                            await karmaSystem.calculateAndAwardKarma(guild, repliedToAuthor, { ...repliedToKarmaData, repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1 }, client.db, client.appId, client.googleApiKey);
-                        }
+                        await karmaSystem.updateUserKarmaData(guild.id, repliedToAuthor.id, { repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1, lastActivityDate: new Date() }, client.db, client.appId);
+                        await karmaSystem.calculateAndAwardKarma(guild, repliedToAuthor, { ...repliedToKarmaData, repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1 }, client.db, client.appId);
                     }
                 }
             } catch (error) {
@@ -596,10 +633,7 @@ client.once('ready', async () => {
     });
 
     client.on('guildMemberAdd', async member => {
-        // Store the old invites map *before* fetching new ones for comparison
         const oldInvitesMap = client.invites.has(member.guild.id) ? new Map(client.invites.get(member.guild.id)) : new Map();
-
-        // Fetch new invites immediately to get latest uses
         let newInvitesMap = new Collection();
         if (member.guild.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             try {
@@ -609,22 +643,16 @@ client.once('ready', async () => {
                 console.warn(`Failed to update invite cache for guild ${member.guild.name} on member join:`, error);
             }
         }
-        // Pass newInvitesMap and oldInvitesMap to handler
         await joinLeaveLogHandler.handleGuildMemberAdd(member, getGuildConfig, oldInvitesMap, newInvitesMap, karmaSystem.sendKarmaAnnouncement, karmaSystem.addKarmaPoints, client.db, client.appId, client);
-
-        // Update client.invites cache AFTER the handler has used the old state
         if (member.guild.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            client.invites.set(member.guild.id, newInvitesMap); // Store the latest uses map
+            client.invites.set(member.guild.id, newInvitesMap);
         }
         
-        // --- New Member Greeting and +1 Karma ---
         const guildConfig = await getGuildConfig(member.guild.id);
         if (guildConfig.karmaChannelId) {
             try {
-                // Give +1 Karma to the new member
                 const newKarma = await karmaSystem.addKarmaPoints(member.guild.id, member.user, 1, client.db, client.appId);
-                // Send a joyful greeting message to the Karma Channel
-                await karmaSystem.sendKarmaAnnouncement(member.guild, member.user.id, 1, newKarma, getGuildConfig, client, true); // true for isNewMember
+                await karmaSystem.sendKarmaAnnouncement(member.guild, member.user.id, 1, newKarma, getGuildConfig, client, true);
             } catch (error) {
                 console.error(`Error greeting new member ${member.user.tag} or giving initial karma:`, error);
             }
@@ -645,9 +673,7 @@ client.once('ready', async () => {
     client.on('channelUpdate', async (oldChannel, newChannel) => {
         await adminLogHandler.handleChannelUpdate(oldChannel, newChannel, getGuildConfig);
     });
-    client.on('channelPinsUpdate', async (channel, time) => {
-        // console.log(`Pins updated in channel ${channel.name} at ${time}`);
-    });
+    client.on('channelPinsUpdate', async (channel, time) => {});
     client.on('roleCreate', async role => {
         await adminLogHandler.handleRoleCreate(role, getGuildConfig);
     });
@@ -681,7 +707,7 @@ client.once('ready', async () => {
         if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             try {
                 const newInvites = await invite.guild.invites.fetch();
-                client.invites.set(guild.id, new Map(newInvites.map(i => [i.code, i.uses]))); // Store uses count
+                client.invites.set(guild.id, new Map(newInvites.map(i => [i.code, i.uses])));
             } catch (error) {
                 console.warn(`Failed to update invite cache for guild ${invite.guild.name} after invite create:`, error);
             }
@@ -697,172 +723,21 @@ client.once('ready', async () => {
 
     // Event: Message reaction added (for emoji moderation and karma system reactions)
     client.on('messageReactionAdd', async (reaction, user) => {
-        // FIX #2 START: Add checks for partial messages and null properties
-        // Fetch the message if it's a partial to ensure all properties are available
         if (reaction.partial) {
             try {
                 await reaction.fetch();
             } catch (error) {
                 console.error('Failed to fetch partial reaction message:', error);
-                return; // Exit if the message can't be fetched
+                return;
             }
         }
-
-        // Now, safely check for null properties on the fetched message
         if (!reaction.message || !reaction.message.guild || !reaction.message.author) {
             console.warn('Skipping reaction processing: Message, guild, or author is null/undefined.');
             return;
         }
-        // FIX #2 END
 
-        if (!client.db || !client.appId || !client.googleApiKey) {
+        if (!client.db || !client.appId) {
             console.warn('Skipping reaction processing: Firebase or API keys not fully initialized yet.');
             reaction.users.remove(user.id).catch(e => console.error('Failed to remove reaction for uninitialized bot:', e));
             return;
-        }
-        
-        // Handle Karma reactions first
-        if (['👍', '👎'].includes(reaction.emoji.name)) {
-            const reactorMember = await reaction.message.guild.members.fetch(user.id).catch(() => null);
-            const guildConfig = await getGuildConfig(reaction.message.guild.id);
-            
-            // The targetUser variable is now safe to access after the checks above
-            const targetUser = reaction.message.author; 
-            let karmaChange = 0;
-            let actionText = '';
-
-            if (reaction.emoji.name === '👍') {
-                karmaChange = 1;
-                actionText = '+1 Karma';
-            } else { // 👎
-                karmaChange = -1;
-                actionText = '-1 Karma';
-            }
-
-            // Only process karma reactions from moderators or admins
-            if (reactorMember && hasPermission(reactorMember, guildConfig)) {
-                try {
-                    const newKarma = await karmaSystem.addKarmaPoints(reaction.message.guild.id, targetUser, karmaChange, client.db, client.appId);
-                    await karmaSystem.sendKarmaAnnouncement(reaction.message.guild, targetUser.id, karmaChange, newKarma, getGuildConfig, client); // Send announcement
-                } catch (error) {
-                    console.error(`Error adjusting karma for ${targetUser.tag} via emoji:`, error);
-                    reaction.message.channel.send(`Failed to adjust Karma for <@${targetUser.id}>. An error occurred.`).catch(console.error);
-                } finally {
-                    // Always remove the reaction after processing
-                    reaction.users.remove(user.id).catch(e => console.error(`Failed to remove karma emoji reaction:`, e));
-                }
-                return; // Stop processing this reaction, it's handled
-            }
-        }
-
-        // Delegate to the external moderation/karma reaction handler if not a karma emoji
-        await handleMessageReactionAdd(
-            reaction, user, client, getGuildConfig, saveGuildConfig, hasPermission, isExempt, logging.logModerationAction, logging.logMessage, karmaSystem
-        );
-    });
-
-    // Event: Interaction created (for slash commands and buttons)
-    client.on('interactionCreate', async interaction => {
-        if (!client.db || !client.appId) {
-            console.warn('Skipping interaction processing: Firebase or API keys not fully initialized yet.');
-            if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ content: 'Bot is still starting up, please try again in a moment.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
-            } else {
-                await interaction.reply({ content: 'Bot is still starting up, please try again in a moment.', ephemeral: true }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
-            }
-            return;
-        }
-
-        try {
-            // Determine if the reply should be ephemeral based on command
-            let ephemeral = true; // Default to ephemeral
-            if (interaction.isCommand() && interaction.commandName === 'leaderboard') {
-                ephemeral = false; // Make leaderboard public
-            }
-            
-            // Defer reply immediately, but handle potential failure
-            let deferred = false;
-            try {
-                await interaction.deferReply({ ephemeral: ephemeral }); // Use the determined ephemeral value
-                deferred = true;
-            } catch (deferError) {
-                if (deferError.code === 10062) { // Unknown interaction
-                    console.warn(`Interaction ${interaction.id} already expired or unknown when deferring. Skipping.`);
-                    return; // Stop processing this interaction
-                }
-                console.error(`Error deferring reply for interaction ${interaction.id}:`, deferError);
-            }
-
-            if (interaction.isCommand()) {
-                const { commandName } = interaction;
-                const command = client.commands.get(commandName);
-
-                if (!command) {
-                    if (deferred) {
-                        return interaction.editReply({ content: 'No command matching that name was found.' });
-                    } else {
-                        return interaction.reply({ content: 'No command matching that name was found.', ephemeral: true });
-                    }
-                }
-
-                const guildConfig = await getGuildConfig(interaction.guildId);
-
-                // Check permissions for karma commands
-                if (['karma_plus', 'karma_minus', 'karma_set'].includes(commandName)) {
-                    if (!hasPermission(interaction.member, guildConfig)) {
-                        if (deferred) {
-                            return interaction.editReply({ content: 'You do not have permission to use this karma command.' });
-                        } else {
-                            return interaction.reply({ content: 'You do not have permission to use this karma command.', ephemeral: true });
-                        }
-                    }
-                } else { // For other moderation commands
-                    if (!hasPermission(interaction.member, guildConfig)) {
-                        if (deferred) {
-                            return interaction.editReply({ content: 'You do not have permission to use this command.' });
-                        } else {
-                            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
-                        }
-                    }
-                }
-
-                await command.execute(interaction, {
-                    getGuildConfig: getGuildConfig,
-                    saveGuildConfig: saveGuildConfig,
-                    hasPermission,
-                    isExempt, // isExempt is still passed, but individual karma commands will ignore it for target
-                    logModerationAction: logging.logModerationAction,
-                    logMessage: logging.logMessage,
-                    MessageFlags,
-                    db: client.db,
-                    appId: client.appId,
-                    getOrCreateUserKarma: karmaSystem.getOrCreateUserKarma,
-                    updateUserKarmaData: karmaSystem.updateUserKarmaData,
-                    calculateAndAwardKarma: karmaSystem.calculateAndAwardKarma,
-                    analyzeSentiment: karmaSystem.analyzeSentiment,
-                    addKarmaPoints: karmaSystem.addKarmaPoints, // Passed new karma functions
-                    subtractKarmaPoints: karmaSystem.subtractKarmaPoints, // Passed new karma functions
-                    setKarmaPoints: karmaSystem.setKarmaPoints, // Passed new karma functions
-                    client
-                });
-            } else if (interaction.isButton()) {
-                // For buttons, deferUpdate is usually sufficient and handled above.
-                // No specific button logic here for now.
-            }
-        } catch (error) {
-            console.error('Error during interaction processing:', error);
-            if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
-            } else {
-                await interaction.reply({ content: 'An unexpected error occurred while processing your command.', ephemeral: true }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
-            }
-        }
-    });
-    // End of event listener registrations
-});
-
-// Log in to Discord with the client's token
-client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
-    console.error("Discord login failed:", err);
-    // Do not exit here, let the process continue for the web server
-});
+      
