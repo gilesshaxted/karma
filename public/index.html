@@ -4,133 +4,369 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Karma Bot Dashboard</title>
-    <link rel="stylesheet" href="/style.css">
+    <!-- Google Fonts: Poppins for headings, Inter for body text -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --primary-blue: #1C315E; /* Dark blue from logo */
+            --secondary-blue: #3E64A5; /* Lighter blue from logo */
+            --accent-gold: #FFC107; /* Gold from logo */
+            --text-light: #f3f4f6;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--primary-blue);
+            color: var(--text-light);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 2rem 1rem;
+        }
+
+        h1, h2, h3 {
+            font-family: 'Poppins', sans-serif;
+        }
+
+        .dashboard-container {
+            background-color: var(--secondary-blue);
+            border: 2px solid var(--accent-gold);
+        }
+
+        .server-card:hover {
+            transform: translateY(-5px) scale(1.02);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+            background-color: #4c71b3;
+        }
+        
+        /* Custom scrollbar for server list */
+        .server-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .server-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .server-list::-webkit-scrollbar-thumb {
+            background-color: var(--accent-gold);
+            border-radius: 10px;
+            border: 2px solid var(--secondary-blue);
+        }
+    </style>
 </head>
-<body>
-    <div class="container">
-        <h1>Karma Bot Dashboard</h1>
-        <div id="auth-section">
-            <p>Please log in with Discord to manage your bot settings.</p>
-            <button id="login-button">Login with Discord</button>
-        </div>
+<body class="bg-primary-blue text-text-light font-inter">
 
-        <div id="dashboard-section" style="display: none;">
-            <h2>Welcome, <span id="user-display-name"></span>!</h2>
-            <p>Select a guild where Karma bot is present to configure its settings.</p>
+    <div id="app" class="w-full max-w-6xl mx-auto flex flex-col items-center">
+        <!-- Header with Logo and Title -->
+        <header class="text-center mb-10 w-full">
+            <img src="Karmav1.jpg" alt="Karma Bot Logo" class="mx-auto w-32 h-32 rounded-full ring-4 ring-accent-gold mb-4 shadow-lg">
+            <h1 class="text-4xl font-extrabold text-accent-gold tracking-tight">Karma Bot Dashboard</h1>
+            <p class="mt-2 text-lg text-gray-300">Manage your server's moderation and karma settings.</p>
+        </header>
 
-            <div class="guild-selection">
-                <label for="guild-select">Select Guild:</label>
-                <select id="guild-select">
-                    <option value="">Loading guilds...</option>
-                </select>
+        <main id="main-content" class="w-full">
+            <!-- Initial State / Loading / Error -->
+            <div id="initial-state" class="bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container text-center w-full min-h-[300px] flex flex-col justify-center items-center">
+                <div id="loading-spinner" class="hidden">
+                    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-accent-gold"></div>
+                    <p class="mt-4 text-xl">Loading...</p>
+                </div>
+                <div id="error-message" class="hidden text-center text-red-400">
+                    <p class="text-xl font-bold">An error occurred.</p>
+                    <p id="error-text" class="mt-2 text-sm"></p>
+                    <button id="retry-button" class="mt-4 px-6 py-2 bg-accent-gold text-primary-blue rounded-full font-bold shadow-md hover:bg-yellow-400 transition-colors">Retry</button>
+                </div>
+                <div id="login-section">
+                    <h2 class="text-2xl font-bold mb-4">Welcome!</h2>
+                    <p class="mb-6 text-gray-300">Please log in with Discord to manage your servers.</p>
+                    <a href="/api/login" id="login-button" class="inline-block px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Login with Discord</a>
+                </div>
             </div>
 
-            <div id="config-section" style="display: none;">
-                <h3>Guild Configuration for <span id="selected-guild-name"></span></h3>
-                <form id="config-form">
-                    <div class="form-group">
-                        <label for="mod-role-select">Moderator Role:</label>
-                        <select id="mod-role-select" class="role-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>Users with this role can use moderation commands and are exempt from moderation.</small>
-                    </div>
+            <!-- Server Selection View (initially hidden) -->
+            <div id="server-selection-view" class="hidden">
+                <h2 class="text-3xl font-bold text-center mb-6 text-accent-gold">Select a Server</h2>
+                <p class="text-center text-gray-300 mb-8">Click on an icon to manage that server's settings.</p>
+                <div id="server-icons-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 max-h-[60vh] overflow-y-auto server-list pr-2">
+                    <!-- Server icons will be dynamically inserted here -->
+                </div>
+            </div>
 
-                    <div class="form-group">
-                        <label for="admin-role-select">Administrator Role:</label>
-                        <select id="admin-role-select" class="role-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>Users with this role can use moderation commands and are exempt from moderation (in addition to Discord's Administrator permission).</small>
-                    </div>
+            <!-- Dashboard View (initially hidden) -->
+            <div id="dashboard-view" class="hidden bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container w-full">
+                <div class="flex items-center mb-6">
+                    <img id="guild-icon-large" src="" alt="Server Icon" class="w-16 h-16 rounded-full ring-2 ring-accent-gold mr-4">
+                    <h2 id="guild-name-display" class="text-3xl font-bold text-accent-gold"></h2>
+                    <button id="back-to-servers" class="ml-auto flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-full shadow-md hover:bg-gray-700 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                        <span>Back</span>
+                    </button>
+                </div>
+                
+                <h3 class="text-2xl font-bold text-gray-200 mb-4 border-b-2 border-accent-gold pb-2">Configuration Settings</h3>
 
-                    <div class="form-group">
-                        <label for="mod-log-channel-select">Moderation Log Channel:</label>
-                        <select id="mod-log-channel-select" class="channel-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>All moderation actions will be logged here.</small>
+                <form id="config-form" class="space-y-6">
+                    <!-- Dynamic form fields will be inserted here -->
+                    
+                    <div class="flex justify-end pt-4 border-t border-gray-600 mt-6">
+                        <button type="submit" class="px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Save Settings</button>
                     </div>
-
-                    <div class="form-group">
-                        <label for="message-log-channel-select">Message Log Channel:</label>
-                        <select id="message-log-channel-select" class="channel-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>Deleted and edited messages will be copied here.</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="mod-alert-channel-select">Auto-Moderation Alert Channel:</label>
-                        <select id="mod-alert-channel-select" class="channel-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>Auto-moderation flags and manual flags will be sent here.</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="mod-ping-role-select">Moderator Ping Role:</label>
-                        <select id="mod-ping-role-select" class="role-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>This role will be pinged in the auto-moderation alert channel.</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="member-log-channel-select">Member Log Channel:</label>
-                        <select id="member-log-channel-select" class="channel-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>Logs member profile and role changes.</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="admin-log-channel-select">Admin Log Channel:</label>
-                        <select id="admin-log-channel-select" class="channel-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>Logs server-wide administrative changes (channels, roles, emojis, events).</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="join-leave-log-channel-select">Join/Leave Log Channel:</label>
-                        <select id="join-leave-log-channel-select" class="channel-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>Logs when members join or leave the guild.</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="boost-log-channel-select">Boost Notify Channel:</label>
-                        <select id="boost-log-channel-select" class="channel-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>Announces server boosts.</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="karma-channel-select">Karma Channel:</label>
-                        <select id="karma-channel-select" class="channel-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>Channel for karma announcements and new member greetings.</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="counting-channel-select">Counting Channel:</label>
-                        <select id="counting-channel-select" class="channel-select">
-                            <option value="">None</option>
-                        </select>
-                        <small>The channel for the counting game.</small>
-                    </div>
-
-                    <button type="submit" id="save-config-button">Save Configuration</button>
-                    <p id="save-status" class="status-message"></p>
                 </form>
             </div>
-        </div>
+        </main>
     </div>
 
-    <script src="/script.js"></script>
+    <!-- JavaScript for dynamic functionality -->
+    <script>
+        // Use provided environment variables
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
+
+        // UI Elements
+        const initialState = document.getElementById('initial-state');
+        const loginSection = document.getElementById('login-section');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const errorSection = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        const retryButton = document.getElementById('retry-button');
+        const serverSelectionView = document.getElementById('server-selection-view');
+        const serverIconsGrid = document.getElementById('server-icons-grid');
+        const dashboardView = document.getElementById('dashboard-view');
+        const backToServersButton = document.getElementById('back-to-servers');
+        const guildNameDisplay = document.getElementById('guild-name-display');
+        const guildIconLarge = document.getElementById('guild-icon-large');
+        const configForm = document.getElementById('config-form');
+
+        let discordAccessToken = null;
+        let selectedGuildId = null;
+
+        // Function to show/hide sections
+        function showSection(section) {
+            initialState.classList.add('hidden');
+            serverSelectionView.classList.add('hidden');
+            dashboardView.classList.add('hidden');
+            section.classList.remove('hidden');
+        }
+
+        // Function to show the loading spinner
+        function showLoading(message = 'Loading...') {
+            loginSection.classList.add('hidden');
+            errorSection.classList.add('hidden');
+            loadingSpinner.classList.remove('hidden');
+            loadingSpinner.querySelector('p').textContent = message;
+            showSection(initialState);
+        }
+
+        // Function to show an error message
+        function showErrorMessage(message) {
+            loadingSpinner.classList.add('hidden');
+            loginSection.classList.add('hidden');
+            errorSection.classList.remove('hidden');
+            errorText.textContent = message;
+            showSection(initialState);
+        }
+
+        // Function to handle the OAuth redirect and get a token
+        async function handleOAuthCallback() {
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('code');
+            
+            if (code) {
+                showLoading('Logging in...');
+                try {
+                    const response = await fetch('/api/token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ code })
+                    });
+                    const data = await response.json();
+                    if (data.access_token) {
+                        discordAccessToken = data.access_token;
+                        // Clear the URL to hide the code
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        fetchGuilds();
+                    } else {
+                        showErrorMessage('Failed to get Discord access token.');
+                    }
+                } catch (error) {
+                    console.error('OAuth callback error:', error);
+                    showErrorMessage('An error occurred during Discord login.');
+                }
+            } else if (!discordAccessToken) {
+                // If there's no code and no token, show the login button
+                showSection(initialState);
+            }
+        }
+
+        // Function to fetch the user's guilds
+        async function fetchGuilds() {
+            showLoading('Fetching your servers...');
+            try {
+                const response = await fetch('/api/guilds', {
+                    headers: { 'Authorization': `Bearer ${discordAccessToken}` }
+                });
+                const guilds = await response.json();
+
+                if (response.ok) {
+                    renderServerSelection(guilds);
+                } else {
+                    showErrorMessage(guilds.message || 'Failed to fetch servers.');
+                }
+            } catch (error) {
+                console.error('Error fetching guilds:', error);
+                showErrorMessage('Failed to connect to the bot backend. Please try again.');
+            }
+        }
+
+        // Function to render the server selection grid
+        function renderServerSelection(guilds) {
+            serverIconsGrid.innerHTML = '';
+            if (guilds.length === 0) {
+                serverIconsGrid.innerHTML = `<p class="col-span-full text-center text-gray-300">The bot is not in any servers where you have administrator permissions. Please invite it to a server.</p>`;
+            } else {
+                guilds.forEach(guild => {
+                    const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=144` : `https://placehold.co/144x144/1C315E/FFC107?text=${guild.name.charAt(0)}`;
+                    const serverCard = document.createElement('div');
+                    serverCard.className = 'server-card flex flex-col items-center p-4 rounded-xl cursor-pointer transition-all duration-300 transform bg-secondary-blue shadow-lg border-2 border-transparent hover:border-accent-gold';
+                    serverCard.innerHTML = `
+                        <img src="${iconUrl}" alt="${guild.name} icon" class="w-36 h-36 rounded-full object-cover">
+                        <p class="mt-3 text-lg font-bold text-gray-100 text-center truncate w-full px-1">${guild.name}</p>
+                    `;
+                    serverCard.addEventListener('click', () => fetchGuildConfig(guild.id, guild.name, iconUrl));
+                    serverIconsGrid.appendChild(serverCard);
+                });
+            }
+            showSection(serverSelectionView);
+        }
+
+        // Function to fetch a specific guild's configuration
+        async function fetchGuildConfig(guildId, guildName, iconUrl) {
+            showLoading(`Loading settings for ${guildName}...`);
+            selectedGuildId = guildId;
+
+            try {
+                const response = await fetch(`/api/guild-config?guildId=${guildId}`, {
+                    headers: { 'Authorization': `Bearer ${discordAccessToken}` }
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    renderDashboard(data.guildData, data.currentConfig, iconUrl);
+                } else {
+                    showErrorMessage(data.message || 'Failed to load server configuration.');
+                }
+            } catch (error) {
+                console.error('Error fetching guild config:', error);
+                showErrorMessage('An error occurred while fetching server configuration.');
+            }
+        }
+
+        // Function to render the dashboard view
+        function renderDashboard(guildData, currentConfig, iconUrl) {
+            guildNameDisplay.textContent = guildData.name;
+            guildIconLarge.src = iconUrl;
+            guildIconLarge.alt = `${guildData.name} icon`;
+
+            const configFieldsHtml = `
+                <div class="space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="modRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Role</label>
+                        <select id="modRoleId" name="modRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a role...</option>
+                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="adminRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Admin Role</label>
+                        <select id="adminRoleId" name="adminRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a role...</option>
+                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.adminRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="karmaChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Karma Channel</label>
+                        <select id="karmaChannelId" name="karmaChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.karmaChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="modAlertChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Alerts Channel</label>
+                        <select id="modAlertChannelId" name="modAlertChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.modAlertChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+            `;
+            configForm.innerHTML = configFieldsHtml;
+            showSection(dashboardView);
+        }
+
+        // Handle saving the form
+        configForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formElements = e.target.elements;
+            const newConfig = {
+                modRoleId: formElements.modRoleId.value || null,
+                adminRoleId: formElements.adminRoleId.value || null,
+                karmaChannelId: formElements.karmaChannelId.value || null,
+                modAlertChannelId: formElements.modAlertChannelId.value || null
+            };
+
+            showLoading('Saving settings...');
+
+            try {
+                const response = await fetch(`/api/save-config?guildId=${selectedGuildId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${discordAccessToken}`
+                    },
+                    body: JSON.stringify(newConfig)
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    showSection(dashboardView);
+                    // Provide visual feedback for success
+                    const successMessage = document.createElement('div');
+                    successMessage.className = 'absolute top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-full shadow-lg transition-all duration-300';
+                    successMessage.textContent = 'Settings saved successfully!';
+                    document.body.appendChild(successMessage);
+                    setTimeout(() => successMessage.remove(), 3000);
+                } else {
+                    showErrorMessage(data.message || 'Failed to save configuration.');
+                }
+            } catch (error) {
+                console.error('Error saving config:', error);
+                showErrorMessage('An error occurred while saving the configuration.');
+            }
+        });
+
+        // Event listeners
+        backToServersButton.addEventListener('click', fetchGuilds);
+        retryButton.addEventListener('click', handleOAuthCallback);
+
+        // Check if we are on the callback URL and handle authentication
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.location.pathname === '/callback') {
+                handleOAuthCallback();
+            } else {
+                showSection(initialState);
+            }
+        });
+
+    </script>
 </body>
 </html>
