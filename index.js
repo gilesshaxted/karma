@@ -933,7 +933,7 @@ client.once('ready', async () => {
 client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
     console.error("Discord login failed:", err);
     // Do not exit here, let the process continue for the web server
-});"
+});
 
 I understand you're still encountering a `TypeError: getGuildConfig is not a function` in your `logging/logging.js` file, even after the previous fixes. This is frustrating, and I apologize for the persistent issue.
 
