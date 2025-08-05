@@ -171,7 +171,7 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
     // --- Apply Moderation Action if a rule was triggered ---
     if (reason) {
         try {
-            await message.delete();
+            await message.delete().catch(err => console.error(`Failed to delete message from ${message.author.tag}:`, err));
             
             // Get or create user moderation data in Firestore
             const modRef = client.db.collection(`artifacts/${client.appId}/public/data/guilds/${message.guild.id}/mod_data`).doc(message.author.id);
@@ -186,43 +186,66 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
             const recentWarnings = modData.warnings.filter(w => warningTimestamp - w.timestamp < 3600000); // 1 hour
             if (recentWarnings.length >= 3) {
                 // Time out the user for 6 hours
-                const timeoutUntil = new Date(Date.now() + 6 * 3600000); // 6 hours
-                await member.timeout(6 * 3600000, `Automoderation: 3 warnings in 1 hour.`);
-                modData.timeouts.push({ timestamp: warningTimestamp, duration: '6 hours' });
-                logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 6 hours for 3 warnings in 1 hour.`, reason);
-                modData.warnings = []; // Clear warnings after timeout
+                const timeoutDuration = 6 * 3600000; // 6 hours
+                try {
+                    await member.timeout(timeoutDuration, `Automoderation: 3 warnings in 1 hour.`).catch(err => {
+                        console.error(`Failed to timeout member ${member.user.tag}:`, err);
+                        // Attempt to send a message to the channel if timeout fails
+                        message.channel.send(`Failed to timeout <@${member.user.id}>. Please check bot permissions.`).catch(console.error);
+                    });
+                    modData.timeouts.push({ timestamp: warningTimestamp, duration: '6 hours' });
+                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 6 hours for 3 warnings in 1 hour.`, reason);
+                    modData.warnings = []; // Clear warnings after timeout
+                    // Notify user about timeout
+                    await message.author.send(`You have been timed out in **${message.guild.name}** for 6 hours due to repeated rule violations. Reason: ${reason}`).catch(console.error);
+
+                } catch (timeoutError) {
+                    console.error(`Error during member timeout for ${member.user.tag}:`, timeoutError);
+                }
             } else {
+                // Log individual warning
                 logModerationAction('Warning', message.guild, message.author, client.user, reason);
+                // Notify user about warning
+                await message.author.send(`You received a warning in **${message.guild.name}**. Reason: ${reason}`).catch(console.error);
             }
 
             // Check for 5 timeouts in the last month
             const recentTimeouts = modData.timeouts.filter(t => warningTimestamp - t.timestamp < 2592000000); // 1 month
             if (recentTimeouts.length >= 5) {
                 // Time out for 7 days and alert mods
-                const timeoutUntil = new Date(Date.now() + 7 * 24 * 3600000); // 7 days
-                await member.timeout(7 * 24 * 3600000, `Automoderation: 5 timeouts in 1 month.`);
-                logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason);
-                modData.timeouts = []; // Clear timeouts after 7-day penalty
-                
-                // Send alert to mod channel
-                if (guildConfig.modAlertChannelId) {
-                    const modAlertChannel = message.guild.channels.cache.get(guildConfig.modAlertChannelId);
-                    if (modAlertChannel) {
-                           const alertEmbed = new EmbedBuilder()
-                            .setColor('#FF0000')
-                            .setTitle('Severe Moderation Alert')
-                            .setDescription(`User ${message.author.tag} (<@${message.author.id}>) has been timed out for 7 days after receiving 5 timeouts in one month.`)
-                            .setTimestamp();
-                        modAlertChannel.send({ embeds: [alertEmbed] });
+                const severeTimeoutDuration = 7 * 24 * 3600000; // 7 days
+                try {
+                    await member.timeout(severeTimeoutDuration, `Automoderation: 5 timeouts in 1 month.`).catch(err => {
+                        console.error(`Failed to apply severe timeout to member ${member.user.tag}:`, err);
+                        message.channel.send(`Failed to apply severe timeout to <@${member.user.id}>. Please check bot permissions.`).catch(console.error);
+                    });
+                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason);
+                    modData.timeouts = []; // Clear timeouts after 7-day penalty
+                    // Notify user about severe timeout
+                    await message.author.send(`You have been timed out in **${message.guild.name}** for 7 days due to severe repeated rule violations. Reason: ${reason}`).catch(console.error);
+                    
+                    // Send alert to mod channel
+                    if (guildConfig.modAlertChannelId) {
+                        const modAlertChannel = message.guild.channels.cache.get(guildConfig.modAlertChannelId);
+                        if (modAlertChannel) {
+                               const alertEmbed = new EmbedBuilder()
+                                .setColor('#FF0000')
+                                .setTitle('Severe Moderation Alert')
+                                .setDescription(`User ${message.author.tag} (<@${message.author.id}>) has been timed out for 7 days after receiving 5 timeouts in one month.`)
+                                .setTimestamp();
+                            modAlertChannel.send({ embeds: [alertEmbed] }).catch(console.error);
+                        }
                     }
+                } catch (severeTimeoutError) {
+                    console.error(`Error during severe member timeout for ${member.user.tag}:`, severeTimeoutError);
                 }
             }
 
             // Save updated moderation data to Firestore
-            await modRef.set(modData, { merge: true });
+            await modRef.set(modData, { merge: true }).catch(err => console.error(`Failed to save moderation data for ${message.author.tag} to Firestore:`, err));
 
         } catch (error) {
-            console.error(`Failed to moderate message from ${message.author.tag}:`, error);
+            console.error(`Failed to process automoderation for message from ${message.author.tag}:`, error);
         }
     }
 };
