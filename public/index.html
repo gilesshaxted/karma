@@ -233,7 +233,7 @@
                 serverIconsGrid.innerHTML = `<p class="col-span-full text-center text-gray-300">The bot is not in any servers where you have administrator permissions. Please invite it to a server.</p>`;
             } else {
                 guilds.forEach(guild => {
-                    const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=144` : `https://placehold.co/144x144/1C315E/FFC107?text=${guild.name.charAt(0)}`;
+                    const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png` : `https://placehold.co/144x144/1C315E/FFC107?text=${guild.name.charAt(0)}`;
                     const serverCard = document.createElement('div');
                     serverCard.className = 'server-card flex flex-col items-center p-4 rounded-xl cursor-pointer transition-all duration-300 transform bg-secondary-blue shadow-lg border-2 border-transparent hover:border-accent-gold';
                     serverCard.innerHTML = `
@@ -277,6 +277,7 @@
 
             const configFieldsHtml = `
                 <div class="space-y-4">
+                    <h4 class="text-xl font-bold text-gray-300 pt-4 pb-2 border-b border-gray-600">Roles</h4>
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="modRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Role</label>
                         <select id="modRoleId" name="modRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -294,10 +295,77 @@
                     </div>
 
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="modPingRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Ping Role</label>
+                        <select id="modPingRoleId" name="modPingRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a role...</option>
+                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modPingRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="space-y-4 pt-6 mt-6 border-t border-gray-600">
+                    <h4 class="text-xl font-bold text-gray-300 pt-4 pb-2 border-b border-gray-600">Channels</h4>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="karmaChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Karma Channel</label>
                         <select id="karmaChannelId" name="karmaChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
                             <option value="">Select a channel...</option>
                             ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.karmaChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="countingChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Counting Channel</label>
+                        <select id="countingChannelId" name="countingChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.countingChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="moderationLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Log Channel</label>
+                        <select id="moderationLogChannelId" name="moderationLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.moderationLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="messageLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Message Log Channel</label>
+                        <select id="messageLogChannelId" name="messageLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.messageLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="memberLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Member Log Channel</label>
+                        <select id="memberLogChannelId" name="memberLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.memberLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="adminLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Admin Log Channel</label>
+                        <select id="adminLogChannelId" name="adminLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.adminLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="joinLeaveLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Join/Leave Log Channel</label>
+                        <select id="joinLeaveLogChannelId" name="joinLeaveLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.joinLeaveLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="boostLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Boost Log Channel</label>
+                        <select id="boostLogChannelId" name="boostLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.boostLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
                         </select>
                     </div>
 
@@ -321,7 +389,15 @@
             const newConfig = {
                 modRoleId: formElements.modRoleId.value || null,
                 adminRoleId: formElements.adminRoleId.value || null,
+                modPingRoleId: formElements.modPingRoleId.value || null,
                 karmaChannelId: formElements.karmaChannelId.value || null,
+                countingChannelId: formElements.countingChannelId.value || null,
+                moderationLogChannelId: formElements.moderationLogChannelId.value || null,
+                messageLogChannelId: formElements.messageLogChannelId.value || null,
+                memberLogChannelId: formElements.memberLogChannelId.value || null,
+                adminLogChannelId: formElements.adminLogChannelId.value || null,
+                joinLeaveLogChannelId: formElements.joinLeaveLogChannelId.value || null,
+                boostLogChannelId: formElements.boostLogChannelId.value || null,
                 modAlertChannelId: formElements.modAlertChannelId.value || null
             };
 
