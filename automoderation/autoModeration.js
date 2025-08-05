@@ -162,7 +162,7 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
         if (userCooldown.messages.length > (guildConfig.maxMessages || 5)) {
             reason = `Spamming detected (${userCooldown.messages.length} messages in ${guildConfig.timeframeSeconds || 5}s).`;
             rule = 'Spam Detection';
-            // Reset message counter after a penalty
+            // Reset message counter after a penalty (this is for the in-memory cooldown, not Firestore data)
             userCooldown.messages = [];
         }
 
@@ -179,15 +179,18 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
             const modRef = doc(collection(client.db, `artifacts/${client.appId}/public/data/guilds/${message.guild.id}/mod_data`), message.author.id);
             const modSnap = await getDoc(modRef);
             
-            // FIX: Ensure modData is always an object, even if modSnap.data() is undefined for an existing document
+            // Ensure modData is always an object, even if modSnap.data() is undefined for an existing document
             const modData = modSnap.data() || { warnings: [], timeouts: [] };
 
             // Add new warning
             const warningTimestamp = Date.now();
             modData.warnings.push({ timestamp: warningTimestamp, rule, reason, messageContent: message.content });
+            console.log(`[AUTOMOD DEBUG] ${message.author.tag} warnings count: ${modData.warnings.length}`); // DEBUG
 
             // Check for 3 warnings in the last hour
             const recentWarnings = modData.warnings.filter(w => warningTimestamp - w.timestamp < 3600000); // 1 hour
+            console.log(`[AUTOMOD DEBUG] ${message.author.tag} recent warnings count (last hour): ${recentWarnings.length}`); // DEBUG
+
             if (recentWarnings.length >= 3) {
                 console.log(`[AUTOMOD] ${message.author.tag} reached 3 warnings. Applying 6-hour timeout.`); // Added for debugging
                 // Time out the user for 6 hours
@@ -198,11 +201,13 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                         // Attempt to send a message to the channel if timeout fails
                         message.channel.send(`Failed to timeout <@${member.user.id}>. Please check bot permissions.`).catch(console.error);
                     });
-                    // FIX: Pass getGuildConfig to logModerationAction
-                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 6 hours for 3 warnings in 1 hour.`, reason, getGuildConfig);
-                    modData.warnings = []; // Clear warnings after timeout
+                    modData.timeouts.push({ timestamp: warningTimestamp, duration: '6 hours' });
+                    // NO FIX: Do NOT clear modData.warnings here. Let the filter handle it.
+                    // modData.warnings = []; // REMOVE THIS LINE
                     // Notify user about timeout
                     await message.author.send(`You have been timed out in **${message.guild.name}** for 6 hours due to repeated rule violations. Reason: ${reason}`).catch(console.error);
+                    // Log the timeout action
+                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 6 hours for 3 warnings in 1 hour.`, reason, getGuildConfig, saveGuildConfig);
 
                 } catch (timeoutError) {
                     console.error(`[AUTOMOD ERROR] Error during member timeout for ${member.user.tag}:`, timeoutError);
@@ -210,14 +215,16 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
             } else {
                 console.log(`[AUTOMOD] ${message.author.tag} received a warning.`); // Added for debugging
                 // Log individual warning
-                // FIX: Pass getGuildConfig to logModerationAction
-                logModerationAction('Warning', message.guild, message.author, client.user, reason, getGuildConfig);
+                logModerationAction('Warning', message.guild, message.author, client.user, reason, getGuildConfig, saveGuildConfig);
                 // Notify user about warning
-                await message.author.send(`You received a warning in **${message.guild.name}**. Reason: ${reason}`).catch(console.console.error);
+                await message.author.send(`You received a warning in **${message.guild.name}**. Reason: ${reason}`).catch(console.error);
             }
 
             // Check for 5 timeouts in the last month
             const recentTimeouts = modData.timeouts.filter(t => warningTimestamp - t.timestamp < 2592000000); // 1 month
+            console.log(`[AUTOMOD DEBUG] ${message.author.tag} timeouts count: ${modData.timeouts.length}`); // DEBUG
+            console.log(`[AUTOMOD DEBUG] ${message.author.tag} recent timeouts count (last month): ${recentTimeouts.length}`); // DEBUG
+
             if (recentTimeouts.length >= 5) {
                 console.log(`[AUTOMOD] ${message.author.tag} reached 5 timeouts. Applying 7-day severe timeout.`); // Added for debugging
                 // Time out for 7 days and alert mods
@@ -227,11 +234,12 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                         console.error(`[AUTOMOD ERROR] Failed to apply severe timeout to member ${member.user.tag}:`, err);
                         message.channel.send(`Failed to apply severe timeout to <@${member.user.id}>. Please check bot permissions.`).catch(console.error);
                     });
-                    // FIX: Pass getGuildConfig to logModerationAction
-                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason, getGuildConfig);
-                    modData.timeouts = []; // Clear timeouts after 7-day penalty
+                    // NO FIX: Do NOT clear modData.timeouts here. Let the filter handle it.
+                    // modData.timeouts = []; // REMOVE THIS LINE
                     // Notify user about severe timeout
                     await message.author.send(`You have been timed out in **${message.guild.name}** for 7 days due to severe repeated rule violations. Reason: ${reason}`).catch(console.error);
+                    // Log the severe timeout action
+                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason, getGuildConfig, saveGuildConfig);
                     
                     // Send alert to mod channel
                     if (guildConfig.modAlertChannelId) {
