@@ -109,6 +109,7 @@ const getGuildConfig = async (guildId) => {
             lastCountMessageId: null,  // New: Counting game last correct message ID
             spamChannelId: null,      // NEW: Spam channel ID
             spamKeywords: null,       // NEW: Spam keywords
+            spamEmojis: null,         // NEW: Spam emojis
             caseNumber: 0
         };
         await setDoc(configRef, defaultConfig);
@@ -333,6 +334,15 @@ app.get('/api/guild-config', verifyDiscordToken, checkBotReadiness, async (req, 
         const channels = guild.channels.cache
             .filter(channel => channel.isTextBased())
             .map(channel => ({ id: channel.id, name: channel.name, type: channel.type }));
+        
+        // NEW: Fetch all custom emojis for the guild
+        const emojis = guild.emojis.cache.map(emoji => ({
+            id: emoji.id,
+            name: emoji.name,
+            url: emoji.url,
+            animated: emoji.animated,
+            identifier: `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`
+        }));
 
         const currentConfig = await getGuildConfig(guildId);
 
@@ -341,7 +351,8 @@ app.get('/api/guild-config', verifyDiscordToken, checkBotReadiness, async (req, 
                 id: guild.id,
                 name: guild.name,
                 roles: roles,
-                channels: channels
+                channels: channels,
+                emojis: emojis // NEW: Include emojis in the response
             },
             currentConfig: currentConfig
         });
@@ -387,6 +398,7 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
         if (newConfig.modAlertChannelId) validConfig.modAlertChannelId = newConfig.modAlertChannelId;
         if (newConfig.spamChannelId) validConfig.spamChannelId = newConfig.spamChannelId; // NEW: Save spam channel ID
         if (newConfig.spamKeywords) validConfig.spamKeywords = newConfig.spamKeywords; // NEW: Save spam keywords
+        if (newConfig.spamEmojis) validConfig.spamEmojis = newConfig.spamEmojis; // NEW: Save spam emojis
 
         await saveGuildConfig(guildId, validConfig);
         res.json({ message: 'Configuration saved successfully!' });
@@ -517,7 +529,7 @@ client.once('ready', async () => {
             // --- Spam Fun Game Check ---
             const guildConfig = await getGuildConfig(guild.id); // Use the global getGuildConfig
             if (spamGame.shouldHandle(message, guildConfig)) {
-                await spamGame.handleMessage(message, client.tenorApiKey, guildConfig.spamKeywords); // Pass keywords to the handler
+                await spamGame.handleMessage(message, client.tenorApiKey, guildConfig.spamKeywords, guildConfig.spamEmojis); // Pass keywords and emojis
                 return; // Stop further processing
             }
 
