@@ -92,11 +92,6 @@
             opacity: 0.8;
             transform: scale(0.95);
         }
-        .emoji-grid-section {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(2.5rem, 1fr));
-            gap: 0.5rem;
-        }
     </style>
 </head>
 <body class="bg-primary-blue text-text-light font-inter">
@@ -185,7 +180,7 @@
         // Use provided environment variables
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? initialAuthToken : '';
 
         // UI Elements
         const initialState = document.getElementById('initial-state');
@@ -389,6 +384,7 @@
 
             const rolesHtml = `
                 <div class="space-y-4">
+                    <h4 class="text-xl font-bold text-gray-300 pt-4 pb-2 border-b border-gray-600">Moderation Roles</h4>
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="modRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Role</label>
                         <select id="modRoleId" name="modRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
@@ -409,6 +405,87 @@
                             <option value="">Select a role...</option>
                             ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modPingRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
                         </select>
+                    </div>
+
+                    <h4 class="text-xl font-bold text-gray-300 pt-6 pb-2 border-b border-gray-600">Automoderation Rules</h4>
+                    <div class="space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                            <label for="moderationLevel" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Level</label>
+                            <select id="moderationLevel" name="moderationLevel" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                                <option value="none" ${currentConfig.moderationLevel === 'none' ? 'selected' : ''}>None</option>
+                                <option value="low" ${currentConfig.moderationLevel === 'low' ? 'selected' : ''}>Low</option>
+                                <option value="medium" ${currentConfig.moderationLevel === 'medium' ? 'selected' : ''}>Medium</option>
+                                <option value="high" ${currentConfig.moderationLevel === 'high' ? 'selected' : ''}>High</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                            <label for="blacklistedWords" class="w-full sm:w-1/3 text-lg font-semibold">Blacklisted Words (comma-separated)</label>
+                            <input id="blacklistedWords" name="blacklistedWords" type="text" placeholder="e.g., badword, anotherbad" value="${currentConfig.blacklistedWords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                            <label for="whitelistedWords" class="w-full sm:w-1/3 text-lg font-semibold">Whitelisted Words (comma-separated)</label>
+                            <input id="whitelistedWords" name="whitelistedWords" type="text" placeholder="e.g., goodword, safephrase" value="${currentConfig.whitelistedWords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="repeatedTextEnabled" name="repeatedTextEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.repeatedTextEnabled ? 'checked' : ''}>
+                            <label for="repeatedTextEnabled" class="text-lg font-semibold">Enable Repeated Text Detection</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="externalLinksEnabled" name="externalLinksEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.externalLinksEnabled ? 'checked' : ''}>
+                            <label for="externalLinksEnabled" class="text-lg font-semibold">Enable External Links Detection</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="discordInviteLinksEnabled" name="discordInviteLinksEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.discordInviteLinksEnabled ? 'checked' : ''}>
+                            <label for="discordInviteLinksEnabled" class="text-lg font-semibold">Enable Discord Invite Links Detection</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="excessiveEmojiEnabled" name="excessiveEmojiEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveEmojiEnabled ? 'checked' : ''}>
+                            <label for="excessiveEmojiEnabled" class="text-lg font-semibold">Enable Excessive Emoji Detection</label>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+                            <label for="excessiveEmojiCount" class="w-full sm:w-1/3 text-lg font-semibold">Max Emojis Allowed</label>
+                            <input id="excessiveEmojiCount" name="excessiveEmojiCount" type="number" min="1" value="${currentConfig.excessiveEmojiCount || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="excessiveMentionsEnabled" name="excessiveMentionsEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveMentionsEnabled ? 'checked' : ''}>
+                            <label for="excessiveMentionsEnabled" class="text-lg font-semibold">Enable Excessive Mentions Detection</label>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+                            <label for="excessiveMentionsCount" class="w-full sm:w-1/3 text-lg font-semibold">Max Mentions Allowed</label>
+                            <input id="excessiveMentionsCount" name="excessiveMentionsCount" type="number" min="1" value="${currentConfig.excessiveMentionsCount || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="excessiveCapsEnabled" name="excessiveCapsEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveCapsEnabled ? 'checked' : ''}>
+                            <label for="excessiveCapsEnabled" class="text-lg font-semibold">Enable Excessive Caps Detection</label>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+                            <label for="excessiveCapsPercentage" class="w-full sm:w-1/3 text-lg font-semibold">Max Caps Percentage Allowed</label>
+                            <input id="excessiveCapsPercentage" name="excessiveCapsPercentage" type="number" min="0" max="100" value="${currentConfig.excessiveCapsPercentage || 70}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="spamDetectionEnabled" name="spamDetectionEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.spamDetectionEnabled ? 'checked' : ''}>
+                            <label for="spamDetectionEnabled" class="text-lg font-semibold">Enable Spam Detection (Rapid Messages)</label>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+                            <label for="maxMessages" class="w-full sm:w-1/3 text-lg font-semibold">Max Messages in Timeframe</label>
+                            <input id="maxMessages" name="maxMessages" type="number" min="1" value="${currentConfig.maxMessages || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+                            <label for="timeframeSeconds" class="w-full sm:w-1/3 text-lg font-semibold">Timeframe for Spam (seconds)</label>
+                            <input id="timeframeSeconds" name="timeframeSeconds" type="number" min="1" value="${currentConfig.timeframeSeconds || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                    </div>
+
+                    <h4 class="text-xl font-bold text-gray-300 pt-6 pb-2 border-b border-gray-600">Immunity Settings</h4>
+                    <div class="space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                            <label for="immuneRoles" class="w-full sm:w-1/3 text-lg font-semibold">Immune Roles (comma-separated IDs)</label>
+                            <input id="immuneRoles" name="immuneRoles" type="text" placeholder="e.g., 12345,67890" value="${currentConfig.immuneRoles || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                            <label for="immuneChannels" class="w-full sm:w-1/3 text-lg font-semibold">Immune Channels (comma-separated IDs)</label>
+                            <input id="immuneChannels" name="immuneChannels" type="text" placeholder="e.g., 12345,67890" value="${currentConfig.immuneChannels || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
                     </div>
                 </div>
             `;
@@ -590,7 +667,25 @@
                 modAlertChannelId: formElements.modAlertChannelId.value || null,
                 spamChannelId: formElements.spamChannelId.value || null,
                 spamKeywords: formElements.spamKeywords.value || null,
-                spamEmojis: formElements.spamEmojis.value || null
+                spamEmojis: formElements.spamEmojis.value || null,
+                // Automoderation settings
+                moderationLevel: formElements.moderationLevel.value,
+                blacklistedWords: formElements.blacklistedWords.value,
+                whitelistedWords: formElements.whitelistedWords.value,
+                spamDetectionEnabled: formElements.spamDetectionEnabled.checked,
+                maxMessages: parseInt(formElements.maxMessages.value, 10),
+                timeframeSeconds: parseInt(formElements.timeframeSeconds.value, 10),
+                repeatedTextEnabled: formElements.repeatedTextEnabled.checked,
+                externalLinksEnabled: formElements.externalLinksEnabled.checked,
+                discordInviteLinksEnabled: formElements.discordInviteLinksEnabled.checked,
+                excessiveEmojiEnabled: formElements.excessiveEmojiEnabled.checked,
+                excessiveEmojiCount: parseInt(formElements.excessiveEmojiCount.value, 10),
+                excessiveMentionsEnabled: formElements.excessiveMentionsEnabled.checked,
+                excessiveMentionsCount: parseInt(formElements.excessiveMentionsCount.value, 10),
+                excessiveCapsEnabled: formElements.excessiveCapsEnabled.checked,
+                excessiveCapsPercentage: parseInt(formElements.excessiveCapsPercentage.value, 10),
+                immuneRoles: formElements.immuneRoles.value,
+                immuneChannels: formElements.immuneChannels.value
             };
 
             showLoading('Saving settings...');
