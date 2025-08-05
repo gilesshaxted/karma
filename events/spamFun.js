@@ -27,10 +27,11 @@ const shouldTriggerGame = (message, guildConfig) => {
  * @param {Message} message - The message to handle.
  * @param {string} tenorApiKey - The API key for the Tenor API.
  * @param {string} spamKeywords - The comma-separated list of keywords from the dashboard.
+ * @param {string} spamEmojis - The comma-separated list of emojis from the dashboard.
  */
-const handleSpamMessage = async (message, tenorApiKey, spamKeywords) => {
+const handleSpamMessage = async (message, tenorApiKey, spamKeywords, spamEmojis) => {
     const isGif = Math.random() < 0.5; // 50% chance to send a GIF
-    const keywordsArray = spamKeywords.split(',').map(keyword => keyword.trim());
+    const keywordsArray = spamKeywords ? spamKeywords.split(',').map(keyword => keyword.trim()) : [];
     const randomKeyword = keywordsArray[Math.floor(Math.random() * keywordsArray.length)];
 
     if (isGif && tenorApiKey && randomKeyword) {
@@ -47,28 +48,32 @@ const handleSpamMessage = async (message, tenorApiKey, spamKeywords) => {
                 await message.reply(randomGif.url);
             } else {
                 // Fallback to emojis if no GIF is found
-                await sendSpamEmojis(message);
+                await sendSpamEmojis(message, spamEmojis);
             }
         } catch (error) {
             console.error('Error fetching GIF from Tenor:', error);
             // Fallback to emojis if API call fails
-            await sendSpamEmojis(message);
+            await sendSpamEmojis(message, spamEmojis);
         }
     } else {
         // Send a random number of fun emojis
-        await sendSpamEmojis(message);
+        await sendSpamEmojis(message, spamEmojis);
     }
 };
 
 /**
  * Sends a random number of fun emojis to a channel.
  * @param {Message} message - The message to reply to.
+ * @param {string} spamEmojis - The comma-separated list of emojis from the dashboard.
  */
-const sendSpamEmojis = async (message) => {
+const sendSpamEmojis = async (message, spamEmojis) => {
     const minEmojis = 6;
     const maxEmojis = 18;
     const emojiCount = Math.floor(Math.random() * (maxEmojis - minEmojis + 1)) + minEmojis;
-    const funEmojis = ['🎉', '🥳', '🎊', '✨', '🎈', '❤️', '🤩', '👍', '😊'];
+    
+    // Use configured emojis or a fallback list if none are configured
+    const funEmojis = spamEmojis ? spamEmojis.split(',').map(emoji => emoji.trim()) : ['🎉', '🥳', '🎊', '✨', '🎈', '❤️', '🤩', '👍', '😊'];
+
     let emojis = '';
     for (let i = 0; i < emojiCount; i++) {
         emojis += funEmojis[Math.floor(Math.random() * funEmojis.length)];
