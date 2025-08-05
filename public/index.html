@@ -92,6 +92,11 @@
             opacity: 0.8;
             transform: scale(0.95);
         }
+        .emoji-grid-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(2.5rem, 1fr));
+            gap: 0.5rem;
+        }
     </style>
 </head>
 <body class="bg-primary-blue text-text-light font-inter">
@@ -288,7 +293,6 @@
                 serverIconsGrid.innerHTML = `<p class="col-span-full text-center text-gray-300">The bot is not in any servers where you have administrator permissions. Please invite it to a server.</p>`;
             } else {
                 guilds.forEach(guild => {
-                    // FIX: Removed '?size=144' from the URL to prevent "Invalid resource" error
                     const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png` : `https://placehold.co/144x144/1C315E/FFC107?text=${guild.name.charAt(0)}`;
                     const serverCard = document.createElement('div');
                     serverCard.className = 'server-card flex flex-col items-center p-4 rounded-xl cursor-pointer transition-all duration-300 transform bg-secondary-blue shadow-lg border-2 border-transparent hover:border-accent-gold';
@@ -488,17 +492,19 @@
                         <label for="spamKeywords" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun GIF Keywords</label>
                         <input id="spamKeywords" name="spamKeywords" type="text" placeholder="e.g., keyword1, keyword2" value="${currentConfig.spamKeywords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
                     </div>
-                    <!-- NEW EMOJI SELECTOR SECTION -->
+                    <!-- UPDATED EMOJI SELECTOR SECTION -->
                     <div class="space-y-2">
                         <label class="block text-lg font-semibold">Spam Fun Emojis</label>
                         <div id="selected-emojis-container" class="flex flex-wrap gap-2 p-2 bg-gray-700 rounded-lg min-h-[40px] items-center">
                             <!-- Emojis will be rendered here as tags -->
                         </div>
                         <input type="hidden" id="spamEmojis" name="spamEmojis" value="${currentConfig.spamEmojis || ''}">
-                        <h5 class="font-semibold text-gray-300 mt-4">Click to select emojis:</h5>
-                        <div class="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-2">
-                            <!-- New section for default emojis -->
-                            <div id="default-emojis-list" class="flex flex-wrap gap-2">
+                        
+                        <div class="flex flex-wrap gap-2 max-h-56 overflow-y-auto pr-2 bg-gray-700 rounded-lg p-2">
+                            <h5 class="font-semibold text-gray-300 w-full mb-2">Default Emojis:</h5>
+                            <div id="default-emojis-list" class="flex flex-wrap gap-2 w-full">
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😂" title="😂">😂</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤣" title="🤣">🤣</span>
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎉" title="🎉">🎉</span>
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🥳" title="🥳">🥳</span>
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎊" title="🎊">🎊</span>
@@ -508,14 +514,19 @@
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤩" title="🤩">🤩</span>
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="👍" title="👍">👍</span>
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😊" title="😊">😊</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😂" title="😂">😂</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="💯" title="💯">💯</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🔥" title="🔥">🔥</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤣" title="🤣">🤣</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="⭐" title="⭐">⭐</span>
                             </div>
-                            <!-- Existing section for custom emojis -->
-                            <div id="custom-emojis-list" class="flex flex-wrap gap-2">
+                            <h5 class="font-semibold text-gray-300 w-full mt-4 mb-2">Server Emojis:</h5>
+                            <div id="custom-emojis-list" class="flex flex-wrap gap-2 w-full">
                                 ${guildData.emojis.length > 0 ? 
                                    guildData.emojis.map(emoji => `
                                     <img src="${emoji.url}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
                                    `).join('') 
-                                   : ''
+                                   : '<p class="text-sm text-gray-400">No custom emojis found in this server.</p>'
                                }
                             </div>
                         </div>
