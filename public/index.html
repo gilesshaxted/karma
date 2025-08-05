@@ -495,14 +495,29 @@
                             <!-- Emojis will be rendered here as tags -->
                         </div>
                         <input type="hidden" id="spamEmojis" name="spamEmojis" value="${currentConfig.spamEmojis || ''}">
+                        <h5 class="font-semibold text-gray-300 mt-4">Click to select emojis:</h5>
                         <div class="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-2">
-                            <button type="button" id="add-default-emojis" class="px-3 py-1 text-sm bg-gray-600 rounded-full hover:bg-gray-700 transition-colors">Add Default</button>
-                            ${guildData.emojis.length > 0 ? 
-                               guildData.emojis.map(emoji => `
-                                <img src="${emoji.url}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
-                               `).join('') 
-                               : ''
-                           }
+                            <!-- New section for default emojis -->
+                            <div id="default-emojis-list" class="flex flex-wrap gap-2">
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎉" title="🎉">🎉</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🥳" title="🥳">🥳</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎊" title="🎊">🎊</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="✨" title="✨">✨</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎈" title="🎈">🎈</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="❤️" title="❤️">❤️</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤩" title="🤩">🤩</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="👍" title="👍">👍</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😊" title="😊">😊</span>
+                            </div>
+                            <!-- Existing section for custom emojis -->
+                            <div id="custom-emojis-list" class="flex flex-wrap gap-2">
+                                ${guildData.emojis.length > 0 ? 
+                                   guildData.emojis.map(emoji => `
+                                    <img src="${emoji.url}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
+                                   `).join('') 
+                                   : ''
+                               }
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -532,21 +547,15 @@
             
             // Add event listener for emoji clicks in the selection list
             document.getElementById('tab-fun').addEventListener('click', (e) => {
-                if (e.target.tagName === 'IMG' && e.target.closest('#emoji-list-container, #tab-fun')) {
-                    const emojiIdentifier = e.target.dataset.emojiIdentifier;
-                    if (emojiIdentifier && !selectedEmojis.has(emojiIdentifier)) {
+                const target = e.target;
+                const emojiIdentifier = target.dataset.emojiIdentifier || target.textContent.trim();
+                
+                if (emojiIdentifier && target.closest('#default-emojis-list, #custom-emojis-list')) {
+                    if (!selectedEmojis.has(emojiIdentifier)) {
                         selectedEmojis.add(emojiIdentifier);
                         renderEmojiTags();
                     }
                 }
-            });
-
-            // Add event listener for default emojis button
-            document.getElementById('add-default-emojis').addEventListener('click', (e) => {
-                e.preventDefault();
-                const defaultEmojis = ['🎉', '🥳', '🎊', '✨', '🎈', '❤️', '🤩', '👍', '😊'];
-                defaultEmojis.forEach(emoji => selectedEmojis.add(emoji));
-                renderEmojiTags();
             });
         }
 
