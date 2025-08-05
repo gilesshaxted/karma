@@ -176,10 +176,11 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
             await message.delete().catch(err => console.error(`[AUTOMOD ERROR] Failed to delete message from ${message.author.tag}:`, err));
             
             // Get or create user moderation data in Firestore
-            // FIX: Corrected Firestore collection and doc reference syntax
             const modRef = doc(collection(client.db, `artifacts/${client.appId}/public/data/guilds/${message.guild.id}/mod_data`), message.author.id);
             const modSnap = await getDoc(modRef);
-            const modData = modSnap.exists ? modSnap.data() : { warnings: [], timeouts: [] };
+            
+            // FIX: Ensure modData is always an object, even if modSnap.data() is undefined for an existing document
+            const modData = modSnap.data() || { warnings: [], timeouts: [] };
 
             // Add new warning
             const warningTimestamp = Date.now();
