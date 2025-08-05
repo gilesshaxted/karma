@@ -340,7 +340,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             // FIX: Corrected typo from MAX_GUILD_FETCH_RIES to MAX_GUILD_FETCH_RETRIES
             if (error.response?.status === 503 && i < MAX_GUILD_FETCH_RETRIES - 1) {
                 console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_DELAY_MS));
                 continue; // Retry the loop
             }
             // If it's another error or retries exhausted, send error response
