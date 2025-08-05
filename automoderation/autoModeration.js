@@ -76,13 +76,30 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
         guildConfig.blacklistedWords.split(',').map(w => w.trim().toLowerCase()).forEach(w => blacklistedWords.add(w));
     }
 
-    // First, check against specific sensitive words using regex
+    // First, check against specific sensitive words using regex based on moderation level
     for (const key in sensitiveWordRegex) {
         if (sensitiveWordRegex.hasOwnProperty(key)) {
-            if (messageContent.match(sensitiveWordRegex[key])) {
-                reason = `Sensitive word variation detected: "${message.content.substring(messageContent.match(sensitiveWordRegex[key]).index, messageContent.match(sensitiveWordRegex[key]).index + messageContent.match(sensitiveWordRegex[key])[0].length)}".`;
-                rule = 'Sensitive Word Detection (Regex)';
-                break; // Found a match, no need to check further regex
+            const regex = sensitiveWordRegex[key];
+            let shouldCheck = false;
+
+            // Determine if this regex should be applied based on moderationLevel
+            if (key === 'nigger' || key === 'faggot') { // All tiers
+                shouldCheck = true;
+            } else if (key === 'cunt' || key === 'bitch') { // Medium and High tiers
+                if (guildConfig.moderationLevel === 'medium' || guildConfig.moderationLevel === 'high') {
+                    shouldCheck = true;
+                }
+            } else if (key === 'shit' || key === 'fuck') { // Only High tier
+                if (guildConfig.moderationLevel === 'high') {
+                    shouldCheck = true;
+                }
+            }
+            // Add more conditions for other sensitive words if needed
+
+            if (shouldCheck && messageContent.match(regex)) {
+                reason = `Sensitive word variation detected: "${message.content.substring(messageContent.match(regex).index, messageContent.match(regex).index + messageContent.match(regex)[0].length)}".`;
+                rule = `Sensitive Word Detection (${key} - Regex)`;
+                break;
             }
         }
     }
@@ -209,12 +226,12 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                         message.channel.send(`Failed to timeout <@${member.user.id}>. Please check bot permissions.`).catch(console.error);
                     });
                     modData.timeouts.push({ timestamp: warningTimestamp, duration: '6 hours' });
-                    // NO FIX: Do NOT clear modData.warnings here. Let the filter handle it.
-                    // modData.warnings = []; // REMOVE THIS LINE
+                    // Log the timeout action
+                    // FIX: Pass client object to logModerationAction
+                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 6 hours for 3 warnings in 1 hour.`, reason, client); 
+
                     // Notify user about timeout
                     await message.author.send(`You have been timed out in **${message.guild.name}** for 6 hours due to repeated rule violations. Reason: ${reason}`).catch(console.error);
-                    // Log the timeout action
-                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 6 hours for 3 warnings in 1 hour.`, reason, getGuildConfig, saveGuildConfig);
 
                 } catch (timeoutError) {
                     console.error(`[AUTOMOD ERROR] Error during member timeout for ${member.user.tag}:`, timeoutError);
@@ -222,7 +239,8 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
             } else {
                 console.log(`[AUTOMOD] ${message.author.tag} received a warning.`); // Added for debugging
                 // Log individual warning
-                logModerationAction('Warning', message.guild, message.author, client.user, reason, getGuildConfig, saveGuildConfig);
+                // FIX: Pass client object to logModerationAction
+                logModerationAction('Warning', message.guild, message.author, client.user, reason, client); 
                 // Notify user about warning
                 await message.author.send(`You received a warning in **${message.guild.name}**. Reason: ${reason}`).catch(console.error);
             }
@@ -241,12 +259,11 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                         console.error(`[AUTOMOD ERROR] Failed to apply severe timeout to member ${member.user.tag}:`, err);
                         message.channel.send(`Failed to apply severe timeout to <@${member.user.id}>. Please check bot permissions.`).catch(console.error);
                     });
-                    // NO FIX: Do NOT clear modData.timeouts here. Let the filter handle it.
-                    // modData.timeouts = []; // REMOVE THIS LINE
                     // Notify user about severe timeout
                     await message.author.send(`You have been timed out in **${message.guild.name}** for 7 days due to severe repeated rule violations. Reason: ${reason}`).catch(console.error);
                     // Log the severe timeout action
-                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason, getGuildConfig, saveGuildConfig);
+                    // FIX: Pass client object to logModerationAction
+                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason, client); 
                     
                     // Send alert to mod channel
                     if (guildConfig.modAlertChannelId) {
