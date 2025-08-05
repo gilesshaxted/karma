@@ -1,26 +1,84 @@
 {
   "curseWords": [
-    "fuck", "shit", "bitch", "asshole", "bastard", "cunt", "dick", "pussy", "whore"
+    "fuck", "shit", "bitch", "asshole", "bastard", "cunt", "dick", "pussy", "whore",
+    "damn", "hell", "crap", "bollocks", "wanker", "tosser", "prick", "motherfucker",
+    "son of a bitch", "douchebag", "bloody", "bugger", "arse", "gobshite", "slag",
+    "twat", "choad", "cock", "jizz", "spunk", "tits", "fanny", "knob", "minge",
+    "shag", "screw", "blowjob", "handjob", "cum", "ass", "butt", "balls", "nuts",
+    "boner", "queef", "schlong", "tit", "slut", "ho"
   ],
   "hateSpeech": [
-    "nigger", "faggot", "dyke", "tranny", "chink", "kike", "spic", "coon", "gook", "wetback", "gypsy"
+    "nigger", "faggot", "dyke", "tranny", "chink", "kike", "spic", "coon", "gook",
+    "wetback", "gypsy", "retard", "cripple", "autist", "mongoloid", "spaz",
+    "terrorist", "infidel", "raghead", "sandnigger", "camel jockey", "towelhead",
+    "cracker", "honky", "white trash", "hillbilly", "redneck", "trailer trash",
+    "beaner", "greaser", "wetback", "jap", "gook", "chink", "slope", "zipperhead",
+    "paki", "raghead", "curry muncher", "abo", "boong", "kaffir", "goy", "shylock",
+    "heeb", "kyke", "raghead", "sandnigger", "towelhead", "camel jockey"
   ],
   "racialSlurs": [
-    "nigger", "chink", "kike", "spic", "coon", "gook", "wetback"
+    "nigger", "chink", "kike", "spic", "coon", "gook", "wetback", "jap", "slope",
+    "zipperhead", "paki", "abo", "boong", "kaffir", "honky", "cracker", "beaner",
+    "greaser", "redneck", "white trash", "trailer trash"
   ],
   "homophobicSlurs": [
-    "faggot", "dyke"
+    "faggot", "dyke", "queer", "homo", "sodomite", "lezzie", "butch", "femme", "nelly"
   ],
   "sexistMisogynistic": [
-    "bitch", "whore", "cunt"
+    "bitch", "whore", "cunt", "slut", "ho", "bimbo", "tramp", "hussy", "jezebel",
+    "wench", "broad", "chick", "dame", "skank", "thot"
+  ],
+  "drugRelated": [
+    "weed", "pot", "marijuana", "coke", "cocaine", "heroin", "meth", "crystal meth",
+    "acid", "LSD", "ecstasy", "molly", "pills", "opioids", "crack", "smack", "dope",
+    "blunt", "joint", "bong", "pipe", "syringe", "needle", "dealer", "junkie", "addict"
+  ],
+  "violenceThreats": [
+    "kill", "murder", "stab", "shoot", "rape", "assault", "bomb", "explode", "terrorize",
+    "torture", "maim", "harm", "destroy", "attack", "threaten", "die", "death", "suicide",
+    "gang", "mafia", "hitman", "weapon", "gun", "knife", "bomb", "grenade"
+  ],
+  "foreignProfanity": [
+    "puta", "cabron", "joder", "coño", "gilipollas", "mierda", "pendejo", "chingar", "hostia",
+    "merde", "putain", "connard", "salaud", "bordel", "foutre", "enculé", "scheisse", "arschloch",
+    "fick dich", "hurensohn", "verdammt", "cazzo", "stronzo", "vaffanculo", "merda", "figlio di puttana",
+    "kurwa", "blyat", "suka", "idi nahui", "cyka blyat", "boku no piko", "hentai", "bakka", "baka"
   ],
   "highLevel": [
-    "fuck", "shit", "bitch", "asshole", "bastard", "cunt", "dick", "pussy", "whore", "nigger", "faggot", "dyke", "tranny", "chink", "kike", "spic", "coon", "gook", "wetback", "gypsy"
+    "fuck", "shit", "bitch", "asshole", "bastard", "cunt", "dick", "pussy", "whore",
+    "nigger", "faggot", "dyke", "tranny", "chink", "kike", "spic", "coon", "gook",
+    "wetback", "gypsy", "retard", "cripple", "autist", "mongoloid", "spaz",
+    "terrorist", "infidel", "raghead", "sandnigger", "camel jockey", "cracker",
+    "honky", "white trash", "hillbilly", "redneck", "trailer trash", "beaner",
+    "greaser", "jap", "slope", "zipperhead", "paki", "curry muncher", "abo", "boong",
+    "kaffir", "goy", "shylock", "heeb", "kyke", "bimbo", "tramp", "hussy", "jezebel",
+    "wench", "broad", "chick", "dame", "skank", "thot",
+    "weed", "pot", "marijuana", "coke", "cocaine", "heroin", "meth", "crystal meth",
+    "acid", "LSD", "ecstasy", "molly", "pills", "opioids", "crack", "smack", "dope",
+    "blunt", "joint", "bong", "pipe", "syringe", "needle", "dealer", "junkie", "addict",
+    "kill", "murder", "stab", "shoot", "rape", "assault", "bomb", "explode", "terrorize",
+    "torture", "maim", "harm", "destroy", "attack", "threaten", "die", "death", "suicide",
+    "gang", "mafia", "hitman", "weapon", "gun", "knife", "bomb", "grenade",
+    "puta", "cabron", "joder", "coño", "gilipollas", "mierda", "pendejo", "chingar", "hostia",
+    "merde", "putain", "connard", "salaud", "bordel", "foutre", "enculé", "scheisse", "arschloch",
+    "fick dich", "hurensohn", "verdammt", "cazzo", "stronzo", "vaffanculo", "merda", "figlio di puttana",
+    "kurwa", "blyat", "suka", "idi nahui", "cyka blyat", "boku no piko", "hentai", "bakka", "baka"
   ],
   "mediumLevel": [
-    "nigger", "faggot", "dyke", "chink", "kike", "spic", "coon", "gook", "wetback", "gypsy"
+    "fuck", "shit", "bitch", "asshole", "bastard", "cunt", "dick", "pussy", "whore",
+    "nigger", "faggot", "dyke", "tranny", "chink", "kike", "spic", "coon", "gook",
+    "wetback", "gypsy", "retard", "cripple", "autist", "spaz",
+    "puta", "cabron", "joder", "coño", "gilipollas", "mierda", "pendejo", "chingar", "hostia",
+    "merde", "putain", "connard", "salaud", "bordel", "foutre", "enculé", "scheisse", "arschloch",
+    "fick dich", "hurensohn", "verdammt", "cazzo", "stronzo", "vaffanculo", "merda", "figlio di puttana",
+    "kurwa", "blyat", "suka", "idi nahui", "cyka blyat", "boku no piko", "hentai", "bakka", "baka"
   ],
   "lowLevel": [
-    "nigger", "faggot", "chink", "kike"
+    "fuck", "shit", "bitch", "asshole", "bastard", "cunt", "dick", "pussy", "whore",
+    "nigger", "faggot", "dyke", "chink", "kike", "spic", "coon", "gook", "wetback",
+    "puta", "cabron", "joder", "coño", "gilipollas", "mierda", "pendejo", "chingar", "hostia",
+    "merde", "putain", "connard", "salaud", "bordel", "foutre", "enculé", "scheisse", "arschloch",
+    "fick dich", "hurensohn", "verdammt", "cazzo", "stronzo", "vaffanculo", "merda", "figlio di puttana",
+    "kurwa", "blyat", "suka", "idi nahui", "cyka blyat", "boku no piko", "hentai", "bakka", "baka"
   ]
 }
