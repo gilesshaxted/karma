@@ -251,6 +251,9 @@ app.get('/api/user', verifyDiscordToken, checkBotReadiness, (req, res) => {
 app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) => {
     const MAX_GUILD_FETCH_RETRIES = 5; // Max retries for guild cache population
     const GUILD_FETCH_RETRY_DELAY_MS = 1000; // 1 second delay
+    
+    // FIX: ADDED MISSING CONSTANT
+    const RETRY_DELAY_MS = 1000;
 
     for (let i = 0; i < MAX_GUILD_FETCH_RETRIES; i++) {
         try {
@@ -262,8 +265,9 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             const botGuilds = client.guilds.cache;
             
             // If bot's guild cache is still empty, and we have retries left, wait and retry.
-            if (botGuilds.size === 0 && i < MAX_GUILD_FETCH_RIES - 1) {
-                console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RIES})`);
+            // FIX: Corrected typo from MAX_GUILD_FETCH_RIES to MAX_GUILD_FETCH_RETRIES
+            if (botGuilds.size === 0 && i < MAX_GUILD_FETCH_RETRIES - 1) {
+                console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
                 continue; // Retry the loop
             }
@@ -291,8 +295,9 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
         } catch (error) {
             console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
             // If it's a 503 or network error, retry. Otherwise, rethrow or handle.
-            if (error.response?.status === 503 && i < MAX_GUILD_FETCH_RIES - 1) {
-                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RIES})`);
+            // FIX: Corrected typo from MAX_GUILD_FETCH_RIES to MAX_GUILD_FETCH_RETRIES
+            if (error.response?.status === 503 && i < MAX_GUILD_FETCH_RETRIES - 1) {
+                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
                 continue; // Retry the loop
             }
@@ -676,30 +681,50 @@ client.once('ready', async () => {
 
     // Event: Message reaction added (for emoji moderation and karma system reactions)
     client.on('messageReactionAdd', async (reaction, user) => {
+        // FIX #2 START: Add checks for partial messages and null properties
+        // Fetch the message if it's a partial to ensure all properties are available
+        if (reaction.partial) {
+            try {
+                await reaction.fetch();
+            } catch (error) {
+                console.error('Failed to fetch partial reaction message:', error);
+                return; // Exit if the message can't be fetched
+            }
+        }
+
+        // Now, safely check for null properties on the fetched message
+        if (!reaction.message || !reaction.message.guild || !reaction.message.author) {
+            console.warn('Skipping reaction processing: Message, guild, or author is null/undefined.');
+            return;
+        }
+        // FIX #2 END
+
         if (!client.db || !client.appId || !client.googleApiKey) {
             console.warn('Skipping reaction processing: Firebase or API keys not fully initialized yet.');
             reaction.users.remove(user.id).catch(e => console.error('Failed to remove reaction for uninitialized bot:', e));
             return;
         }
+        
         // Handle Karma reactions first
         if (['👍', '👎'].includes(reaction.emoji.name)) {
             const reactorMember = await reaction.message.guild.members.fetch(user.id).catch(() => null);
             const guildConfig = await getGuildConfig(reaction.message.guild.id);
+            
+            // The targetUser variable is now safe to access after the checks above
+            const targetUser = reaction.message.author; 
+            let karmaChange = 0;
+            let actionText = '';
+
+            if (reaction.emoji.name === '👍') {
+                karmaChange = 1;
+                actionText = '+1 Karma';
+            } else { // 👎
+                karmaChange = -1;
+                actionText = '-1 Karma';
+            }
 
             // Only process karma reactions from moderators or admins
             if (reactorMember && hasPermission(reactorMember, guildConfig)) {
-                const targetUser = reaction.message.author;
-                let karmaChange = 0;
-                let actionText = '';
-
-                if (reaction.emoji.name === '👍') {
-                    karmaChange = 1;
-                    actionText = '+1 Karma';
-                } else { // 👎
-                    karmaChange = -1;
-                    actionText = '-1 Karma';
-                }
-
                 try {
                     const newKarma = await karmaSystem.addKarmaPoints(reaction.message.guild.id, targetUser, karmaChange, client.db, client.appId);
                     await karmaSystem.sendKarmaAnnouncement(reaction.message.guild, targetUser.id, karmaChange, newKarma, getGuildConfig, client); // Send announcement
