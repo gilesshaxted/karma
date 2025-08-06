@@ -209,7 +209,6 @@ app.get('/', (req, res) => {
 
 // Discord OAuth Login Route
 app.get('/api/login', (req, res) => {
-    // FIX: Removed the extra '}' from the end of encodeURIComponent(DISCORD_REDIRECT_URI)
     const authorizeUrl = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(DISCORD_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(DISCORD_OAUTH_SCOPES)}&permissions=${DISCORD_BOT_PERMISSIONS}`;
     res.redirect(authorizeUrl);
 });
@@ -227,7 +226,7 @@ app.post('/api/token', async (req, res) => {
     }
 
     try {
-        const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
+        const tokenResponse = await axios.post('[https://discord.com/api/oauth2/token](https://discord.com/api/oauth2/token)', new URLSearchParams({
             client_id: DISCORD_CLIENT_ID,
             client_secret: DISCORD_CLIENT_SECRET,
             grant_type: 'authorization_code',
@@ -256,7 +255,7 @@ const verifyDiscordToken = async (req, res, next) => {
     const accessToken = authHeader.split(' ')[1];
 
     try {
-        const userResponse = await axios.get('https://discord.com/api/users/@me', {
+        const userResponse = await axios.get('[https://discord.com/api/users/@me](https://discord.com/api/users/@me)', {
             headers: { 'Authorization': `Bearer ${accessToken}` }
         });
         req.discordUser = userResponse.data;
@@ -307,7 +306,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
 
     for (let i = 0; i < MAX_GUILD_FETCH_RETRIES; i++) {
         try {
-            const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
+            const guildsResponse = await axios.get('[https://discord.com/api/users/@me/guilds](https://discord.com/api/users/@me/guilds)', {
                 headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
             });
             const userGuilds = guildsResponse.data;
@@ -616,7 +615,7 @@ client.once('ready', async () => {
             
             // Replaced AI-based moderation with the new function call
             await autoModeration.checkMessageForModeration(
-                message, client, client.getGuildConfig, client.saveGuildConfig, isExempt, logging.logModerationAction, logging.logMessage
+                message, client, client.getGuildConfig, client.saveGuildConfig, isExempt, logging.logModerationAction, logging.logMessage, karmaSystem // Pass karmaSystem
             );
             
             try {
