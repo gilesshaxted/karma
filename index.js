@@ -667,10 +667,12 @@ client.once('ready', async () => {
         let newInvitesMap = new Collection();
         if (member.guild.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             try {
-                const fetchedInvites = await member.guild.invites.fetch();
-                newInvitesMap = new Map(fetchedInvites.map(invite => [invite.code, invite.uses]));
+                const invites = await guild.invites.fetch();
+                // Store invites as a Map of code -> uses
+                client.invites.set(guild.id, new Map(invites.map(invite => [invite.code, invite.uses])));
+                console.log(`Cached initial invites for guild ${guild.name}`);
             } catch (error) {
-                console.warn(`Could not fetch initial invites for guild ${member.guild.name} on member join:`, error);
+                console.warn(`Could not fetch initial invites for guild ${guild.name}. Ensure bot has 'Manage Guild' permission.`, error);
             }
         }
         // Pass newInvitesMap and oldInvitesMap to handler
@@ -744,7 +746,7 @@ client.once('ready', async () => {
     client.on('inviteCreate', async invite => {
         if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             try {
-                const newInvites = await invite.guild.invites.fetch();
+                const newInvites = await guild.invites.fetch();
                 client.invites.set(guild.id, new Map(newInvites.map(i => [i.code, i.uses]))); // Store uses count
             } catch (error) {
                 console.warn(`Could not fetch initial invites for guild ${invite.guild.name} after invite create:`, error);
@@ -848,8 +850,9 @@ client.once('ready', async () => {
             // Defer reply immediately, but handle potential failure
             let deferred = false;
             try {
-                await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Use the determined ephemeral value
-                deferred = true;
+                // Removed global deferReply here. Commands will now handle their own deferrals.
+                // await interaction.deferReply({ ephemeral: ephemeral }); 
+                deferred = true; // This will now always be true if a command defers successfully
             } catch (deferError) {
                 if (deferError.code === 10062) { // Unknown interaction
                     console.warn(`Interaction ${interaction.id} already expired or unknown when deferring. Skipping.`);
@@ -863,11 +866,8 @@ client.once('ready', async () => {
                 const command = client.commands.get(commandName);
 
                 if (!command) {
-                    if (deferred) {
-                        return interaction.editReply({ content: 'No command matching that name was found.' });
-                    } else {
-                        return interaction.reply({ content: 'No command matching that name was found.', flags: [MessageFlags.Ephemeral] });
-                    }
+                    // If command is not found, reply immediately (not deferred)
+                    return interaction.reply({ content: 'No command matching that name was found.', flags: [MessageFlags.Ephemeral] });
                 }
 
                 const guildConfig = await client.getGuildConfig(interaction.guildId); // Use client.getGuildConfig
@@ -875,19 +875,15 @@ client.once('ready', async () => {
                 // Check permissions for karma commands
                 if (['karma_plus', 'karma_minus', 'karma_set'].includes(commandName)) {
                     if (!hasPermission(interaction.member, guildConfig)) {
-                        if (deferred) {
-                            return interaction.editReply({ content: 'You do not have permission to use this karma command.' });
-                        } else {
-                            return interaction.reply({ content: 'You do not have permission to use this karma command.', flags: [MessageFlags.Ephemeral] });
-                        }
+                        // If not deferred by command, reply immediately. If deferred, edit.
+                        if (!deferred) await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Defer if not already
+                        return interaction.editReply({ content: 'You do not have permission to use this karma command.', flags: [MessageFlags.Ephemeral] });
                     }
                 } else { // For other moderation commands
                     if (!hasPermission(interaction.member, guildConfig)) {
-                        if (deferred) {
-                            return interaction.editReply({ content: 'You do not have permission to use this command.' });
-                        } else {
-                            return interaction.reply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
-                        }
+                        // If not deferred by command, reply immediately. If deferred, edit.
+                        if (!deferred) await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Defer if not already
+                        return interaction.editReply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
                     }
                 }
 
@@ -904,11 +900,11 @@ client.once('ready', async () => {
                     getOrCreateUserKarma: karmaSystem.getOrCreateUserKarma,
                     updateUserKarmaData: karmaSystem.updateUserKarmaData,
                     calculateAndAwardKarma: karmaSystem.calculateAndAwardKarma,
-                    // No AI sentiment analysis in this version
                     addKarmaPoints: karmaSystem.addKarmaPoints, // Passed new karma functions
                     subtractKarmaPoints: karmaSystem.subtractKarmaPoints, // Passed new karma functions
                     setKarmaPoints: karmaSystem.setKarmaPoints, // Passed new karma functions
-                    client
+                    client, // Pass client object for full context
+                    karmaSystem // Pass karmaSystem module for moderation functions
                 });
             } else if (interaction.isButton()) {
                 // For buttons, deferUpdate is usually sufficient and handled above.
@@ -916,8 +912,9 @@ client.once('ready', async () => {
             }
         } catch (error) {
             console.error('Error during interaction processing:', error);
+            // If already deferred, edit reply. Otherwise, reply immediately.
             if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
+                await interaction.editReply({ content: 'An unexpected error occurred while processing your command.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
             } else {
                 await interaction.reply({ content: 'An unexpected error occurred while processing your command.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
             }
