@@ -1,5 +1,4 @@
-// karma/karmaMinus.js
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -9,32 +8,31 @@ module.exports = {
             option.setName('target')
                 .setDescription('The user to remove Karma from')
                 .setRequired(true)),
-    async execute(interaction, { db, appId, getGuildConfig, subtractKarmaPoints, sendKarmaAnnouncement, client }) {
-        // interaction.deferReply() is handled by index.js for all slash commands.
+    async execute(interaction, { client, db, appId, getGuildConfig, subtractKarmaPoints, sendKarmaAnnouncement }) { // Added client, sendKarmaAnnouncement
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Defer reply ephemerally
 
         const targetUser = interaction.options.getUser('target');
         const moderator = interaction.user;
         const guild = interaction.guild;
-        // getGuildConfig is passed here, so no need to call client.getGuildConfig directly
 
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
         if (!targetMember) {
-            return interaction.editReply('Could not find that user in this server.');
+            return interaction.editReply({ content: 'Could not find that user in this server.', flags: [MessageFlags.Ephemeral] });
         }
 
         try {
             const newKarma = await subtractKarmaPoints(guild.id, targetUser, 1, db, appId);
 
             // Send announcement to Karma Channel
-            // The function now needs getGuildConfig and client passed to it
-            await sendKarmaAnnouncement(guild, targetUser.id, -1, newKarma, getGuildConfig, client);
+            // Pass client.getGuildConfig and client to sendKarmaAnnouncement
+            await sendKarmaAnnouncement(guild, targetUser.id, -1, newKarma, client.getGuildConfig, client);
 
-            await interaction.editReply(`Successfully subtracted 1 Karma point from ${targetUser.tag}. Their new Karma total is ${newKarma}.`);
+            await interaction.editReply({ content: `Successfully subtracted 1 Karma point from ${targetUser.tag}. Their new Karma total is ${newKarma}.` });
 
         } catch (error) {
             console.error(`Error subtracting Karma from ${targetUser.tag}:`, error);
-            await interaction.editReply('Failed to subtract Karma. An error occurred.');
+            await interaction.editReply({ content: 'Failed to subtract Karma. An error occurred.', flags: [MessageFlags.Ephemeral] });
         }
     },
 };
