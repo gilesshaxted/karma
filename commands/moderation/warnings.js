@@ -81,8 +81,8 @@ module.exports = {
 
         } catch (error) {
             console.error(`Error fetching moderation data for ${targetUser.tag}:`, error);
-            // Use editReply since it's already deferred
-            await interaction.editReply('An error occurred while fetching moderation history. Please try again later.', flags: [MessageFlags.Ephemeral]);
+            // FIX: Corrected syntax for editReply options
+            await interaction.editReply({ content: 'An error occurred while fetching moderation history. Please try again later.', flags: [MessageFlags.Ephemeral] });
         }
     },
 
