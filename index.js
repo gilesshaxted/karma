@@ -678,7 +678,7 @@ client.once('ready', async () => {
 
         // Update client.invites cache AFTER the handler has used the old state
         if (member.guild.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            client.invites.set(member.guild.id, newInvitesMap); // Store the latest uses map
+            client.invites.set(guild.id, newInvitesMap); // Store the latest uses map
         }
         
         // --- New Member Greeting and +1 Karma ---
