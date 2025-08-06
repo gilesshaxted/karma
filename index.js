@@ -546,7 +546,6 @@ client.once('ready', async () => {
     }
 
     // --- Populate invite cache for join tracking ---
-    console.log('Populating initial invite cache...');
     client.guilds.cache.forEach(async guild => {
         // Ensure bot has 'Manage Guild' permission to fetch invites
         if (guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
@@ -788,7 +787,7 @@ client.once('ready', async () => {
         }
         
         // Handle Karma reactions first
-        if (['�', '👎'].includes(reaction.emoji.name)) {
+        if (['👍', '👎'].includes(reaction.emoji.name)) {
             const reactorMember = await reaction.message.guild.members.fetch(user.id).catch(() => null);
             const guildConfig = await client.getGuildConfig(reaction.message.guild.id); // Use client.getGuildConfig
             
@@ -933,4 +932,3 @@ client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
     console.error("Discord login failed:", err);
     // Do not exit here, let the process continue for the web server
 });
-�
