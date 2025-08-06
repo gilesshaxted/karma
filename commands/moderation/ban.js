@@ -1,5 +1,4 @@
-// moderation/ban.js
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 
 module.exports = {
     // Slash command data
@@ -20,7 +19,7 @@ module.exports = {
                 .setRequired(false)),
 
     // Execute function for slash command
-    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, logMessage }) {
+    async execute(interaction, { client, getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, logMessage }) {
         const targetUser = interaction.options.getUser('target');
         const durationInput = interaction.options.getString('duration') || 'forever'; // Default to forever
         const reason = interaction.options.getString('reason') || 'No reason provided.';
@@ -31,7 +30,7 @@ module.exports = {
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
         if (targetMember && isExempt(targetMember, guildConfig)) {
-            return interaction.editReply({ content: 'You cannot ban this user as they are exempt from moderation.' });
+            return interaction.editReply({ content: 'You cannot ban this user as they are exempt from moderation.', flags: [MessageFlags.Ephemeral] });
         }
 
         let deleteMessageSeconds = 24 * 60 * 60; // Default to delete messages from the last 24 hours (1 day)
@@ -40,16 +39,15 @@ module.exports = {
         if (durationInput.toLowerCase() !== 'forever') {
             const days = parseInt(durationInput);
             if (isNaN(days) || days <= 0) {
-                return interaction.editReply({ content: 'Invalid duration. Please enter a number of days or "forever".' });
+                return interaction.editReply({ content: 'Invalid duration. Please enter a number of days or "forever".', flags: [MessageFlags.Ephemeral] });
             }
             // Discord's ban message deletion is limited to 7 days (604800 seconds)
             deleteMessageSeconds = Math.min(days * 24 * 60 * 60, 7 * 24 * 60 * 60);
             banDurationText = `${days} day(s)`;
         }
 
-        guildConfig.caseNumber++;
-        await saveGuildConfig(guild.id, guildConfig);
-        const caseNumber = guildConfig.caseNumber;
+        // Removed manual guildConfig.caseNumber++ and saveGuildConfig here
+        // The case number increment is now handled by logModerationAction internally.
 
         try {
             // Fetch messages from the last 24 hours from all channels and log them
@@ -69,8 +67,8 @@ module.exports = {
                     );
 
                     for (const msg of messagesFromTargetInChannel.values()) {
-                        // Pass getGuildConfig to logMessage
-                        await logMessage(guild, msg, moderator, 'Deleted (Ban)', getGuildConfig);
+                        // FIX: Pass message object directly to logMessage as it expects
+                        await logMessage(msg, getGuildConfig); // logMessage expects message and getGuildConfig
                         messagesLoggedCount++;
                     }
                 } catch (channelError) {
@@ -93,13 +91,14 @@ module.exports = {
                 reason: reason
             });
 
-            // Log the moderation action (passing getGuildConfig, db, appId from index.js via interaction.client context)
-            await logModerationAction(guild, `Ban (${banDurationText})`, targetUser, reason, moderator, caseNumber, banDurationText, null, getGuildConfig, interaction.client.db, interaction.client.appId);
+            // Log the moderation action
+            // FIX: Pass client object as the last parameter to logModerationAction
+            await logModerationAction('Ban', guild, targetUser, moderator, reason, client); 
 
-            await interaction.editReply({ content: `Successfully banned ${targetUser.tag} for ${banDurationText} for: ${reason} (Case #${caseNumber})` });
+            await interaction.editReply({ content: `Successfully banned ${targetUser.tag} for ${banDurationText} for: ${reason}` });
         } catch (error) {
             console.error(`Error banning user ${targetUser.tag}:`, error);
-            await interaction.editReply({ content: `Failed to ban ${targetUser.tag}. Make sure the bot has permissions and its role is above the target's highest role, and that the user's DMs are open.` });
+            await interaction.editReply({ content: `Failed to ban ${targetUser.tag}. Make sure the bot has permissions and its role is above the target's highest role, and that the user's DMs are open.`, flags: [MessageFlags.Ephemeral] });
         }
     }
 };
