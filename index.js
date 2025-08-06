@@ -763,14 +763,13 @@ client.once('ready', async () => {
 
     // Event: Message reaction added (for emoji moderation and karma system reactions)
     client.on('messageReactionAdd', async (reaction, user) => {
-        // FIX #2 START: Add checks for partial messages and null properties
-        // Fetch the message if it's a partial to ensure all properties are available
+        // Add checks for partial messages and null properties
         if (reaction.partial) {
             try {
                 await reaction.fetch();
             } catch (error) {
                 console.error('Failed to fetch partial reaction message:', error);
-                return; // Exit if the message can't be fetched
+                return;
             }
         }
 
@@ -779,7 +778,6 @@ client.once('ready', async () => {
             console.warn('Skipping reaction processing: Message, guild, or author is null/undefined.');
             return;
         }
-        // FIX #2 END
 
         if (!client.db || !client.appId || !client.googleApiKey) {
             console.warn('Skipping reaction processing: Firebase or API keys not fully initialized yet.');
@@ -790,9 +788,8 @@ client.once('ready', async () => {
         // Handle Karma reactions first
         if (['👍', '👎'].includes(reaction.emoji.name)) {
             const reactorMember = await reaction.message.guild.members.fetch(user.id).catch(() => null);
-            const guildConfig = await client.getGuildConfig(reaction.message.guild.id); // Use client.getGuildConfig
+            const guildConfig = await client.getGuildConfig(reaction.message.guild.id);
             
-            // The targetUser variable is now safe to access after the checks above
             const targetUser = reaction.message.author; 
             let karmaChange = 0;
             let actionText = '';
@@ -809,7 +806,7 @@ client.once('ready', async () => {
             if (reactorMember && hasPermission(reactorMember, guildConfig)) {
                 try {
                     const newKarma = await karmaSystem.addKarmaPoints(reaction.message.guild.id, targetUser, karmaChange, client.db, client.appId);
-                    await karmaSystem.sendKarmaAnnouncement(reaction.message.guild, targetUser.id, karmaChange, newKarma, client.getGuildConfig, client); // Use client.getGuildConfig
+                    await karmaSystem.sendKarmaAnnouncement(reaction.message.guild, targetUser.id, karmaChange, newKarma, client.getGuildConfig, client);
                 } catch (error) {
                     console.error(`Error adjusting karma for ${targetUser.tag} via emoji:`, error);
                     reaction.message.channel.send(`Failed to adjust Karma for <@${targetUser.id}>. An error occurred.`).catch(console.error);
