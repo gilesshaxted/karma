@@ -37,7 +37,7 @@ const sensitiveWordRegex = {
  * @param {Function} isExempt - Function to check for user/role immunity.
  * @param {Function} logModerationAction - Function to log moderation actions.
  * @param {Function} logMessage - Function to log general messages.
- * @param {Object} karmaSystem - The karmaSystem module for managing user data. // NEW PARAMETER
+ * @param {Object} karmaSystem - The karmaSystem module for managing user data.
  */
 const checkMessageForModeration = async (message, client, getGuildConfig, saveGuildConfig, isExempt, logModerationAction, logMessage, karmaSystem) => {
     // Ignore bots and DMs
@@ -204,9 +204,13 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
             // Get user moderation data using karmaSystem
             const modData = await karmaSystem.getOrCreateUserKarma(message.guild.id, message.author.id, client.db, client.appId);
 
-            // Add new warning
+            // Log the action and get the case number
+            // FIX: Pass client object directly to logModerationAction
+            const caseNumber = await logModerationAction('Warning', message.guild, message.author, client.user, reason, client); 
+
+            // Add new warning to modData with caseNumber
             const warningTimestamp = Date.now();
-            const newWarning = { timestamp: warningTimestamp, rule, reason, messageContent: message.content };
+            const newWarning = { timestamp: warningTimestamp, rule, reason, messageContent: message.content, caseNumber: caseNumber }; // Include caseNumber
             modData.warnings.push(newWarning);
             await karmaSystem.updateUserKarmaData(message.guild.id, message.author.id, { warnings: modData.warnings }, client.db, client.appId);
 
@@ -226,7 +230,7 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                         // Attempt to send a message to the channel if timeout fails
                         message.channel.send(`Failed to timeout <@${member.user.id}>. Please check bot permissions.`).catch(console.error);
                     });
-                    const newTimeout = { timestamp: warningTimestamp, duration: '6 hours' };
+                    const newTimeout = { timestamp: warningTimestamp, duration: '6 hours', caseNumber: caseNumber }; // Include caseNumber
                     modData.timeouts.push(newTimeout);
                     // Clear warnings after timeout to reset the 3-warning count for the next cycle
                     modData.warnings = []; 
@@ -242,8 +246,6 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                 }
             } else {
                 console.log(`[AUTOMOD] ${message.author.tag} received a warning.`); // Added for debugging
-                // Log individual warning
-                logModerationAction('Warning', message.guild, message.author, client.user, reason, client); 
                 // Notify user about warning
                 await message.author.send(`You received a warning in **${message.guild.name}**. Reason: ${reason}`).catch(console.error);
             }
