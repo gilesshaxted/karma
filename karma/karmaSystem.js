@@ -1,138 +1,226 @@
 // karma/karmaSystem.js
-const { doc, getDoc, setDoc, getFirestore } = require('firebase/firestore');
+const { EmbedBuilder } = require('discord.js');
+const { doc, collection, getDoc, setDoc, updateDoc, query, where, getDocs } = require('firebase/firestore');
 
 /**
- * Gets or creates a user's karma data from Firestore.
- * @param {string} guildId - The guild ID.
- * @param {string} userId - The user ID.
+ * Gets a user's karma data or creates a new entry if it doesn't exist.
+ * This function now also initializes warnings and timeouts.
+ * @param {string} guildId - The ID of the guild.
+ * @param {string} userId - The ID of the user.
  * @param {Firestore} db - The Firestore database instance.
- * @param {string} appId - The app ID for Firestore.
- * @returns {Promise<Object>} The user's karma data.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @returns {Object} The user's karma data.
  */
 const getOrCreateUserKarma = async (guildId, userId, db, appId) => {
-    const userRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/karma`, userId);
+    const userRef = doc(collection(db, `artifacts/${appId}/public/data/guilds/${guildId}/users`), userId);
     const userSnap = await getDoc(userRef);
 
     if (userSnap.exists()) {
-        return userSnap.data();
+        const data = userSnap.data();
+        // Ensure warnings and timeouts arrays exist
+        if (!data.warnings) data.warnings = [];
+        if (!data.timeouts) data.timeouts = [];
+        return data;
     } else {
-        const defaultKarma = {
-            points: 0,
+        const defaultData = {
+            karma: 0,
             messagesToday: 0,
             repliesReceivedToday: 0,
             lastActivityDate: new Date(),
+            warnings: [], // Initialize warnings array
+            timeouts: []  // Initialize timeouts array
         };
-        await setDoc(userRef, defaultKarma);
-        return defaultKarma;
+        await setDoc(userRef, defaultData);
+        return defaultData;
     }
 };
 
 /**
  * Updates a user's karma data in Firestore.
- * @param {string} guildId - The guild ID.
- * @param {string} userId - The user ID.
- * @param {Object} dataToUpdate - The data to merge into the existing document.
+ * @param {string} guildId - The ID of the guild.
+ * @param {string} userId - The ID of the user.
+ * @param {Object} dataToUpdate - An object containing fields to update.
  * @param {Firestore} db - The Firestore database instance.
- * @param {string} appId - The app ID for Firestore.
+ * @param {string} appId - The application ID for Firestore paths.
  */
 const updateUserKarmaData = async (guildId, userId, dataToUpdate, db, appId) => {
-    const userRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/karma`, userId);
-    await setDoc(userRef, dataToUpdate, { merge: true });
+    const userRef = doc(collection(db, `artifacts/${appId}/public/data/guilds/${guildId}/users`), userId);
+    await updateDoc(userRef, dataToUpdate);
 };
 
 /**
  * Adds karma points to a user.
- * @param {string} guildId - The guild ID.
- * @param {User} user - The user object.
+ * @param {string} guildId - The ID of the guild.
+ * @param {User} user - The Discord user object.
  * @param {number} points - The number of points to add.
  * @param {Firestore} db - The Firestore database instance.
- * @param {string} appId - The app ID for Firestore.
- * @returns {Promise<number>} The user's new karma total.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @returns {number} The new karma total.
  */
 const addKarmaPoints = async (guildId, user, points, db, appId) => {
-    const karmaData = await getOrCreateUserKarma(guildId, user.id, db, appId);
-    const newPoints = karmaData.points + points;
-    await updateUserKarmaData(guildId, user.id, { points: newPoints }, db, appId);
-    return newPoints;
+    const userData = await getOrCreateUserKarma(guildId, user.id, db, appId);
+    const newKarma = (userData.karma || 0) + points;
+    await updateUserKarmaData(guildId, user.id, { karma: newKarma }, db, appId);
+    return newKarma;
 };
 
 /**
  * Subtracts karma points from a user.
- * @param {string} guildId - The guild ID.
- * @param {User} user - The user object.
+ * @param {string} guildId - The ID of the guild.
+ * @param {User} user - The Discord user object.
  * @param {number} points - The number of points to subtract.
  * @param {Firestore} db - The Firestore database instance.
- * @param {string} appId - The app ID for Firestore.
- * @returns {Promise<number>} The user's new karma total.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @returns {number} The new karma total.
  */
 const subtractKarmaPoints = async (guildId, user, points, db, appId) => {
-    const karmaData = await getOrCreateUserKarma(guildId, user.id, db, appId);
-    const newPoints = karmaData.points - points;
-    await updateUserKarmaData(guildId, user.id, { points: newPoints }, db, appId);
-    return newPoints;
+    return addKarmaPoints(guildId, user, -points, db, appId);
 };
 
 /**
  * Sets a user's karma points to a specific value.
- * @param {string} guildId - The guild ID.
- * @param {User} user - The user object.
- * @param {number} points - The new karma point total.
+ * @param {string} guildId - The ID of the guild.
+ * @param {User} user - The Discord user object.
+ * @param {number} points - The new karma total.
  * @param {Firestore} db - The Firestore database instance.
- * @param {string} appId - The app ID for Firestore.
- * @returns {Promise<number>} The user's new karma total.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @returns {number} The new karma total.
  */
 const setKarmaPoints = async (guildId, user, points, db, appId) => {
-    await updateUserKarmaData(guildId, user.id, { points: points }, db, appId);
+    const userData = await getOrCreateUserKarma(guildId, user.id, db, appId);
+    await updateUserKarmaData(guildId, user.id, { karma: points }, db, appId);
     return points;
 };
 
 /**
- * Calculates and awards passive karma based on message activity.
- * @param {Guild} guild - The guild object.
- * @param {User} user - The user object.
- * @param {Object} karmaData - The user's karma data.
- * @param {Firestore} db - The Firestore database instance.
- * @param {string} appId - The app ID for Firestore.
+ * Sends a karma announcement to the configured karma channel.
+ * @param {Guild} guild - The Discord guild object.
+ * @param {string} userId - The ID of the user whose karma changed.
+ * @param {number} karmaChange - The amount of karma changed (+/-).
+ * @param {number} newKarma - The user's new total karma.
+ * @param {Function} getGuildConfig - Function to get the guild's config.
+ * @param {Client} client - The Discord client instance.
+ * @param {boolean} isNewMember - True if this is a new member greeting.
  */
-const calculateAndAwardKarma = async (guild, user, karmaData, db, appId) => {
-    // Karma awarded for messages and replies is now handled by other systems,
-    // so this function can be simplified or removed if not needed.
-    // Keeping it here for future expansion but removing the AI dependency.
-    return;
+const sendKarmaAnnouncement = async (guild, userId, karmaChange, newKarma, getGuildConfig, client, isNewMember = false) => {
+    const guildConfig = await getGuildConfig(guild.id);
+    const karmaChannelId = guildConfig.karmaChannelId;
+
+    if (!karmaChannelId) {
+        console.warn(`[KARMA SYSTEM] No karma announcement channel configured for guild ${guild.name}.`);
+        return;
+    }
+
+    const karmaChannel = guild.channels.cache.get(karmaChannelId);
+    if (!karmaChannel) {
+        console.warn(`[KARMA SYSTEM] Configured karma channel (${karmaChannelId}) not found in guild ${guild.name}.`);
+        return;
+    }
+
+    const user = await client.users.fetch(userId).catch(() => null);
+    if (!user) {
+        console.warn(`[KARMA SYSTEM] Could not fetch user ${userId} for karma announcement.`);
+        return;
+    }
+
+    let description;
+    if (isNewMember) {
+        description = `Welcome <@${user.id}> to the server! They start with ${newKarma} Karma! 🎉`;
+    } else {
+        const action = karmaChange > 0 ? 'gained' : 'lost';
+        description = `<@${user.id}> has ${action} ${Math.abs(karmaChange)} Karma! Their new total is ${newKarma}.`;
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(karmaChange > 0 ? '#00FF00' : (karmaChange < 0 ? '#FF0000' : '#FFFF00'))
+        .setTitle('Karma Update!')
+        .setDescription(description)
+        .setThumbnail(user.displayAvatarURL({ dynamic: true }))
+        .setTimestamp();
+
+    await karmaChannel.send({ embeds: [embed] }).catch(console.error);
 };
 
 /**
- * Sends a karma announcement to the configured karma channel.
- * @param {Guild} guild - The guild object.
- * @param {string} userId - The ID of the user whose karma changed.
- * @param {number} karmaChange - The amount of karma changed.
- * @param {number} newKarmaTotal - The user's new karma total.
- * @param {Function} getGuildConfig - Function to get the guild's config.
- * @param {Client} client - The Discord client.
- * @param {boolean} isNewMember - Whether the user is a new member.
+ * Calculates and awards karma based on message activity.
+ * (This function might need further refinement based on specific karma rules)
+ * @param {Guild} guild - The Discord guild object.
+ * @param {User} user - The Discord user object.
+ * @param {Object} userData - The user's current karma data.
+ * @param {Firestore} db - The Firestore database instance.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @param {string} googleApiKey - The Google API Key (if sentiment analysis is re-introduced).
  */
-const sendKarmaAnnouncement = async (guild, userId, karmaChange, newKarmaTotal, getGuildConfig, client, isNewMember = false) => {
-    const guildConfig = await getGuildConfig(guild.id);
-    if (!guildConfig.karmaChannelId) return;
+const calculateAndAwardKarma = async (guild, user, userData, db, appId, googleApiKey) => {
+    // Example: Award 1 karma for every 10 messages today, up to a limit
+    const messagesToday = userData.messagesToday || 0;
+    const repliesReceivedToday = userData.repliesReceivedToday || 0;
+    let karmaAwarded = 0;
 
-    const karmaChannel = guild.channels.cache.get(guildConfig.karmaChannelId);
-    if (!karmaChannel) return;
-
-    let emoji = karmaChange > 0 ? '✨' : '🔻';
-    let verb = karmaChange > 0 ? 'gained' : 'lost';
-    let announcementMessage;
-
-    if (isNewMember) {
-        announcementMessage = `<@${userId}> has joined the server and ${verb} their first ${karmaChange} Karma point! Their total is now **${newKarmaTotal}**.`;
-    } else {
-        announcementMessage = `<@${userId}> has ${verb} ${Math.abs(karmaChange)} Karma point(s)! Their total is now **${newKarmaTotal}**.`;
+    // Simple karma for messages (e.g., 1 karma per 10 messages, max 5 per day)
+    if (messagesToday > 0 && messagesToday % 10 === 0 && (messagesToday / 10) <= 5) {
+        karmaAwarded += 1;
     }
 
-    karmaChannel.send(announcementMessage).catch(console.error);
+    // Simple karma for replies received (e.g., 1 karma per 5 replies, max 3 per day)
+    if (repliesReceivedToday > 0 && repliesReceivedToday % 5 === 0 && (repliesReceivedToday / 5) <= 3) {
+        karmaAwarded += 1;
+    }
+
+    if (karmaAwarded > 0) {
+        const newKarma = await addKarmaPoints(guild.id, user, karmaAwarded, db, appId);
+        // We can choose to announce this or keep it silent.
+        // await sendKarmaAnnouncement(guild, user.id, karmaAwarded, newKarma, client.getGuildConfig, client);
+    }
 };
 
-// Removed analyzeSentiment as it is no longer needed
-// const analyzeSentiment = async (text, apiKey) => { ... };
+/**
+ * Retrieves a user's moderation data (warnings and timeouts).
+ * @param {string} guildId - The ID of the guild.
+ * @param {string} userId - The ID of the user.
+ * @param {Firestore} db - The Firestore database instance.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @returns {Object} An object containing the user's warnings and timeouts arrays.
+ */
+const getUserModerationData = async (guildId, userId, db, appId) => {
+    const userData = await getOrCreateUserKarma(guildId, userId, db, appId);
+    return {
+        warnings: userData.warnings || [],
+        timeouts: userData.timeouts || []
+    };
+};
+
+/**
+ * Adds a warning to a user's moderation record.
+ * @param {string} guildId - The ID of the guild.
+ * @param {string} userId - The ID of the user.
+ * @param {Object} warningDetails - Object containing { timestamp, rule, reason, messageContent }.
+ * @param {Firestore} db - The Firestore database instance.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @returns {Array} The updated list of warnings.
+ */
+const addWarning = async (guildId, userId, warningDetails, db, appId) => {
+    const userData = await getOrCreateUserKarma(guildId, userId, db, appId);
+    userData.warnings.push(warningDetails);
+    await updateUserKarmaData(guildId, userId, { warnings: userData.warnings }, db, appId);
+    return userData.warnings;
+};
+
+/**
+ * Adds a timeout to a user's moderation record.
+ * @param {string} guildId - The ID of the guild.
+ * @param {string} userId - The ID of the user.
+ * @param {Object} timeoutDetails - Object containing { timestamp, duration }.
+ * @param {Firestore} db - The Firestore database instance.
+ * @param {string} appId - The application ID for Firestore paths.
+ * @returns {Array} The updated list of timeouts.
+ */
+const addTimeout = async (guildId, userId, timeoutDetails, db, appId) => {
+    const userData = await getOrCreateUserKarma(guildId, userId, db, appId);
+    userData.timeouts.push(timeoutDetails);
+    await updateUserKarmaData(guildId, userId, { timeouts: userData.timeouts }, db, appId);
+    return userData.timeouts;
+};
 
 module.exports = {
     getOrCreateUserKarma,
@@ -140,6 +228,9 @@ module.exports = {
     addKarmaPoints,
     subtractKarmaPoints,
     setKarmaPoints,
+    sendKarmaAnnouncement,
     calculateAndAwardKarma,
-    sendKarmaAnnouncement
+    getUserModerationData, // Export new moderation data retrieval
+    addWarning,           // Export new warning function
+    addTimeout            // Export new timeout function
 };
