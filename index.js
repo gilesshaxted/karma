@@ -788,7 +788,7 @@ client.once('ready', async () => {
         }
         
         // Handle Karma reactions first
-        if (['👍', '👎'].includes(reaction.emoji.name)) {
+        if (['�', '👎'].includes(reaction.emoji.name)) {
             const reactorMember = await reaction.message.guild.members.fetch(user.id).catch(() => null);
             const guildConfig = await client.getGuildConfig(reaction.message.guild.id); // Use client.getGuildConfig
             
@@ -822,8 +822,9 @@ client.once('ready', async () => {
         }
 
         // Delegate to the external moderation/karma reaction handler if not a karma emoji
+        // FIX: Pass karmaSystem to handleMessageReactionAdd
         await handleMessageReactionAdd(
-            reaction, user, client, client.getGuildConfig, client.saveGuildConfig, hasPermission, isExempt, logging.logModerationAction, logging.logMessage // Use client.getGuildConfig, client.saveGuildConfig
+            reaction, user, client, client.getGuildConfig, client.saveGuildConfig, hasPermission, isExempt, logging.logModerationAction, logging.logMessage, karmaSystem
         );
     });
 
@@ -932,3 +933,4 @@ client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
     console.error("Discord login failed:", err);
     // Do not exit here, let the process continue for the web server
 });
+�
