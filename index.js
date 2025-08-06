@@ -672,7 +672,7 @@ client.once('ready', async () => {
                 client.invites.set(guild.id, new Map(invites.map(invite => [invite.code, invite.uses])));
                 console.log(`Cached initial invites for guild ${guild.name}`);
             } catch (error) {
-                console.warn(`Could not fetch initial invites for guild ${guild.name}. Ensure bot has 'Manage Guild' permission.`, error);
+                console.warn(`Could not fetch initial invites for guild ${member.guild.name} on member join:`, error);
             }
         }
         // Pass newInvitesMap and oldInvitesMap to handler
@@ -832,11 +832,7 @@ client.once('ready', async () => {
     client.on('interactionCreate', async interaction => {
         if (!client.db || !client.appId) {
             console.warn('Skipping interaction processing: Firebase or API keys not fully initialized yet.');
-            if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ content: 'Bot is still starting up, please try again in a moment.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
-            } else {
-                await interaction.reply({ content: 'Bot is still starting up, please try again in a moment.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
-            }
+            // Removed direct reply here. Commands will handle their own deferrals/replies.
             return;
         }
 
@@ -847,19 +843,8 @@ client.once('ready', async () => {
                 ephemeral = false; // Make leaderboard public
             }
             
-            // Defer reply immediately, but handle potential failure
-            let deferred = false;
-            try {
-                // Removed global deferReply here. Commands will now handle their own deferrals.
-                // await interaction.deferReply({ ephemeral: ephemeral }); 
-                deferred = true; // This will now always be true if a command defers successfully
-            } catch (deferError) {
-                if (deferError.code === 10062) { // Unknown interaction
-                    console.warn(`Interaction ${interaction.id} already expired or unknown when deferring. Skipping.`);
-                    return; // Stop processing this interaction
-                }
-                console.error(`Error deferring reply for interaction ${interaction.id}:`, deferError);
-            }
+            // Individual commands are now responsible for deferring their replies.
+            // Removed global deferral logic from here.
 
             if (interaction.isCommand()) {
                 const { commandName } = interaction;
@@ -875,14 +860,20 @@ client.once('ready', async () => {
                 // Check permissions for karma commands
                 if (['karma_plus', 'karma_minus', 'karma_set'].includes(commandName)) {
                     if (!hasPermission(interaction.member, guildConfig)) {
-                        // If not deferred by command, reply immediately. If deferred, edit.
-                        if (!deferred) await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Defer if not already
+                        // Commands are now responsible for their own deferral.
+                        // This path should defer if it hasn't already.
+                        if (!interaction.deferred && !interaction.replied) {
+                           await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+                        }
                         return interaction.editReply({ content: 'You do not have permission to use this karma command.', flags: [MessageFlags.Ephemeral] });
                     }
                 } else { // For other moderation commands
                     if (!hasPermission(interaction.member, guildConfig)) {
-                        // If not deferred by command, reply immediately. If deferred, edit.
-                        if (!deferred) await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Defer if not already
+                        // Commands are now responsible for their own deferral.
+                        // This path should defer if it hasn't already.
+                        if (!interaction.deferred && !interaction.replied) {
+                            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+                        }
                         return interaction.editReply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
                     }
                 }
