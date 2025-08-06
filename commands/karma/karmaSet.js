@@ -12,7 +12,7 @@ module.exports = {
             option.setName('amount')
                 .setDescription('The new Karma amount')
                 .setRequired(true)),
-    async execute(interaction, { client, db, appId, getGuildConfig, setKarmaPoints, sendKarmaAnnouncement }) { // Added client, sendKarmaAnnouncement
+    async execute(interaction, { client, db, appId, getGuildConfig, setKarmaPoints, karmaSystem }) { // Removed sendKarmaAnnouncement from direct destructuring
         await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Defer reply ephemerally
 
         const targetUser = interaction.options.getUser('target');
@@ -27,12 +27,12 @@ module.exports = {
         }
 
         try {
-            const oldKarma = (await client.getOrCreateUserKarma(guild.id, targetUser.id, db, appId)).karma; // Fetch old karma for logging/announcement
+            const oldKarma = (await karmaSystem.getOrCreateUserKarma(guild.id, targetUser.id, db, appId)).karma; // Fetch old karma for logging/announcement
             const newKarma = await setKarmaPoints(guild.id, targetUser, amount, db, appId);
 
             // Send announcement to Karma Channel
-            // Pass client.getGuildConfig and client to sendKarmaAnnouncement
-            await sendKarmaAnnouncement(guild, targetUser.id, newKarma - oldKarma, newKarma, client.getGuildConfig, client);
+            // Now correctly accessing sendKarmaAnnouncement from karmaSystem
+            await karmaSystem.sendKarmaAnnouncement(guild, targetUser.id, newKarma - oldKarma, newKarma, client.getGuildConfig, client);
 
             await interaction.editReply({ content: `Successfully set ${targetUser.tag}'s Karma to ${newKarma}.` });
 
