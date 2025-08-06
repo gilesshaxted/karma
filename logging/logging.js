@@ -72,9 +72,9 @@ const logModerationAction = async (actionType, guild, targetUser, moderator, rea
 /**
  * Logs a general message to the configured message log channel.
  * @param {Message} message - The message object to log.
- * @param {Client} client - The Discord client instance (contains getGuildConfig). // Changed parameter
+ * @param {Client} client - The Discord client instance (contains getGuildConfig).
  */
-const logMessage = async (message, client) => { // Changed parameter
+const logMessage = async (message, client) => {
     // Access getGuildConfig directly from the client object
     const getGuildConfig = client.getGuildConfig;
 
