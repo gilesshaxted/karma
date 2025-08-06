@@ -36,8 +36,9 @@ const sensitiveWordRegex = {
  * @param {Function} isExempt - Function to check for user/role immunity.
  * @param {Function} logModerationAction - Function to log moderation actions.
  * @param {Function} logMessage - Function to log general messages.
+ * @param {Object} karmaSystem - The karmaSystem module for managing user data.
  */
-const checkMessageForModeration = async (message, client, getGuildConfig, saveGuildConfig, isExempt, logModerationAction, logMessage) => {
+const checkMessageForModeration = async (message, client, getGuildConfig, saveGuildConfig, isExempt, logModerationAction, logMessage, karmaSystem) => {
     // Ignore bots and DMs
     if (message.author.bot || !message.guild) {
         return;
@@ -199,16 +200,15 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                 }
             });
             
-            // Get or create user moderation data in Firestore
-            const modRef = doc(collection(client.db, `artifacts/${client.appId}/public/data/guilds/${message.guild.id}/mod_data`), message.author.id);
-            const modSnap = await getDoc(modRef);
-            
-            // Ensure modData is always an object, even if modSnap.data() is undefined for an existing document
-            const modData = modSnap.data() || { warnings: [], timeouts: [] };
+            // Get user moderation data using karmaSystem
+            const modData = await karmaSystem.getOrCreateUserKarma(message.guild.id, message.author.id, client.db, client.appId);
 
             // Add new warning
             const warningTimestamp = Date.now();
-            modData.warnings.push({ timestamp: warningTimestamp, rule, reason, messageContent: message.content });
+            const newWarning = { timestamp: warningTimestamp, rule, reason, messageContent: message.content };
+            modData.warnings.push(newWarning);
+            await karmaSystem.updateUserKarmaData(message.guild.id, message.author.id, { warnings: modData.warnings }, client.db, client.appId);
+
             console.log(`[AUTOMOD DEBUG] ${message.author.tag} warnings count: ${modData.warnings.length}`); // DEBUG
 
             // Check for 3 warnings in the last hour
@@ -225,13 +225,17 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                         // Attempt to send a message to the channel if timeout fails
                         message.channel.send(`Failed to timeout <@${member.user.id}>. Please check bot permissions.`).catch(console.error);
                     });
-                    modData.timeouts.push({ timestamp: warningTimestamp, duration: '6 hours' });
-                    // Log the timeout action
-                    // FIX: Pass client object to logModerationAction
-                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 6 hours for 3 warnings in 1 hour.`, reason, client); 
+                    const newTimeout = { timestamp: warningTimestamp, duration: '6 hours' };
+                    modData.timeouts.push(newTimeout);
+                    // Clear warnings after timeout to reset the 3-warning count for the next cycle
+                    modData.warnings = []; 
+                    await karmaSystem.updateUserKarmaData(message.guild.id, message.author.id, { timeouts: modData.timeouts, warnings: modData.warnings }, client.db, client.appId);
 
                     // Notify user about timeout
                     await message.author.send(`You have been timed out in **${message.guild.name}** for 6 hours due to repeated rule violations. Reason: ${reason}`).catch(console.error);
+                    // Log the timeout action
+                    // FIX: Pass getGuildConfig and saveGuildConfig explicitly
+                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 6 hours for 3 warnings in 1 hour.`, reason, getGuildConfig, saveGuildConfig); 
 
                 } catch (timeoutError) {
                     console.error(`[AUTOMOD ERROR] Error during member timeout for ${member.user.tag}:`, timeoutError);
@@ -239,8 +243,8 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
             } else {
                 console.log(`[AUTOMOD] ${message.author.tag} received a warning.`); // Added for debugging
                 // Log individual warning
-                // FIX: Pass client object to logModerationAction
-                logModerationAction('Warning', message.guild, message.author, client.user, reason, client); 
+                // FIX: Pass getGuildConfig and saveGuildConfig explicitly
+                logModerationAction('Warning', message.guild, message.author, client.user, reason, getGuildConfig, saveGuildConfig); 
                 // Notify user about warning
                 await message.author.send(`You received a warning in **${message.guild.name}**. Reason: ${reason}`).catch(console.error);
             }
@@ -259,11 +263,14 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                         console.error(`[AUTOMOD ERROR] Failed to apply severe timeout to member ${member.user.tag}:`, err);
                         message.channel.send(`Failed to apply severe timeout to <@${member.user.id}>. Please check bot permissions.`).catch(console.error);
                     });
+                    // Clear timeouts after 7-day penalty to reset the 5-timeout count for the next cycle
+                    modData.timeouts = []; 
+                    await karmaSystem.updateUserKarmaData(message.guild.id, message.author.id, { timeouts: modData.timeouts }, client.db, client.appId);
+
                     // Notify user about severe timeout
                     await message.author.send(`You have been timed out in **${message.guild.name}** for 7 days due to severe repeated rule violations. Reason: ${reason}`).catch(console.error);
                     // Log the severe timeout action
-                    // FIX: Pass client object to logModerationAction
-                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason, client); 
+                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason, getGuildConfig, saveGuildConfig); 
                     
                     // Send alert to mod channel
                     if (guildConfig.modAlertChannelId) {
@@ -282,8 +289,8 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                 }
             }
 
-            // Save updated moderation data to Firestore
-            await setDoc(modRef, modData, { merge: true }).catch(err => console.error(`[AUTOMOD ERROR] Failed to save moderation data for ${message.author.tag} to Firestore:`, err));
+            // Save updated moderation data to Firestore (already done by updateUserKarmaData for warnings/timeouts)
+            // await setDoc(modRef, modData, { merge: true }).catch(err => console.error(`[AUTOMOD ERROR] Failed to save moderation data for ${message.author.tag} to Firestore:`, err));
 
         } catch (error) {
             console.error(`[AUTOMOD ERROR] Failed to process automoderation for message from ${message.author.tag}:`, error);
