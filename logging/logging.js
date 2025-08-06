@@ -1,6 +1,6 @@
 // logging/logging.js
 const { EmbedBuilder } = require('discord.js');
-// No direct Firestore imports needed here as getGuildConfig and saveGuildConfig are passed directly.
+// No direct Firestore imports needed here as getGuildConfig and saveGuildConfig are accessed via client.
 
 /**
  * Logs a moderation action to the configured moderation log channel.
@@ -9,19 +9,20 @@ const { EmbedBuilder } = require('discord.js');
  * @param {User} targetUser - The user who was targeted by the action.
  * @param {User} moderator - The user who performed the action (bot or human).
  * @param {string} reason - The reason for the action.
- * @param {Client} client - The Discord client instance (can be used for other client-specific properties if needed). // Kept for flexibility
- * @param {Function} getGuildConfig - Function to get the guild's config.
- * @param {Function} saveGuildConfig - Function to save the guild's config.
+ * @param {Client} client - The Discord client instance (contains getGuildConfig and saveGuildConfig).
  */
-const logModerationAction = async (actionType, guild, targetUser, moderator, reason, client, getGuildConfig, saveGuildConfig) => {
+const logModerationAction = async (actionType, guild, targetUser, moderator, reason, client) => { // Simplified parameters
     try {
-        // Now getGuildConfig and saveGuildConfig are directly available from parameters
+        // Access getGuildConfig and saveGuildConfig directly from the client object
+        const getGuildConfig = client.getGuildConfig;
+        const saveGuildConfig = client.saveGuildConfig;
+
         if (typeof getGuildConfig !== 'function') {
-            console.error(`[LOGGING ERROR] getGuildConfig is not a function.`);
+            console.error(`[LOGGING ERROR] getGuildConfig is not a function on client object. It might not be attached yet or is undefined.`);
             return;
         }
         if (typeof saveGuildConfig !== 'function') {
-            console.error(`[LOGGING ERROR] saveGuildConfig is not a function.`);
+            console.error(`[LOGGING ERROR] saveGuildConfig is not a function on client object. It might not be attached yet or is undefined.`);
             return;
         }
 
