@@ -234,8 +234,7 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                     // Notify user about timeout
                     await message.author.send(`You have been timed out in **${message.guild.name}** for 6 hours due to repeated rule violations. Reason: ${reason}`).catch(console.error);
                     // Log the timeout action
-                    // FIX: Pass getGuildConfig and saveGuildConfig explicitly
-                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 6 hours for 3 warnings in 1 hour.`, reason, getGuildConfig, saveGuildConfig); 
+                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 6 hours for 3 warnings in 1 hour.`, reason, client); 
 
                 } catch (timeoutError) {
                     console.error(`[AUTOMOD ERROR] Error during member timeout for ${member.user.tag}:`, timeoutError);
@@ -243,8 +242,7 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
             } else {
                 console.log(`[AUTOMOD] ${message.author.tag} received a warning.`); // Added for debugging
                 // Log individual warning
-                // FIX: Pass getGuildConfig and saveGuildConfig explicitly
-                logModerationAction('Warning', message.guild, message.author, client.user, reason, getGuildConfig, saveGuildConfig); 
+                logModerationAction('Warning', message.guild, message.author, client.user, reason, client); 
                 // Notify user about warning
                 await message.author.send(`You received a warning in **${message.guild.name}**. Reason: ${reason}`).catch(console.error);
             }
@@ -270,7 +268,7 @@ const checkMessageForModeration = async (message, client, getGuildConfig, saveGu
                     // Notify user about severe timeout
                     await message.author.send(`You have been timed out in **${message.guild.name}** for 7 days due to severe repeated rule violations. Reason: ${reason}`).catch(console.error);
                     // Log the severe timeout action
-                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason, getGuildConfig, saveGuildConfig); 
+                    logModerationAction('Timeout', message.guild, message.author, client.user, `Timed out for 7 days for 5 timeouts in 1 month.`, reason, client); 
                     
                     // Send alert to mod channel
                     if (guildConfig.modAlertChannelId) {
