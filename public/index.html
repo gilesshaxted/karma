@@ -345,7 +345,8 @@
                         const animated = parts[0].includes('a:');
                         const emojiName = parts[1];
                         const emojiId = parts[2];
-                        const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? 'gif' : 'png'}`;
+                        // FIX: Use imageURL() instead of .url
+                        const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? 'gif' : 'png'}`; 
                         emojiTag.innerHTML = `
                             <img src="${imageUrl}" alt="${emojiName}" class="w-5 h-5">
                             <span class="text-sm">x</span>
@@ -607,7 +608,7 @@
                             <div id="custom-emojis-list" class="flex flex-wrap gap-2 w-full">
                                 ${guildData.emojis.length > 0 ? 
                                    guildData.emojis.map(emoji => `
-                                    <img src="${emoji.url}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
+                                    <img src="${emoji.imageURL()}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
                                    `).join('') 
                                    : '<p class="text-sm text-gray-400">No custom emojis found in this server.</p>'
                                }
