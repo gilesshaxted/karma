@@ -1,5 +1,4 @@
-// moderation/warn.js
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 
 module.exports = {
     // Slash command data
@@ -16,7 +15,9 @@ module.exports = {
                 .setRequired(false)), // Reason is optional
 
     // Execute function for slash command
-    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction }) {
+    async execute(interaction, { client, getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, karmaSystem }) { // Added 'client', 'karmaSystem'
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Defer reply ephemerally
+
         const targetUser = interaction.options.getUser('target');
         const reason = interaction.options.getString('reason') || 'No reason provided.';
         const moderator = interaction.user;
@@ -27,17 +28,16 @@ module.exports = {
         const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
 
         if (!targetMember) {
-            return interaction.editReply({ content: 'Could not find that user in this server.' });
+            return interaction.editReply({ content: 'Could not find that user in this server.', flags: [MessageFlags.Ephemeral] });
         }
 
         // Check if the target is exempt
         if (isExempt(targetMember, guildConfig)) {
-            return interaction.editReply({ content: 'You cannot warn this user as they are exempt from moderation.' });
+            return interaction.editReply({ content: 'You cannot warn this user as they are exempt from moderation.', flags: [MessageFlags.Ephemeral] });
         }
 
-        guildConfig.caseNumber++;
-        await saveGuildConfig(guild.id, guildConfig);
-        const caseNumber = guildConfig.caseNumber;
+        // Removed manual guildConfig.caseNumber++ and saveGuildConfig here
+        // The case number increment is now handled by logModerationAction internally.
 
         try {
             // Attempt to send a DM to the warned user
@@ -48,18 +48,24 @@ module.exports = {
                 .setTimestamp();
             await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
 
-            // Log the moderation action (passing getGuildConfig, db, appId from index.js via interaction.client context)
-            await logModerationAction(guild, 'Warning', targetUser, reason, moderator, caseNumber, null, null, getGuildConfig, interaction.client.db, interaction.client.appId);
+            // Log the moderation action and get the case number
+            const caseNumber = await logModerationAction('Warning', guild, targetUser, moderator, reason, client);
 
-            await interaction.editReply({ content: `Successfully warned ${targetUser.tag} for: ${reason} (Case #${caseNumber})` });
+            // Record the warning in karmaSystem
+            if (caseNumber) { // Only add if logging was successful and returned a case number
+                const warningDetails = { timestamp: Date.now(), rule: 'Manual Warning', reason: reason, messageContent: null, caseNumber: caseNumber };
+                await karmaSystem.addWarning(guild.id, targetUser.id, warningDetails, client.db, client.appId);
+            }
+
+            await interaction.editReply({ content: `Successfully warned ${targetUser.tag} for: ${reason}${caseNumber ? ` (Case #${caseNumber})` : ''}` });
         } catch (error) {
             console.error(`Error warning user ${targetUser.tag}:`, error);
-            await interaction.editReply({ content: `Failed to warn ${targetUser.tag}. An error occurred. Make sure the bot has permissions and its role is above the target's highest role, and that the user's DMs are open.` });
+            await interaction.editReply({ content: `Failed to warn ${targetUser.tag}. An error occurred. Make sure the bot has permissions and its role is above the target's highest role, and that the user's DMs are open.`, flags: [MessageFlags.Ephemeral] });
         }
     },
 
-    // Execute function for emoji-based moderation
-    async executeEmoji(message, targetMember, reason, moderator, caseNumber, { logModerationAction, logMessage, getGuildConfig, db, appId }) { // Added getGuildConfig, db, appId
+    // Execute function for emoji-based moderation (called from messageReactionAdd.js)
+    async executeEmoji(message, targetMember, reason, moderator, { client, logModerationAction, logMessage, getGuildConfig, karmaSystem }) { // Added 'client', 'karmaSystem'
         const guild = message.guild;
         const targetUser = targetMember.user;
 
@@ -72,10 +78,16 @@ module.exports = {
                 .setTimestamp();
             await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
 
-            // Log the moderation action (passing getGuildConfig, db, appId)
-            await logModerationAction(guild, 'Warning (Emoji)', targetUser, reason, moderator, caseNumber, null, message.url, getGuildConfig, db, appId);
+            // Log the moderation action and get the case number
+            const caseNumber = await logModerationAction('Warning (Emoji)', guild, targetUser, moderator, reason, client);
 
-            console.log(`Successfully warned ${targetUser.tag} via emoji for: ${reason} (Case #${caseNumber})`);
+            // Record the warning in karmaSystem
+            if (caseNumber) { // Only add if logging was successful and returned a case number
+                const warningDetails = { timestamp: Date.now(), rule: 'Emoji Warning', reason: reason, messageContent: message.content, caseNumber: caseNumber };
+                await karmaSystem.addWarning(guild.id, targetUser.id, warningDetails, client.db, client.appId);
+            }
+
+            console.log(`Successfully warned ${targetUser.tag} via emoji for: ${reason}${caseNumber ? ` (Case #${caseNumber})` : ''}`);
         } catch (error) {
             console.error(`Error warning user ${targetUser.tag} via emoji:`, error);
         }
