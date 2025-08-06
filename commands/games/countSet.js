@@ -1,5 +1,4 @@
-// games/countSet.js
-const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, MessageFlags } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -9,9 +8,8 @@ module.exports = {
             option.setName('number')
                 .setDescription('The number to set the count to')
                 .setRequired(true)),
-    async execute(interaction, { getGuildConfig, saveGuildConfig, hasPermission }) {
-        // interaction.deferReply() is now handled by index.js for all slash commands.
-        // REMOVED: await interaction.deferReply({ ephemeral: true }); // This line is removed
+    async execute(interaction, { client, getGuildConfig, saveGuildConfig, hasPermission }) { // Added 'client' to destructuring
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Defer reply ephemerally
 
         const newNumber = interaction.options.getInteger('number');
         const guild = interaction.guild;
@@ -19,15 +17,15 @@ module.exports = {
 
         // Check if the user has permission (mod/admin)
         if (!hasPermission(interaction.member, guildConfig)) {
-            return interaction.editReply('You do not have permission to set the counting game.');
+            return interaction.editReply({ content: 'You do not have permission to set the counting game.', flags: [MessageFlags.Ephemeral] });
         }
 
         if (!guildConfig.countingChannelId) {
-            return interaction.editReply('The counting channel is not set up. Please set it via the dashboard first.');
+            return interaction.editReply({ content: 'The counting channel is not set up. Please set it via the dashboard first.', flags: [MessageFlags.Ephemeral] });
         }
 
         if (newNumber < 0) {
-            return interaction.editReply('The count cannot be set to a negative number.');
+            return interaction.editReply({ content: 'The count cannot be set to a negative number.', flags: [MessageFlags.Ephemeral] });
         }
 
         try {
@@ -36,10 +34,12 @@ module.exports = {
                 try {
                     const countingChannel = guild.channels.cache.get(guildConfig.countingChannelId);
                     if (countingChannel) {
-                        const lastMessage = await countingChannel.messages.fetch(guildConfig.lastCountMessageId);
-                        const botReaction = lastMessage.reactions.cache.get('1196558213726863491'); // Verify emoji ID
-                        if (botReaction && botReaction.me) {
-                            await botReaction.users.remove(interaction.client.user.id);
+                        const lastMessage = await countingChannel.messages.fetch(guildConfig.lastCountMessageId).catch(() => null); // Catch if message not found
+                        if (lastMessage) {
+                            const botReaction = lastMessage.reactions.cache.get('1196558213726863491'); // Verify emoji ID
+                            if (botReaction && botReaction.me) {
+                                await botReaction.users.remove(client.user.id).catch(console.error); // Use client.user.id
+                            }
                         }
                     }
                 } catch (error) {
@@ -57,11 +57,11 @@ module.exports = {
                 await countingChannel.send(`The counting game has been manually set to **${newNumber}** by ${interaction.user.tag}. The next number is ${newNumber + 1}!`).catch(console.error);
             }
 
-            await interaction.editReply(`Counting game has been set to ${newNumber}.`);
+            await interaction.editReply({ content: `Counting game has been set to ${newNumber}.`, flags: [MessageFlags.Ephemeral] });
 
         } catch (error) {
             console.error('Error setting counting game:', error);
-            await interaction.editReply('Failed to set the counting game. An error occurred.');
+            await interaction.editReply({ content: 'Failed to set the counting game. An error occurred.', flags: [MessageFlags.Ephemeral] });
         }
     },
 };
