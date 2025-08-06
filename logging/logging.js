@@ -9,9 +9,9 @@ const { EmbedBuilder } = require('discord.js');
  * @param {User} targetUser - The user who was targeted by the action.
  * @param {User} moderator - The user who performed the action (bot or human).
  * @param {string} reason - The reason for the action.
- * @param {Client} client - The Discord client instance (contains getGuildConfig and saveGuildConfig). // Keep client for other potential uses if needed
- * @param {Function} getGuildConfig - Function to get the guild's config. // Explicitly passed
- * @param {Function} saveGuildConfig - Function to save the guild's config. // Explicitly passed
+ * @param {Client} client - The Discord client instance (can be used for other client-specific properties if needed). // Kept for flexibility
+ * @param {Function} getGuildConfig - Function to get the guild's config.
+ * @param {Function} saveGuildConfig - Function to save the guild's config.
  */
 const logModerationAction = async (actionType, guild, targetUser, moderator, reason, client, getGuildConfig, saveGuildConfig) => {
     try {
