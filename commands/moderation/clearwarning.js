@@ -1,6 +1,6 @@
-// moderation/clearwarning.js
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { collection, query, where, getDocs, deleteDoc, doc } = require('firebase/firestore');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+// Removed direct Firestore imports like collection, query, where, getDocs, deleteDoc, doc
+// as karmaSystem will handle the Firestore interaction for user moderation data.
 
 module.exports = {
     // Slash command data
@@ -17,7 +17,9 @@ module.exports = {
                 .setRequired(false)),
 
     // Execute function for slash command
-    async execute(interaction, { db, appId, getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, client }) { // Added 'client' here
+    async execute(interaction, { client, db, appId, getGuildConfig, saveGuildConfig, hasPermission, isExempt, logModerationAction, karmaSystem }) { // Added karmaSystem
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Defer reply ephemerally
+
         const caseNumberToClear = interaction.options.getInteger('casenumber');
         const targetUserOption = interaction.options.getUser('target'); // Optional target user
         const moderator = interaction.user;
@@ -25,63 +27,58 @@ module.exports = {
         const guildConfig = await getGuildConfig(guild.id);
 
         try {
-            const moderationRecordsRef = collection(db, `artifacts/${appId}/public/data/guilds/${guild.id}/moderation_records`);
-            let q = query(moderationRecordsRef,
-                where("caseNumber", "==", caseNumberToClear),
-                where("actionType", "==", "Warning")
-            );
-
-            // If a target user is provided, add it to the query for more precision
-            if (targetUserOption) {
-                q = query(q, where("targetUserId", "==", targetUserOption.id));
+            // Determine the target user for the warning. If targetUserOption is provided, use it.
+            // Otherwise, we might need to search all users' warnings if case numbers aren't globally unique.
+            // For now, we'll assume targetUserOption is always provided or we fetch all users.
+            // Given the previous /warnings command, targetUserOption is crucial for direct lookup.
+            if (!targetUserOption) {
+                return interaction.editReply({ content: 'Please provide the target user for the warning you wish to clear.', flags: [MessageFlags.Ephemeral] });
             }
 
-            const querySnapshot = await getDocs(q);
-
-            if (querySnapshot.empty) {
-                return interaction.editReply({ content: `No warning found with case number #${caseNumberToClear}${targetUserOption ? ` for ${targetUserOption.tag}` : ''}.` });
-            }
-
-            // We expect only one document for a unique case number. If multiple, take the first.
-            const warningDoc = querySnapshot.docs[0];
-            const warningData = warningDoc.data();
-            const targetUser = await client.users.fetch(warningData.targetUserId).catch(() => null); // Uses client to fetch user
-
-            if (!targetUser) {
-                // This case should ideally not happen if the user exists in the record
-                console.error(`Target user with ID ${warningData.targetUserId} not found for case #${caseNumberToClear}.`);
-                return interaction.editReply({ content: `Found warning #${caseNumberToClear}, but could not fetch the target user.` });
-            }
-
+            const targetUser = targetUserOption; // The actual Discord User object
             const targetMember = await guild.members.fetch(targetUser.id).catch(() => null);
-            if (isExempt(targetMember, guildConfig) && targetUser.id !== moderator.id) {
-                return interaction.editReply({ content: 'You cannot clear warnings for this user as they are exempt from moderation (unless you are clearing your own warnings).'});
+
+            if (!targetMember) {
+                return interaction.editReply({ content: 'Could not find that user in this server.', flags: [MessageFlags.Ephemeral] });
             }
 
-            await deleteDoc(warningDoc.ref);
+            if (isExempt(targetMember, guildConfig) && targetUser.id !== moderator.id) {
+                return interaction.editReply({ content: 'You cannot clear warnings for this user as they are exempt from moderation (unless you are clearing your own warnings).', flags: [MessageFlags.Ephemeral] });
+            }
 
-            // Log the action
-            guildConfig.caseNumber++; // Increment for the clear action itself
-            await saveGuildConfig(guild.id, guildConfig);
-            const newCaseNumber = guildConfig.caseNumber;
+            // Fetch the user's moderation data from their karma document
+            const modData = await karmaSystem.getOrCreateUserKarma(guild.id, targetUser.id, db, appId);
+            let warnings = modData.warnings || [];
 
-            const reason = `Cleared warning #${caseNumberToClear} for ${targetUser.tag}. Original reason: "${warningData.reason}"`;
-            // Pass getGuildConfig, db, appId from index.js via interaction.client context
-            await logModerationAction(guild, 'Warning Cleared (Specific)', targetUser, reason, moderator, newCaseNumber, null, null, getGuildConfig, interaction.client.db, interaction.client.appId);
+            const warningIndex = warnings.findIndex(w => w.caseNumber === caseNumberToClear);
 
-            await interaction.editReply({ content: `Successfully cleared warning #${caseNumberToClear} for ${targetUser.tag}. (Action Logged as Case #${newCaseNumber})` });
+            if (warningIndex === -1) {
+                return interaction.editReply({ content: `No warning found with case number #${caseNumberToClear} for ${targetUser.tag}.`, flags: [MessageFlags.Ephemeral] });
+            }
+
+            const clearedWarningData = warnings[warningIndex];
+            warnings.splice(warningIndex, 1); // Remove the warning from the array
+
+            // Update the user's warnings array in Firestore
+            await karmaSystem.updateUserKarmaData(guild.id, targetUser.id, { warnings: warnings }, db, appId);
+
+            // Log the action (case number increment is handled by logModerationAction internally)
+            const logReason = `Cleared warning #${caseNumberToClear} for ${targetUser.tag}. Original reason: "${clearedWarningData.reason}"`;
+            await logModerationAction('Warning Cleared', guild, targetUser, moderator, logReason, client); // Pass client
+
+            await interaction.editReply({ content: `Successfully cleared warning #${caseNumberToClear} for ${targetUser.tag}.` });
 
             // DM the target user
             const dmEmbed = new EmbedBuilder()
                 .setTitle('A Warning Has Been Cleared!')
-                .setDescription(`**Server:** ${guild.name}\n**Warning Case #:** ${caseNumberToClear}\n**Original Reason:** ${warningData.reason || 'No reason provided.'}\n**Moderator:** ${moderator.tag}`)
+                .setDescription(`**Server:** ${guild.name}\n**Warning Case #:** ${caseNumberToClear}\n**Original Reason:** ${clearedWarningData.reason || 'No reason provided.'}\n**Moderator:** ${moderator.tag}`)
                 .setColor(0x00FF00) // Green color for positive action
                 .setTimestamp();
             await targetUser.send({ embeds: [dmEmbed] }).catch(console.error);
 
         } catch (error) {
             console.error(`Error clearing specific warning #${caseNumberToClear}:`, error);
-            await interaction.editReply({ content: `Failed to clear warning #${caseNumberToClear}. An error occurred.` });
+            await interaction.editReply({ content: `Failed to clear warning #${caseNumberToClear}. An error occurred.`, flags: [MessageFlags.Ephemeral] });
         }
     }
 };
