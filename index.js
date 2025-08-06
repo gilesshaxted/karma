@@ -833,7 +833,7 @@ client.once('ready', async () => {
             if (interaction.deferred || interaction.replied) {
                 await interaction.editReply({ content: 'Bot is still starting up, please try again in a moment.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
             } else {
-                await interaction.reply({ content: 'Bot is still starting up, please try again in a moment.', ephemeral: true }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
+                await interaction.reply({ content: 'Bot is still starting up, please try again in a moment.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
             }
             return;
         }
@@ -848,7 +848,7 @@ client.once('ready', async () => {
             // Defer reply immediately, but handle potential failure
             let deferred = false;
             try {
-                await interaction.deferReply({ ephemeral: ephemeral }); // Use the determined ephemeral value
+                await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Use the determined ephemeral value
                 deferred = true;
             } catch (deferError) {
                 if (deferError.code === 10062) { // Unknown interaction
@@ -866,7 +866,7 @@ client.once('ready', async () => {
                     if (deferred) {
                         return interaction.editReply({ content: 'No command matching that name was found.' });
                     } else {
-                        return interaction.reply({ content: 'No command matching that name was found.', ephemeral: true });
+                        return interaction.reply({ content: 'No command matching that name was found.', flags: [MessageFlags.Ephemeral] });
                     }
                 }
 
@@ -878,7 +878,7 @@ client.once('ready', async () => {
                         if (deferred) {
                             return interaction.editReply({ content: 'You do not have permission to use this karma command.' });
                         } else {
-                            return interaction.reply({ content: 'You do not have permission to use this karma command.', ephemeral: true });
+                            return interaction.reply({ content: 'You do not have permission to use this karma command.', flags: [MessageFlags.Ephemeral] });
                         }
                     }
                 } else { // For other moderation commands
@@ -886,7 +886,7 @@ client.once('ready', async () => {
                         if (deferred) {
                             return interaction.editReply({ content: 'You do not have permission to use this command.' });
                         } else {
-                            return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+                            return interaction.reply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
                         }
                     }
                 }
@@ -919,7 +919,7 @@ client.once('ready', async () => {
             if (interaction.deferred || interaction.replied) {
                 await interaction.editReply({ content: 'An unexpected error occurred while processing your command.' }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
             } else {
-                await interaction.reply({ content: 'An unexpected error occurred while processing your command.', ephemeral: true }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
+                await interaction.reply({ content: 'An unexpected error occurred while processing your command.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
             }
         }
     });
