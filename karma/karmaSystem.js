@@ -129,7 +129,7 @@ const sendKarmaAnnouncement = async (guild, userId, karmaChange, newKarma, getGu
 
     let description;
     if (isNewMember) {
-        description = `Welcome <@${user.id}> to the server! They start with ${newKarma} Karma! �`;
+        description = `Welcome <@${user.id}> to the server! They start with ${newKarma} Karma! 🎉`;
     } else {
         const action = karmaChange > 0 ? 'gained' : 'lost';
         description = `<@${user.id}> has ${action} ${Math.abs(karmaChange)} Karma! Their new total is ${newKarma}.`;
@@ -275,4 +275,3 @@ module.exports = {
     addKickRecord,        // Export new kick function
     addBanRecord          // Export new ban function
 };
-�
