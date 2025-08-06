@@ -8,7 +8,7 @@ module.exports = {
             option.setName('target')
                 .setDescription('The user to remove Karma from')
                 .setRequired(true)),
-    async execute(interaction, { client, db, appId, getGuildConfig, subtractKarmaPoints, sendKarmaAnnouncement }) { // Added client, sendKarmaAnnouncement
+    async execute(interaction, { client, db, appId, getGuildConfig, subtractKarmaPoints, karmaSystem }) { // Removed sendKarmaAnnouncement from direct destructuring
         await interaction.deferReply({ flags: [MessageFlags.Ephemeral] }); // Defer reply ephemerally
 
         const targetUser = interaction.options.getUser('target');
@@ -25,8 +25,8 @@ module.exports = {
             const newKarma = await subtractKarmaPoints(guild.id, targetUser, 1, db, appId);
 
             // Send announcement to Karma Channel
-            // Pass client.getGuildConfig and client to sendKarmaAnnouncement
-            await sendKarmaAnnouncement(guild, targetUser.id, -1, newKarma, client.getGuildConfig, client);
+            // Now correctly accessing sendKarmaAnnouncement from karmaSystem
+            await karmaSystem.sendKarmaAnnouncement(guild, targetUser.id, -1, newKarma, client.getGuildConfig, client);
 
             await interaction.editReply({ content: `Successfully subtracted 1 Karma point from ${targetUser.tag}. Their new Karma total is ${newKarma}.` });
 
