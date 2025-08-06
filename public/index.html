@@ -275,7 +275,8 @@
                 } else {
                     showErrorMessage(guilds.message || 'Failed to fetch servers.');
                 }
-            } catch (error) {
+            }
+            catch (error) {
                 console.error('Error fetching guilds:', error);
                 showErrorMessage('Failed to connect to the bot backend. Please try again.');
             }
@@ -345,8 +346,7 @@
                         const animated = parts[0].includes('a:');
                         const emojiName = parts[1];
                         const emojiId = parts[2];
-                        // FIX: Use imageURL() instead of .url
-                        const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? 'gif' : 'png'}`; 
+                        const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? 'gif' : 'png'}`;
                         emojiTag.innerHTML = `
                             <img src="${imageUrl}" alt="${emojiName}" class="w-5 h-5">
                             <span class="text-sm">x</span>
@@ -747,4 +747,4 @@
 
     </script>
 </body>
-</html>
+</ht
