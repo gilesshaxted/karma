@@ -11,7 +11,7 @@ const { EmbedBuilder } = require('discord.js');
  * @param {string} reason - The reason for the action.
  * @param {Client} client - The Discord client instance (contains getGuildConfig and saveGuildConfig).
  */
-const logModerationAction = async (actionType, guild, targetUser, moderator, reason, client) => { // Simplified parameters
+const logModerationAction = async (actionType, guild, targetUser, moderator, reason, client) => {
     try {
         // Access getGuildConfig and saveGuildConfig directly from the client object
         const getGuildConfig = client.getGuildConfig;
