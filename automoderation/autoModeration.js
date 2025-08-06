@@ -2,7 +2,8 @@
 const { EmbedBuilder } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
-const { collection, doc, getDoc, setDoc } = require('firebase/firestore'); // Import Firestore functions
+// Removed direct Firestore imports as karmaSystem will handle them
+// const { collection, doc, getDoc, setDoc } = require('firebase/firestore'); 
 const cooldowns = new Map(); // In-memory map for spam cooldowns
 
 // Load word lists from JSON file
@@ -36,7 +37,7 @@ const sensitiveWordRegex = {
  * @param {Function} isExempt - Function to check for user/role immunity.
  * @param {Function} logModerationAction - Function to log moderation actions.
  * @param {Function} logMessage - Function to log general messages.
- * @param {Object} karmaSystem - The karmaSystem module for managing user data.
+ * @param {Object} karmaSystem - The karmaSystem module for managing user data. // NEW PARAMETER
  */
 const checkMessageForModeration = async (message, client, getGuildConfig, saveGuildConfig, isExempt, logModerationAction, logMessage, karmaSystem) => {
     // Ignore bots and DMs
