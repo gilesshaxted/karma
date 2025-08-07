@@ -1,911 +1,756 @@
-// index.js - Main entry point for the combined web server and Discord bot
-const path = require('path');
-const fs = require('fs');
-require('dotenv').config({ path: path.resolve(__dirname, 'karma_bot.env') }); // Load environment variables from karma_bot.env
-
-const { Client, Collection, GatewayIntentBits, Partials, PermissionsBitField, MessageFlags } = require('discord.js');
-const { REST } = require('@discordjs/rest');
-const { Routes } = require('discord-api-types/v10');
-const { initializeApp } = require('firebase/app');
-const { getAuth, signInAnonymously, signInWithCustomToken } = require('firebase/auth');
-const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, limit, getDocs } = require('firebase/firestore');
-const express = require('express');
-const axios = require('axios'); // For OAuth calls
-
-// Create a new Discord client instance
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.GuildPresences, // Required for userUpdate, guildMemberUpdate (presence changes)
-        GatewayIntentBits.GuildModeration, // Required for audit log, guildScheduledEvent*
-        GatewayIntentBits.GuildMessageTyping, // Often useful for bot interactions, though not strictly for logging
-        GatewayIntentBits.GuildInvites // Required to read invites for join tracking
-    ],
-    partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.GuildMember, Partials.User] // Added GuildMember, User for member/user updates
-});
-
-// Create a collection to store commands
-client.commands = new Collection();
-// Collection to store guild invites for tracking (stores Map<string, number> of code -> uses)
-client.invites = new Collection();
-
-// Firebase and Google API variables - will be initialized in client.once('ready')
-client.db = null;
-client.auth = null;
-client.appId = null;
-client.googleApiKey = null;
-client.tenorApiKey = process.env.TENOR_API_KEY; // New environment variable for Tenor
-client.userId = null; // Also store userId on client
-
-
-// Import helper functions (relative to index.js)
-const { hasPermission, isExempt } = require('./helpers/permissions');
-const logging = require('./logging/logging'); // Core logging functions
-const karmaSystem = require('./karma/karmaSystem'); // Karma system functions
-const autoModeration = require('./automoderation/autoModeration'); // Auto-moderation functions
-const handleMessageReactionAdd = require('./events/messageReactionAdd'); // Emoji reaction handler
-const meowFun = require('./events/meow'); // NEW: Import meowFun handler
-
-// New logging handlers
-const messageLogHandler = require('./logging/messageLogHandler');
-const memberLogHandler = require('./logging/memberLogHandler');
-const adminLogHandler = require('./logging/adminLogHandler');
-const joinLeaveLogHandler = require('./logging/joinLeaveLogHandler');
-const boostLogHandler = require('./logging/boostLogHandler');
-
-// New game handlers
-const countingGame = require('./games/countingGame');
-
-// New event handlers
-const spamGame = require('./events/spamFun'); // Updated from lemons to spamFun
-
-// --- Discord OAuth Configuration (Bot's Permissions for Invite) ---
-const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
-const DISCORD_REDIRECT_URI = process.env.DISCORD_REDIRECT_URI;
-const DISCORD_OAUTH_SCOPES = 'identify guilds'; // Scopes for user identification and guild list
-const DISCORD_BOT_PERMISSIONS = new PermissionsBitField([
-    PermissionsBitField.Flags.ManageChannels,
-    PermissionsBitField.Flags.ManageRoles,
-    PermissionsBitField.Flags.KickMembers,
-    PermissionsBitField.Flags.BanMembers,
-    PermissionsBitField.Flags.ModerateMembers,
-    PermissionsBitField.Flags.ReadMessageHistory,
-    PermissionsBitField.Flags.SendMessages,
-    PermissionsBitField.Flags.ManageMessages,
-    PermissionsBitField.Flags.ViewAuditLog, // Added for admin logging
-    PermissionsBitField.Flags.ManageGuild // Added for invite tracking
-]).bitfield.toString();
-
-// Helper function to get guild-specific config from Firestore
-// This function now explicitly takes 'clientInstance' as an argument
-const getGuildConfig = async (clientInstance, guildId) => {
-    const db = clientInstance.db;
-    const appId = clientInstance.appId;
-
-    if (!db || !appId) {
-        console.error('Firestore not initialized yet when getGuildConfig was called.');
-        return null;
-    }
-    const configRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    const configSnap = await getDoc(configRef);
-
-    if (configSnap.exists()) {
-        const configData = configSnap.data();
-        // Set default values for new moderation settings if they don't exist
-        return {
-            ...configData,
-            moderationLevel: configData.moderationLevel || 'none',
-            blacklistedWords: configData.blacklistedWords || '',
-            whitelistedWords: configData.whitelistedWords || '',
-            spamDetectionEnabled: configData.spamDetectionEnabled !== undefined ? configData.spamDetectionEnabled : false,
-            maxMessages: configData.maxMessages !== undefined ? configData.maxMessages : 5,
-            timeframeSeconds: configData.timeframeSeconds !== undefined ? configData.timeframeSeconds : 5,
-            repeatedTextEnabled: configData.repeatedTextEnabled !== undefined ? configData.repeatedTextEnabled : false,
-            externalLinksEnabled: configData.externalLinksEnabled !== undefined ? configData.externalLinksEnabled : false,
-            discordInviteLinksEnabled: configData.discordInviteLinksEnabled !== undefined ? configData.discordInviteLinksEnabled : false,
-            excessiveEmojiEnabled: configData.excessiveEmojiEnabled !== undefined ? configData.excessiveEmojiEnabled : false,
-            excessiveEmojiCount: configData.excessiveEmojiCount !== undefined ? configData.excessiveEmojiCount : 5,
-            excessiveMentionsEnabled: configData.excessiveMentionsEnabled !== undefined ? configData.excessiveMentionsEnabled : false,
-            excessiveMentionsCount: configData.excessiveMentionsCount !== undefined ? configData.excessiveMentionsCount : 5,
-            excessiveCapsEnabled: configData.excessiveCapsEnabled !== undefined ? configData.excessiveCapsEnabled : false,
-            excessiveCapsPercentage: configData.excessiveCapsPercentage !== undefined ? configData.excessiveCapsPercentage : 70,
-            immuneRoles: configData.immuneRoles || '',
-            immuneChannels: configData.immuneChannels || '',
-            meowFunEnabled: configData.meowFunEnabled !== undefined ? configData.meowFunEnabled : false // NEW: Meow Fun setting
-        };
-    } else {
-        const defaultConfig = {
-            modRoleId: null,
-            adminRoleId: null,
-            moderationLogChannelId: null,
-            messageLogChannelId: null,
-            modAlertChannelId: null,
-            modPingRoleId: null,
-            memberLogChannelId: null, // New: Member log channel
-            adminLogChannelId: null,   // New: Admin log channel
-            joinLeaveLogChannelId: null, // New: Join/Leave log channel
-            boostLogChannelId: null,   // New: Boost log channel
-            karmaChannelId: null,      // New: Karma Channel
-            countingChannelId: null,   // New: Counting game channel
-            currentCount: 0,           // New: Counting game current count
-            lastCountMessageId: null,  // New: Counting game last correct message ID
-            spamChannelId: null,      // Spam channel ID
-            spamKeywords: null,       // Spam keywords
-            spamEmojis: null,         // Spam emojis
-            caseNumber: 0,
-            // NEW AUTO-MODERATION FIELDS
-            moderationLevel: 'none', // high, medium, low
-            blacklistedWords: '',
-            whitelistedWords: '',
-            spamDetectionEnabled: false,
-            maxMessages: 5,
-            timeframeSeconds: 5,
-            repeatedTextEnabled: false,
-            externalLinksEnabled: false,
-            discordInviteLinksEnabled: false,
-            excessiveEmojiEnabled: false,
-            excessiveEmojiCount: 5,
-            excessiveMentionsEnabled: false,
-            excessiveMentionsCount: 5,
-            excessiveCapsEnabled: false,
-            excessiveCapsPercentage: 70,
-            immuneRoles: '',
-            immuneChannels: '',
-            meowFunEnabled: false // NEW: Default Meow Fun to false
-        };
-        await setDoc(configRef, defaultConfig);
-        return defaultConfig;
-    }
-};
-
-// Helper function to save guild-specific config to Firestore
-// This function now explicitly takes 'clientInstance' as an argument
-const saveGuildConfig = async (clientInstance, guildId, newConfig) => {
-    const db = clientInstance.db;
-    const appId = clientInstance.appId;
-
-    if (!db || !appId) {
-        console.error('Firestore not initialized yet when saveGuildConfig was called.');
-        return;
-    }
-    const configRef = doc(db, `artifacts/${appId}/public/data/guilds/${guildId}/configs`, 'settings');
-    await setDoc(configRef, newConfig, { merge: true });
-};
-
-
-// --- Dynamic Command Loading ---
-const commandsPath = path.join(__dirname, 'commands');
-const folders = fs.readdirSync(commandsPath);
-
-for (const folder of folders) {
-    const folderPath = path.join(commandsPath, folder);
-    if (fs.lstatSync(folderPath).isDirectory()) {
-        const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith('.js'));
-        for (const file of commandFiles) {
-            const command = require(path.join(folderPath, file));
-            if ('data' in command && 'execute' in command) {
-                client.commands.set(command.data.name, command);
-            } else {
-                console.log(`[WARNING] The command at ${file} is missing a required "data" or "execute" property.`);
-            }
-        }
-    }
-}
-
-
-// --- Express Web Server Setup ---
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.json()); // For parsing application/json
-app.use(express.static('public')); // Serve static files from the 'public' directory
-
-// Basic health check endpoint (serves dashboard HTML)
-app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/public/index.html');
-});
-
-// Discord OAuth Login Route
-app.get('/api/login', (req, res) => {
-    const authorizeUrl = `https://discord.com/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(DISCORD_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(DISCORD_OAUTH_SCOPES)}&permissions=${DISCORD_BOT_PERMISSIONS}`;
-    res.redirect(authorizeUrl);
-});
-
-// Discord OAuth Callback Route (Handles GET redirect from Discord)
-app.get('/callback', (req, res) => {
-    res.sendFile(__dirname + '/public/index.html');
-});
-
-// Discord OAuth Token Exchange Route (Frontend POSTs the code here)
-app.post('/api/token', async (req, res) => {
-    const { code } = req.body;
-    if (!code) {
-        return res.status(400).json({ message: 'No code provided.' });
-    }
-
-    try {
-        const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
-            client_id: DISCORD_CLIENT_ID,
-            client_secret: DISCORD_CLIENT_SECRET,
-            grant_type: 'authorization_code',
-            code: code,
-            redirect_uri: DISCORD_REDIRECT_URI,
-            scope: DISCORD_OAUTH_SCOPES,
-        }), {
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-        });
-
-        res.json(tokenResponse.data);
-    } catch (error) {
-        console.error('Error exchanging Discord OAuth code:', error.response ? error.response.data : error.message);
-        res.status(error.response?.status || 500).json({ message: 'Internal server error during OAuth.' });
-    }
-});
-
-// Middleware to verify Discord access token for API routes
-const verifyDiscordToken = async (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Authorization token required.' });
-    }
-    const accessToken = authHeader.split(' ')[1];
-
-    try {
-        const userResponse = await axios.get('https://discord.com/api/users/@me', {
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
-        req.discordUser = userResponse.data;
-        req.discordAccessToken = accessToken;
-        next();
-    } catch (error) {
-        console.error('Error verifying Discord token:', error.response ? error.response.data : error.message);
-        res.status(error.response?.status || 500).json({ message: 'Invalid or expired access token.' });
-    }
-};
-
-// Start Express server FIRST
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Web server listening on port ${PORT}`);
-});
-
-// Middleware to check if botClient is ready for API calls
-const checkBotReadiness = async (req, res, next) => {
-    const MAX_READY_RETRIES = 10; // Max attempts to wait for bot readiness
-    const READY_RETRY_DELAY_MS = 1000; // 1 second delay between retries
-
-    for (let i = 0; i < MAX_READY_RETRIES; i++) {
-        if (client.isReady() && client.db && client.appId && client.guilds.cache.size > 0) {
-            // Bot is ready, Firebase initialized, and guilds cached
-            return next();
-        }
-        console.warn(`Bot backend not fully initialized. Retrying in ${READY_RETRY_DELAY_MS / 1000}s... (Attempt ${i + 1}/${MAX_READY_RETRIES})`);
-        await new Promise(resolve => setTimeout(resolve, READY_RETRY_DELAY_MS));
-    }
-
-    // If loop finishes, bot is still not ready
-    console.error('Bot backend failed to initialize within expected time. Returning 503.');
-    return res.status(503).json({ message: 'Bot backend failed to start or initialize fully. Please try again later.' });
-};
-
-
-// API route to get current Discord user info
-app.get('/api/user', verifyDiscordToken, checkBotReadiness, (req, res) => {
-    res.json(req.discordUser);
-});
-
-// API route to get guilds where the bot is present and the user has admin permissions
-app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) => {
-    const MAX_GUILD_FETCH_RETRIES = 5; // Max retries for guild cache population
-    const GUILD_FETCH_RETRY_DELAY_MS = 1000; // 1 second delay
-    
-    const RETRY_DELAY_MS = 1000;
-
-    for (let i = 0; i < MAX_GUILD_FETCH_RETRIES; i++) {
-        try {
-            const guildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
-                headers: { 'Authorization': `Bearer ${req.discordAccessToken}` }
-            });
-            const userGuilds = guildsResponse.data;
-
-            const botGuilds = client.guilds.cache;
-            
-            // If bot's guild cache is still empty, and we have retries left, wait and retry.
-            if (botGuilds.size === 0 && i < MAX_GUILD_FETCH_RETRIES - 1) {
-                console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-                continue; // Retry the loop
-            }
-
-            console.log("User's guilds:", userGuilds.map(g => g.name)); // Debugging
-            console.log("Bot's guilds:", botGuilds.map(g => g.name)); // Debugging
-
-            const manageableGuilds = userGuilds.filter(userGuild => {
-                const hasAdminPerms = (BigInt(userGuild.permissions) & PermissionsBitField.Flags.Administrator) === PermissionsBitField.Flags.Administrator;
-                const botInGuild = botGuilds.has(userGuild.id);
-                
-                // Debugging: Log why a guild is filtered out
-                if (!botInGuild) {
-                    console.log(`Filtering out guild ${userGuild.name}: Bot not in guild.`);
-                } else if (!hasAdminPerms) {
-                    console.log(`Filtering out guild ${userGuild.name}: User does not have admin permissions.`);
-                }
-
-                return botInGuild && hasAdminPerms;
-            });
-
-            console.log("Manageable guilds sent to frontend:", manageableGuilds.map(g => g.name)); // Debugging
-            return res.json(manageableGuilds); // Success, send response and exit function
-
-        } catch (error) {
-            console.error('Error fetching user guilds:', error.response ? error.response.data : error.message);
-            // If it's a 503 or network error, retry. Otherwise, rethrow or handle.
-            if (error.response?.status === 503 && i < MAX_GUILD_FETCH_RETRIES - 1) {
-                console.warn(`Bot backend not ready (503) during guild fetch. Retrying in ${RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-                continue; // Retry the loop
-            }
-            // If it's another error or retries exhausted, send error response
-            return res.status(error.response?.status || 500).json({ message: 'Internal server error fetching guilds.' });
-        }
-    }
-    // Fallback if loop finishes without success (e.g., max retries reached)
-    return res.status(500).json({ message: 'Failed to fetch guilds after multiple retries. Bot may not be fully ready or accessible.' });
-});
-
-// API route to get a specific guild's roles and channels, and bot's current config
-app.get('/api/guild-config', verifyDiscordToken, checkBotReadiness, async (req, res) => {
-    const guildId = req.query.guildId;
-    if (!guildId) {
-        return res.status(400).json({ message: 'Guild ID is required.' });
-    }
-
-    try {
-        const guild = client.guilds.cache.get(guildId);
-        if (!guild) {
-            return res.status(404).json({ message: 'Bot is not in this guild or guild not found.' });
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Karma Bot Dashboard</title>
+    <!-- Favicon from logo -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <!-- Google Fonts: Poppins for headings, Inter for body text -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --primary-blue: #1C315E; /* Dark blue from logo */
+            --secondary-blue: #3E64A5; /* Lighter blue from logo */
+            --accent-gold: #FFC107; /* Gold from logo */
+            --text-light: #f3f4f6;
         }
 
-        const member = await guild.members.fetch(req.discordUser.id).catch(() => null);
-        if (!member || !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return res.status(403).json({ message: 'You do not have administrator permissions in this guild.' });
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--primary-blue);
+            color: var(--text-light);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 2rem 1rem;
         }
 
-        const roles = guild.roles.cache.map(role => ({ id: role.id, name: role.name }));
-        const channels = guild.channels.cache
-            .filter(channel => channel.isTextBased())
-            .map(channel => ({ id: channel.id, name: channel.name, type: channel.type }));
+        h1, h2, h3 {
+            font-family: 'Poppins', sans-serif;
+        }
+
+        .dashboard-container {
+            background-color: var(--secondary-blue);
+            border: 2px solid var(--accent-gold);
+        }
+
+        .server-card:hover {
+            transform: translateY(-5px) scale(1.02);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4-6px -2px rgba(0, 0, 0, 0.1);
+            background-color: #4c71b3;
+        }
         
-        // NEW: Fetch all custom emojis for the guild
-        const emojis = guild.emojis.cache.map(emoji => ({
-            id: emoji.id,
-            name: emoji.name,
-            url: emoji.url,
-            animated: emoji.animated,
-            identifier: `<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>`
-        }));
-
-        const currentConfig = await getGuildConfig(client, guildId); // Pass client to getGuildConfig
-
-        res.json({
-            guildData: {
-                id: guild.id,
-                name: guild.name,
-                roles: roles,
-                channels: channels,
-                emojis: emojis // NEW: Include emojis in the response
-            },
-            currentConfig: currentConfig
-        });
-
-    } catch (error) {
-        console.error(`Error fetching config for guild ${guildId}:`, error.response ? error.response.data : error.message);
-        res.status(error.response?.status || 500).json({ message: 'Internal server error fetching guild config.' });
-    }
-});
-
-// API route to save guild configuration
-app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, res) => {
-    const guildId = req.query.guildId;
-    const newConfig = req.body;
-
-    if (!guildId || !newConfig) {
-        return res.status(400).json({ message: 'Guild ID and config data are required.' });
-    }
-
-    try {
-        const guild = client.guilds.cache.get(guildId);
-        if (!guild) {
-            return res.status(404).json({ message: 'Bot is not in this guild or guild not found.' });
+        /* Custom scrollbar for server list */
+        .server-list::-webkit-scrollbar {
+            width: 8px;
         }
 
-        const member = await guild.members.fetch(req.discordUser.id).catch(() => null);
-        if (!member || !member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return res.status(403).json({ message: 'You do not have administrator permissions in this guild to save settings.' });
+        .server-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
         }
 
-        const validConfig = {};
-        if (newConfig.modRoleId) validConfig.modRoleId = newConfig.modRoleId;
-        if (newConfig.adminRoleId) validConfig.adminRoleId = newConfig.adminRoleId;
-        if (newConfig.modPingRoleId) validConfig.modPingRoleId = newConfig.modPingRoleId;
-        if (newConfig.karmaChannelId) validConfig.karmaChannelId = newConfig.karmaChannelId;
-        if (newConfig.countingChannelId) validConfig.countingChannelId = newConfig.countingChannelId;
-        if (newConfig.moderationLogChannelId) validConfig.moderationLogChannelId = newConfig.moderationLogChannelId;
-        if (newConfig.messageLogChannelId) validConfig.messageLogChannelId = newConfig.messageLogChannelId;
-        if (newConfig.memberLogChannelId) validConfig.memberLogChannelId = newConfig.memberLogChannelId;
-        if (newConfig.adminLogChannelId) validConfig.adminLogChannelId = newConfig.adminLogChannelId;
-        if (newConfig.joinLeaveLogChannelId) validConfig.joinLeaveLogChannelId = newConfig.joinLeaveLogChannelId;
-        if (newConfig.boostLogChannelId) validConfig.boostLogChannelId = newConfig.boostLogChannelId;
-        if (newConfig.modAlertChannelId) validConfig.modAlertChannelId = newConfig.modAlertChannelId;
-        if (newConfig.spamChannelId) validConfig.spamChannelId = newConfig.spamChannelId; // NEW: Save spam channel ID
-        if (newConfig.spamKeywords) validConfig.spamKeywords = newConfig.spamKeywords; // NEW: Save spam keywords
-        if (newConfig.spamEmojis) validConfig.spamEmojis = newConfig.spamEmojis; // NEW: Save spam emojis
-        // NEW AUTO-MODERATION FIELDS
-        validConfig.moderationLevel = newConfig.moderationLevel; // Always save, even if null/empty
-        validConfig.blacklistedWords = newConfig.blacklistedWords;
-        validConfig.whitelistedWords = newConfig.whitelistedWords;
-        validConfig.spamDetectionEnabled = newConfig.spamDetectionEnabled;
-        validConfig.maxMessages = newConfig.maxMessages;
-        validConfig.timeframeSeconds = newConfig.timeframeSeconds;
-        validConfig.repeatedTextEnabled = newConfig.repeatedTextEnabled;
-        validConfig.externalLinksEnabled = newConfig.externalLinksEnabled;
-        validConfig.discordInviteLinksEnabled = newConfig.discordInviteLinksEnabled;
-        validConfig.excessiveEmojiEnabled = newConfig.excessiveEmojiEnabled;
-        validConfig.excessiveEmojiCount = newConfig.excessiveEmojiCount;
-        validConfig.excessiveMentionsEnabled = newConfig.excessiveMentionsEnabled;
-        validConfig.excessiveMentionsCount = newConfig.excessiveMentionsCount;
-        validConfig.excessiveCapsEnabled = newConfig.excessiveCapsEnabled;
-        validConfig.excessiveCapsPercentage = newConfig.excessiveCapsPercentage;
-        validConfig.immuneRoles = newConfig.immuneRoles;
-        validConfig.immuneChannels = newConfig.immuneChannels;
-
-        await saveGuildConfig(client, guildId, validConfig); // Pass client to saveGuildConfig
-        res.json({ message: 'Configuration saved successfully!' });
-
-    } catch (error) {
-        console.error(`Error saving config for guild ${guildId}:`, error.response ? error.response.data : error.message);
-        res.status(error.response?.status || 500).json({ message: 'Internal server error saving config.' });
-    }
-});
-
-// --- Discord Bot Client Setup ---
-// Event: Bot is ready
-client.once('ready', async () => {
-    console.log(`Logged in as ${client.user.tag}!`);
-
-    // Initialize Firebase and Google API Key
-    try {
-        // Use FIREBASE_APP_ID environment variable for client.appId
-        client.appId = process.env.FIREBASE_APP_ID;
-        client.googleApiKey = process.env.GOOGLE_API_KEY || "";
-        client.tenorApiKey = process.env.TENOR_API_KEY || "";
-
-        const firebaseConfig = {
-            apiKey: process.env.FIREBASE_API_KEY,
-            authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-            projectId: process.env.FIREBASE_PROJECT_ID,
-            storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-            messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-            appId: process.env.FIREBASE_APP_ID // Ensure this matches the App ID in Firebase Console
-        };
-
-        if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId || !firebaseConfig.authDomain) {
-            console.error('Missing essential Firebase environment variables. Please check your .env or hosting configuration.');
-            process.exit(1);
+        .server-list::-webkit-scrollbar-thumb {
+            background-color: var(--accent-gold);
+            border-radius: 10px;
+            border: 2px solid var(--secondary-blue);
         }
 
-        const firebaseApp = initializeApp(firebaseConfig);
-        client.db = getFirestore(firebaseApp);
-        client.auth = getAuth(firebaseApp);
-
-        if (typeof __initial_auth_token !== 'undefined') {
-            await signInWithCustomToken(client.auth, __initial_auth_token);
-        } else {
-            await signInAnonymously(client.auth);
+        .tab-button.active {
+            background-color: var(--secondary-blue);
+            border-color: var(--accent-gold);
+            color: var(--accent-gold);
         }
-        client.userId = client.auth.currentUser?.uid || crypto.randomUUID();
-        console.log(`Firebase initialized. User ID: ${client.userId}. App ID for Firestore: ${client.appId}`);
-
-        // Attach getGuildConfig and saveGuildConfig to the client object
-        client.getGuildConfig = (guildId) => getGuildConfig(client, guildId);
-        client.saveGuildConfig = (guildId, newConfig) => saveGuildConfig(client, guildId, newConfig);
-
-    } catch (firebaseError) {
-        console.error('Failed to initialize Firebase:', firebaseError);
-        process.exit(1);
-    }
-
-    // Register slash commands
-    const commands = [];
-    client.commands.forEach(command => {
-        commands.push(command.data.toJSON());
-    });
-
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
-
-    try {
-        console.log('Started refreshing application (/) commands.');
-        const APPLICATION_ID = process.env.DISCORD_APPLICATION_ID; // Use local const
-        if (!APPLICATION_ID) {
-            console.error('DISCORD_APPLICATION_ID environment variable is not set. Slash commands might not register.');
-            return;
+        .tab-button {
+            border-bottom-width: 0;
+        }
+        .tab-content {
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
         }
 
-        await rest.put(
-            Routes.applicationCommands(APPLICATION_ID),
-            { body: commands },
-        );
-
-        console.log('Successfully reloaded application (/) commands.');
-    } catch (error) {
-        console.error('Error refreshing application commands:', error);
-    }
-
-    // --- Populate invite cache for join tracking ---
-    client.guilds.cache.forEach(async guild => {
-        // Ensure bot has 'Manage Guild' permission to fetch invites
-        if (guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            try {
-                const invites = await guild.invites.fetch();
-                // Store invites as a Map of code -> uses
-                client.invites.set(guild.id, new Map(invites.map(invite => [invite.code, invite.uses])));
-                console.log(`Cached initial invites for guild ${guild.name}`);
-            } catch (error) {
-                console.warn(`Could not fetch initial invites for guild ${invite.guild.name} on member join:`, error);
-            }
-        } else {
-            console.warn(`Bot does not have 'Manage Guild' permission in ${guild.name}. Cannot track invites.`);
+        .emoji-tag {
+            background-color: var(--accent-gold);
+            color: var(--primary-blue);
+            border-radius: 9999px; /* Tailwind's rounded-full */
+            padding: 0.25rem 0.75rem; /* Tailwind's px-3 py-1 */
+            font-size: 0.875rem; /* Tailwind's text-sm */
+            font-weight: 600; /* Tailwind's font-semibold */
+            cursor: pointer;
+            transition: all 0.2s;
         }
-    });
+        .emoji-tag:hover {
+            opacity: 0.8;
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body class="bg-primary-blue text-text-light font-inter">
 
+    <div id="app" class="w-full max-w-6xl mx-auto flex flex-col items-center">
+        <!-- Header with Logo and Title -->
+        <header class="text-center mb-10 w-full">
+            <img src="Karmav1.png" alt="Karma Bot Logo" class="mx-auto w-32 h-32 rounded-full ring-4 ring-accent-gold mb-4 shadow-lg">
+            <h1 class="text-4xl font-extrabold text-accent-gold tracking-tight">Karma Bot Dashboard</h1>
+            <p class="mt-2 text-lg text-gray-300">Manage your server's moderation and karma settings.</p>
+        </header>
 
-    // --- Register ALL Event Listeners HERE, after client is ready and Firebase is initialized ---
+        <main id="main-content" class="w-full">
+            <!-- Initial State / Loading / Error -->
+            <div id="initial-state" class="bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container text-center w-full min-h-[300px] flex flex-col justify-center items-center">
+                <div id="loading-spinner" class="hidden">
+                    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-accent-gold"></div>
+                    <p class="mt-4 text-xl">Loading...</p>
+                </div>
+                <div id="error-message" class="hidden text-center text-red-400">
+                    <p class="text-xl font-bold">An error occurred.</p>
+                    <p id="error-text" class="mt-2 text-sm"></p>
+                    <button id="retry-button" class="mt-4 px-6 py-2 bg-accent-gold text-primary-blue rounded-full font-bold shadow-md hover:bg-yellow-400 transition-colors">Retry</button>
+                </div>
+                <div id="login-section">
+                    <h2 class="text-2xl font-bold mb-4">Welcome!</h2>
+                    <p class="mb-6 text-gray-300">Please log in with Discord to manage your servers.</p>
+                    <a href="/api/login" id="login-button" class="inline-block px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Login with Discord</a>
+                </div>
+            </div>
 
-    // Message-related events
-    client.on('messageCreate', async message => {
-        if (!message.author.bot && message.guild) { // Ignore bot messages and DMs
-            // Ensure message.author is not null/undefined before accessing properties
-            if (!message.author) {
-                console.warn(`Message ${message.id} has no author. Skipping message processing.`);
-                return;
-            }
+            <!-- Server Selection View (initially hidden) -->
+            <div id="server-selection-view" class="hidden">
+                <h2 class="text-3xl font-bold text-center mb-6 text-accent-gold">Select a Server</h2>
+                <p class="text-center text-gray-300 mb-8">Click on an icon to manage that server's settings.</p>
+                <div id="server-icons-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 max-h-[60vh] overflow-y-auto server-list pr-2">
+                    <!-- Server icons will be dynamically inserted here -->
+                </div>
+            </div>
+
+            <!-- Dashboard View (initially hidden) -->
+            <div id="dashboard-view" class="hidden w-full">
+                <div class="bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container w-full">
+                    <div class="flex items-center mb-6">
+                        <img id="guild-icon-large" src="" alt="Server Icon" class="w-16 h-16 rounded-full ring-2 ring-accent-gold mr-4">
+                        <h2 id="guild-name-display" class="text-3xl font-bold text-accent-gold"></h2>
+                        <button id="back-to-servers" class="ml-auto flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-full shadow-md hover:bg-gray-700 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                            <span>Back</span>
+                        </button>
+                    </div>
+
+                    <h3 class="text-2xl font-bold text-gray-200 mb-4 border-b-2 border-accent-gold pb-2">Configuration Settings</h3>
+
+                    <!-- Tabbed Interface -->
+                    <div class="flex flex-wrap border-b border-gray-600 mb-6">
+                        <button class="tab-button active px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none bg-secondary-blue border-b-0 hover:bg-gray-700 transition-colors" data-tab="roles">Moderation & Roles</button>
+                        <button class="tab-button px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none hover:bg-gray-700 transition-colors" data-tab="logging">Logging Channels</button>
+                        <button class="tab-button px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none hover:bg-gray-700 transition-colors" data-tab="fun">Fun & Games</button>
+                    </div>
+
+                    <form id="config-form" class="space-y-6">
+                        <!-- Tab content will be rendered here -->
+                        <div id="tab-roles" class="tab-content">
+                            <!-- Roles Tab Content -->
+                        </div>
+                        <div id="tab-logging" class="tab-content hidden">
+                            <!-- Logging Channels Tab Content -->
+                        </div>
+                        <div id="tab-fun" class="tab-content hidden">
+                            <!-- Fun & Games Tab Content -->
+                        </div>
+                        
+                        <!-- Save Button -->
+                        <div class="flex justify-end pt-4 border-t border-gray-600 mt-6">
+                            <button type="submit" class="px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Save Settings</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- JavaScript for dynamic functionality -->
+    <script>
+        // Use provided environment variables, ensuring they are correctly accessed
+        const localAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const localFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const localInitialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : ''; // Corrected self-reference
+
+        // Assign to variables expected by the rest of the script
+        const appId = localAppId;
+        const firebaseConfig = localFirebaseConfig;
+        const initialAuthToken = localInitialAuthToken;
+
+        // UI Elements
+        const initialState = document.getElementById('initial-state');
+        const loginSection = document.getElementById('login-section');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const errorSection = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        const retryButton = document.getElementById('retry-button');
+        const serverSelectionView = document.getElementById('server-selection-view');
+        const serverIconsGrid = document.getElementById('server-icons-grid');
+        const dashboardView = document.getElementById('dashboard-view');
+        const backToServersButton = document.getElementById('back-to-servers');
+        const guildNameDisplay = document.getElementById('guild-name-display');
+        const guildIconLarge = document.getElementById('guild-icon-large');
+        const configForm = document.getElementById('config-form');
+
+        let discordAccessToken = null;
+        let selectedGuildId = null;
+        let cachedGuilds = [];
+        let selectedEmojis = new Set(); // To track selected emojis as tags
+
+        // Function to show/hide sections
+        function showSection(section) {
+            initialState.classList.add('hidden');
+            serverSelectionView.classList.add('hidden');
+            dashboardView.classList.add('hidden');
+            section.classList.remove('hidden');
+        }
+
+        // Function to show the loading spinner
+        function showLoading(message = 'Loading...') {
+            loginSection.classList.add('hidden');
+            errorSection.classList.add('hidden');
+            loadingSpinner.classList.remove('hidden');
+            loadingSpinner.querySelector('p').textContent = message;
+            showSection(initialState);
+        }
+
+        // Function to show an error message
+        function showErrorMessage(message) {
+            loadingSpinner.classList.add('hidden');
+            loginSection.classList.add('hidden');
+            errorSection.classList.remove('hidden');
+            errorText.textContent = message;
+            showSection(initialState);
+        }
+
+        // Function to handle the OAuth redirect and get a token
+        async function handleOAuthCallback() {
+            const params = new URLSearchParams(window.location.search);
+            const code = params.get('code');
             
-            // Check if the author is a partial user and fetch if necessary
-            if (message.author.partial) {
+            if (code) {
+                showLoading('Logging in...');
                 try {
-                    await message.author.fetch();
+                    const response = await fetch('/api/token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ code })
+                    });
+                    const data = await response.json();
+                    if (data.access_token) {
+                        discordAccessToken = data.access_token;
+                        // Clear the URL to hide the code
+                        window.history.replaceState({}, document.title, window.location.pathname);
+                        fetchGuilds();
+                    } else {
+                        showErrorMessage('Failed to get Discord access token.');
+                    }
                 } catch (error) {
-                    console.error(`Failed to fetch partial author for message ${message.id}:`, error);
-                    return; // Skip message if author cannot be fetched
+                    console.error('OAuth callback error:', error);
+                    showErrorMessage('An error occurred during Discord login.');
                 }
+            } else if (!discordAccessToken) {
+                // If there's no code and no token, show the login button
+                showSection(initialState);
             }
+        }
 
-
-            if (!client.db || !client.appId || !client.googleApiKey) {
-                console.warn('Skipping message processing: Firebase or API keys not fully initialized yet.');
-                return;
-            }
-            const guild = message.guild;
-            const author = message.author;
-
-            // --- Spam Fun Game Check ---
-            const guildConfig = await client.getGuildConfig(guild.id); // Use client.getGuildConfig
-            if (spamGame.shouldHandle(message, guildConfig)) {
-                await spamGame.handleMessage(message, client.tenorApiKey, guildConfig.spamKeywords, guildConfig.spamEmojis); // Pass keywords and emojis
-                return; // Stop further processing
-            }
-
-            // --- Counting Game Check (after auto-mod) ---
-            if (guildConfig.countingChannelId && message.channel.id === guildConfig.countingChannelId) {
-                const handledByCountingGame = await countingGame.checkCountMessage(
-                    message,
-                    client,
-                    client.getGuildConfig, // Pass the client's getGuildConfig
-                    client.saveGuildConfig, // Pass the client's saveGuildConfig
-                    isExempt,
-                    logging.logMessage
-                );
-                if (handledByCountingGame) {
-                    return; // Message was handled by counting game, stop further processing
-                }
-            }
-            
-            // Replaced AI-based moderation with the new function call
-            await autoModeration.checkMessageForModeration(
-                message, client, client.getGuildConfig, client.saveGuildConfig, isExempt, logging.logModerationAction, logging.logMessage, karmaSystem // Pass karmaSystem
-            );
-            
+        // Function to fetch the user's guilds
+        async function fetchGuilds() {
+            showLoading('Fetching your servers...');
             try {
-                const authorKarmaData = await karmaSystem.getOrCreateUserKarma(guild.id, author.id, client.db, client.appId);
-                await karmaSystem.updateUserKarmaData(guild.id, author.id, { messagesToday: (authorKarmaData.messagesToday || 0) + 1, lastActivityDate: new Date() }, client.db, client.appId);
-                await karmaSystem.calculateAndAwardKarma(guild, author, { ...authorKarmaData, messagesToday: (authorKarmaData.messagesToday || 0) + 1 }, client.db, client.appId); // Removed Google API Key
-                
-                if (message.reference && message.reference.messageId) {
-                    const repliedToMessage = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
-                    if (repliedToMessage && !repliedToMessage.author.bot && repliedToMessage.author.id !== author.id) {
-                        const repliedToAuthor = repliedToMessage.author;
-                        const repliedToKarmaData = await karmaSystem.getOrCreateUserKarma(guild.id, repliedToAuthor.id, client.db, client.appId);
-                        // AI-based sentiment analysis removed here. You can add a new system or keep a neutral karma value.
-                        // For now, replies will not influence karma based on sentiment.
-                        await karmaSystem.updateUserKarmaData(guild.id, repliedToAuthor.id, { repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1, lastActivityDate: new Date() }, client.db, client.appId);
-                        await karmaSystem.calculateAndAwardKarma(guild, repliedToAuthor, { ...repliedToKarmaData, repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1 }, client.db, client.appId);
-                    }
-                }
-            } catch (error) {
-                console.error(`Error in messageCreate karma tracking for ${author.tag}:`, error);
-            }
-        }
-    });
-
-    client.on('messageDelete', async message => {
-        if (!message.guild) return;
-        await messageLogHandler.handleMessageDelete(message, client.getGuildConfig, logging.logMessage); // Use client.getGuildConfig
-    });
-
-    client.on('messageUpdate', async (oldMessage, newMessage) => {
-        if (!newMessage.guild) return;
-        await messageLogHandler.handleMessageUpdate(oldMessage, newMessage, client.getGuildConfig, logging.logMessage); // Use client.getGuildConfig
-    });
-
-    // Member-related events
-    client.on('guildMemberUpdate', async (oldMember, newMember) => {
-        await memberLogHandler.handleGuildMemberUpdate(oldMember, newMember, client.getGuildConfig); // Use client.getGuildConfig
-    });
-
-    client.on('userUpdate', async (oldUser, newUser) => {
-        await memberLogHandler.handleUserUpdate(oldUser, newUser, client.getGuildConfig, client); // Use client.getGuildConfig
-    });
-
-    client.on('guildMemberAdd', async member => {
-        // Store the old invites map *before* fetching new ones for comparison
-        const oldInvitesMap = client.invites.has(member.guild.id) ? new Map(client.invites.get(member.guild.id)) : new Map();
-
-        // Fetch new invites immediately to get latest uses
-        let newInvitesMap = new Collection();
-        if (member.guild.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            try {
-                const invites = await guild.invites.fetch();
-                // Store invites as a Map of code -> uses
-                client.invites.set(guild.id, new Map(invites.map(invite => [invite.code, invite.uses])));
-                console.log(`Cached initial invites for guild ${guild.name}`);
-            } catch (error) {
-                console.warn(`Could not fetch initial invites for guild ${member.guild.name} on member join:`, error);
-            }
-        }
-        // Pass newInvitesMap and oldInvitesMap to handler
-        await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig, oldInvitesMap, newInvitesMap, karmaSystem.sendKarmaAnnouncement, karmaSystem.addKarmaPoints, client.db, client.appId, client); // Use client.getGuildConfig
-
-        // Update client.invites cache AFTER the handler has used the old state
-        if (member.guild.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            client.invites.set(guild.id, newInvitesMap); // Store the latest uses map
-        }
-        
-        // --- New Member Greeting and +1 Karma ---
-        const guildConfig = await client.getGuildConfig(member.guild.id); // Use client.getGuildConfig
-        if (guildConfig.karmaChannelId) {
-            try {
-                // Give +1 Karma to the new member
-                const newKarma = await karmaSystem.addKarmaPoints(member.guild.id, member.user, 1, client.db, client.appId);
-                // Send a joyful greeting message to the Karma Channel
-                await karmaSystem.sendKarmaAnnouncement(member.guild, member.user.id, 1, newKarma, client.getGuildConfig, client, true); // Use client.getGuildConfig
-            } catch (error) {
-                console.error(`Error greeting new member ${member.user.tag} or giving initial karma:`, error);
-            }
-        }
-    });
-
-    client.on('guildMemberRemove', async member => {
-        await joinLeaveLogHandler.handleGuildMemberRemove(member, client.getGuildConfig); // Use client.getGuildConfig
-    });
-
-    // Admin-related events (channels, roles, emojis, scheduled events)
-    client.on('channelCreate', async channel => {
-        await adminLogHandler.handleChannelCreate(channel, client.getGuildConfig); // Use client.getGuildConfig
-    });
-    client.on('channelDelete', async channel => {
-        await adminLogHandler.handleChannelDelete(channel, client.getGuildConfig); // Use client.getGuildConfig
-    });
-    client.on('channelUpdate', async (oldChannel, newChannel) => {
-        await adminLogHandler.handleChannelUpdate(oldChannel, newChannel, client.getGuildConfig); // Use client.getGuildConfig
-    });
-    client.on('channelPinsUpdate', async (channel, time) => {
-        // console.log(`Pins updated in channel ${channel.name} at ${time}`);
-    });
-    client.on('roleCreate', async role => {
-        await adminLogHandler.handleRoleCreate(role, client.getGuildConfig); // Use client.getGuildConfig
-    });
-    client.on('roleDelete', async role => {
-        await adminLogHandler.handleRoleDelete(role, client.getGuildConfig); // Use client.getGuildConfig
-    });
-    client.on('roleUpdate', async (oldRole, newRole) => {
-        await adminLogHandler.handleRoleUpdate(oldRole, newRole, client.getGuildConfig); // Use client.getGuildConfig
-    });
-    client.on('emojiCreate', async emoji => {
-        await adminLogHandler.handleEmojiCreate(emoji, client.getGuildConfig); // Use client.getGuildConfig
-    });
-    client.on('emojiDelete', async emoji => {
-        await adminLogHandler.handleEmojiDelete(emoji, client.getGuildConfig); // Use client.getGuildConfig
-    });
-    client.on('emojiUpdate', async (oldEmoji, newEmoji) => {
-        await adminLogHandler.handleEmojiUpdate(oldEmoji, newEmoji, client.getGuildConfig); // Use client.getGuildConfig
-    });
-    client.on('guildScheduledEventCreate', async guildScheduledEvent => {
-        await adminLogHandler.handleGuildScheduledEventCreate(guildScheduledEvent, client.getGuildConfig); // Use client.getGuildConfig
-    });
-    client.on('guildScheduledEventDelete', async guildScheduledEvent => {
-        await adminLogHandler.handleGuildScheduledEventDelete(guildScheduledEvent, client.getGuildConfig); // Use client.getGuildConfig
-    });
-    client.on('guildScheduledEventUpdate', async (oldGuildScheduledEvent, newGuildScheduledEvent) => {
-        await adminLogHandler.handleGuildScheduledEventUpdate(oldGuildScheduledEvent, newGuildScheduledEvent, client.getGuildConfig); // Use client.getGuildConfig
-    });
-
-    // Invite tracking events
-    client.on('inviteCreate', async invite => {
-        if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
-            try {
-                const newInvites = await guild.invites.fetch();
-                // Store invites as a Map of code -> uses
-                client.invites.set(guild.id, new Map(newInvites.map(invite => [invite.code, invite.uses])));
-                console.log(`Cached initial invites for guild ${guild.name}`);
-            } catch (error) {
-                console.warn(`Could not fetch initial invites for guild ${invite.guild.name} after invite create:`, error);
-            }
-        }
-    });
-
-    client.on('inviteDelete', async invite => {
-        if (invite.guild && client.invites.has(guild.id)) {
-            client.invites.get(guild.id).delete(invite.code);
-        }
-    });
-
-
-    // Event: Message reaction added (for emoji moderation and karma system reactions)
-    client.on('messageReactionAdd', async (reaction, user) => {
-        // Add checks for partial messages and null properties
-        if (reaction.partial) {
-            try {
-                await reaction.fetch();
-            } catch (error) {
-                console.error('Failed to fetch partial reaction message:', error);
-                return;
-            }
-        }
-
-        // Now, safely check for null properties on the fetched message
-        if (!reaction.message || !reaction.message.guild || !reaction.message.author) {
-            console.warn('Skipping reaction processing: Message, guild, or author is null/undefined.');
-            return;
-        }
-
-        if (!client.db || !client.appId || !client.googleApiKey) {
-            console.warn('Skipping reaction processing: Firebase or API keys not fully initialized yet.');
-            reaction.users.remove(user.id).catch(e => console.error('Failed to remove reaction for uninitialized bot:', e));
-            return;
-        }
-        
-        // Handle Karma reactions first
-        if (['👍', '👎'].includes(reaction.emoji.name)) {
-            const reactorMember = await reaction.message.guild.members.fetch(user.id).catch(() => null);
-            const guildConfig = await client.getGuildConfig(reaction.message.guild.id);
-            
-            const targetUser = reaction.message.author; 
-            let karmaChange = 0;
-            let actionText = '';
-
-            if (reaction.emoji.name === '👍') {
-                karmaChange = 1;
-                actionText = '+1 Karma';
-            } else { // 👎
-                karmaChange = -1;
-                actionText = '-1 Karma';
-            }
-
-            // Only process karma reactions from moderators or admins
-            if (reactorMember && hasPermission(reactorMember, guildConfig)) {
-                try {
-                    const newKarma = await karmaSystem.addKarmaPoints(reaction.message.guild.id, targetUser, karmaChange, client.db, client.appId);
-                    await karmaSystem.sendKarmaAnnouncement(reaction.message.guild, targetUser.id, karmaChange, newKarma, client.getGuildConfig, client);
-                } catch (error) {
-                    console.error(`Error adjusting karma for ${targetUser.tag} via emoji:`, error);
-                    reaction.message.channel.send(`Failed to adjust Karma for <@${targetUser.id}>. An error occurred.`).catch(console.error);
-                } finally {
-                    // Always remove the reaction after processing
-                    reaction.users.remove(user.id).catch(e => console.error(`Failed to remove karma emoji reaction:`, e));
-                }
-                return; // Stop processing this reaction, it's handled
-            }
-        }
-
-        // Delegate to the external moderation/karma reaction handler if not a karma emoji
-        await handleMessageReactionAdd(
-            reaction, user, client, client.getGuildConfig, client.saveGuildConfig, hasPermission, isExempt, logging.logModerationAction, logging.logMessage, karmaSystem
-        );
-    });
-
-    // Event: Interaction created (for slash commands and buttons)
-    client.on('interactionCreate', async interaction => {
-        if (!client.db || !client.appId) {
-            console.warn('Skipping interaction processing: Firebase or API keys not fully initialized yet.');
-            return;
-        }
-
-        try {
-            // Determine if the reply should be ephemeral based on command
-            let ephemeral = true; // Default to ephemeral
-            if (interaction.isCommand() && interaction.commandName === 'leaderboard') {
-                ephemeral = false; // Make leaderboard public
-            }
-            
-            if (interaction.isCommand()) {
-                const { commandName } = interaction;
-                const command = client.commands.get(commandName);
-
-                if (!command) {
-                    return interaction.reply({ content: 'No command matching that name was found.', flags: [MessageFlags.Ephemeral] });
-                }
-
-                const guildConfig = await client.getGuildConfig(interaction.guildId);
-
-                // Check permissions for karma commands
-                if (['karma_plus', 'karma_minus', 'karma_set'].includes(commandName)) {
-                    if (!hasPermission(interaction.member, guildConfig)) {
-                        if (!interaction.deferred && !interaction.replied) {
-                           await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-                        }
-                        return interaction.editReply({ content: 'You do not have permission to use this karma command.', flags: [MessageFlags.Ephemeral] });
-                    }
-                } else { // For other moderation commands
-                    if (!hasPermission(interaction.member, guildConfig)) {
-                        if (!interaction.deferred && !interaction.replied) {
-                            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
-                        }
-                        return interaction.editReply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
-                    }
-                }
-
-                await command.execute(interaction, {
-                    getGuildConfig: client.getGuildConfig,
-                    saveGuildConfig: client.saveGuildConfig,
-                    hasPermission,
-                    isExempt,
-                    logModerationAction: logging.logModerationAction,
-                    logMessage: logging.logMessage,
-                    MessageFlags,
-                    db: client.db,
-                    appId: client.appId,
-                    getOrCreateUserKarma: karmaSystem.getOrCreateUserKarma,
-                    updateUserKarmaData: karmaSystem.updateUserKarmaData,
-                    calculateAndAwardKarma: karmaSystem.calculateAndAwardKarma,
-                    addKarmaPoints: karmaSystem.addKarmaPoints,
-                    subtractKarmaPoints: karmaSystem.subtractKarmaPoints,
-                    setKarmaPoints: karmaSystem.setKarmaPoints,
-                    client,
-                    karmaSystem
+                const response = await fetch('/api/guilds', {
+                    headers: { 'Authorization': `Bearer ${discordAccessToken}` }
                 });
-            } else if (interaction.isButton()) {
-                // For buttons, deferUpdate is usually sufficient and handled above.
-                // No specific button logic here for now.
+                const guilds = await response.json();
+
+                if (response.ok) {
+                    cachedGuilds = guilds;
+                    renderServerSelection(cachedGuilds);
+                } else {
+                    showErrorMessage(guilds.message || 'Failed to fetch servers.');
+                }
             }
-        } catch (error) {
-            console.error('Error during interaction processing:', error);
-            if (interaction.deferred || interaction.replied) {
-                await interaction.editReply({ content: 'An unexpected error occurred while processing your command.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
-            } else {
-                await interaction.reply({ content: 'An unexpected error occurred while processing your command.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
+            catch (error) {
+                console.error('Error fetching guilds:', error);
+                showErrorMessage('Failed to connect to the bot backend. Please try again.');
             }
         }
-    });
-});
 
-// Log in to Discord with the client's token
-client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
-    console.error("Discord login failed:", err);
-    // Do not exit here, let the process continue for the web server
-});
+        // Function to render the server selection grid
+        function renderServerSelection(guilds) {
+            serverIconsGrid.innerHTML = '';
+            if (guilds.length === 0) {
+                serverIconsGrid.innerHTML = `<p class="col-span-full text-center text-gray-300">The bot is not in any servers where you have administrator permissions. Please invite it to a server.</p>`;
+            } else {
+                guilds.forEach(guild => {
+                    const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png` : `https://placehold.co/144x144/1C315E/FFC107?text=${guild.name.charAt(0)}`;
+                    const serverCard = document.createElement('div');
+                    serverCard.className = 'server-card flex flex-col items-center p-4 rounded-xl cursor-pointer transition-all duration-300 transform bg-secondary-blue shadow-lg border-2 border-transparent hover:border-accent-gold';
+                    serverCard.innerHTML = `
+                        <img src="${iconUrl}" alt="${guild.name} icon" class="w-36 h-36 rounded-full object-cover">
+                        <p class="mt-3 text-lg font-bold text-gray-100 text-center truncate w-full px-1">${guild.name}</p>
+                    `;
+                    serverCard.addEventListener('click', () => fetchGuildConfig(guild.id, guild.name, iconUrl));
+                    serverIconsGrid.appendChild(serverCard);
+                });
+            }
+            showSection(serverSelectionView);
+        }
+
+        // Function to fetch a specific guild's configuration
+        async function fetchGuildConfig(guildId, guildName, iconUrl) {
+            showLoading(`Loading settings for ${guildName}...`);
+            selectedGuildId = guildId;
+
+            try {
+                const response = await fetch(`/api/guild-config?guildId=${guildId}`, {
+                    headers: { 'Authorization': `Bearer ${discordAccessToken}` }
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    renderDashboard(data.guildData, data.currentConfig, iconUrl);
+                } else {
+                    showErrorMessage(data.message || 'Failed to load server configuration.');
+                }
+            } catch (error) {
+                console.error('Error fetching guild config:', error);
+                showErrorMessage('An error occurred while fetching server configuration.');
+            }
+        }
+        
+        // Function to render the emoji tags
+        function renderEmojiTags() {
+            const emojiTagsContainer = document.getElementById('selected-emojis-container');
+            const hiddenInput = document.getElementById('spamEmojis');
+            emojiTagsContainer.innerHTML = '';
+            hiddenInput.value = Array.from(selectedEmojis).join(',');
+
+            if (selectedEmojis.size === 0) {
+                emojiTagsContainer.innerHTML = '<span class="text-sm text-gray-400">No emojis selected.</span>';
+            } else {
+                selectedEmojis.forEach(emoji => {
+                    const isCustom = emoji.startsWith('<');
+                    const emojiTag = document.createElement('span');
+                    emojiTag.className = 'emoji-tag flex items-center space-x-1';
+                    emojiTag.dataset.emoji = emoji;
+
+                    if (isCustom) {
+                        const parts = emoji.match(/<a?:(\w+):(\d+)>/);
+                        const animated = parts[0].includes('a:');
+                        const emojiName = parts[1];
+                        const emojiId = parts[2];
+                        // FIX: Use imageURL() instead of .url getter
+                        const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? 'gif' : 'png'}`;
+                        emojiTag.innerHTML = `
+                            <img src="${imageUrl}" alt="${emojiName}" class="w-5 h-5">
+                            <span class="text-sm">x</span>
+                        `;
+                    } else {
+                        emojiTag.innerHTML = `
+                            <span>${emoji}</span>
+                            <span class="text-sm">x</span>
+                        `;
+                    }
+
+                    emojiTag.addEventListener('click', () => {
+                        selectedEmojis.delete(emoji);
+                        renderEmojiTags();
+                    });
+                    emojiTagsContainer.appendChild(emojiTag);
+                });
+            }
+        }
+
+        // Function to render the dashboard view
+        function renderDashboard(guildData, currentConfig, iconUrl) {
+            guildNameDisplay.textContent = guildData.name;
+            guildIconLarge.src = iconUrl;
+            guildIconLarge.alt = `${guildData.name} icon`;
+
+            // Initialize selected emojis from current config
+            selectedEmojis = new Set();
+            if (currentConfig.spamEmojis) {
+                currentConfig.spamEmojis.split(',').forEach(emoji => {
+                    if (emoji.trim() !== '') {
+                        selectedEmojis.add(emoji.trim());
+                    }
+                });
+            }
+
+            const rolesHtml = `
+                <div class="space-y-4">
+                    <h4 class="text-xl font-bold text-gray-300 pt-4 pb-2 border-b border-gray-600">Moderation Roles</h4>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="modRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Role</label>
+                        <select id="modRoleId" name="modRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a role...</option>
+                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="adminRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Admin Role</label>
+                        <select id="adminRoleId" name="adminRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a role...</option>
+                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.adminRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="modPingRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Ping Role</label>
+                        <select id="modPingRoleId" name="modPingRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modPingRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <h4 class="text-xl font-bold text-gray-300 pt-6 pb-2 border-b border-gray-600">Automoderation Rules</h4>
+                    <div class="space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                            <label for="moderationLevel" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Level</label>
+                            <select id="moderationLevel" name="moderationLevel" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                                <option value="none" ${currentConfig.moderationLevel === 'none' ? 'selected' : ''}>None</option>
+                                <option value="low" ${currentConfig.moderationLevel === 'low' ? 'selected' : ''}>Low</option>
+                                <option value="medium" ${currentConfig.moderationLevel === 'medium' ? 'selected' : ''}>Medium</option>
+                                <option value="high" ${currentConfig.moderationLevel === 'high' ? 'selected' : ''}>High</option>
+                            </select>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                            <label for="blacklistedWords" class="w-full sm:w-1/3 text-lg font-semibold">Blacklisted Words (comma-separated)</label>
+                            <input id="blacklistedWords" name="blacklistedWords" type="text" placeholder="e.g., badword, anotherbad" value="${currentConfig.blacklistedWords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                            <label for="whitelistedWords" class="w-full sm:w-1/3 text-lg font-semibold">Whitelisted Words (comma-separated)</label>
+                            <input id="whitelistedWords" name="whitelistedWords" type="text" placeholder="e.g., goodword, safephrase" value="${currentConfig.whitelistedWords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="repeatedTextEnabled" name="repeatedTextEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.repeatedTextEnabled ? 'checked' : ''}>
+                            <label for="repeatedTextEnabled" class="text-lg font-semibold">Enable Repeated Text Detection</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="externalLinksEnabled" name="externalLinksEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.externalLinksEnabled ? 'checked' : ''}>
+                            <label for="externalLinksEnabled" class="text-lg font-semibold">Enable External Links Detection</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="discordInviteLinksEnabled" name="discordInviteLinksEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.discordInviteLinksEnabled ? 'checked' : ''}>
+                            <label for="discordInviteLinksEnabled" class="text-lg font-semibold">Enable Discord Invite Links Detection</label>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="excessiveEmojiEnabled" name="excessiveEmojiEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveEmojiEnabled ? 'checked' : ''}>
+                            <label for="excessiveEmojiEnabled" class="text-lg font-semibold">Enable Excessive Emoji Detection</label>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+                            <label for="excessiveEmojiCount" class="w-full sm:w-1/3 text-lg font-semibold">Max Emojis Allowed</label>
+                            <input id="excessiveEmojiCount" name="excessiveEmojiCount" type="number" min="1" value="${currentConfig.excessiveEmojiCount || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="excessiveMentionsEnabled" name="excessiveMentionsEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveMentionsEnabled ? 'checked' : ''}>
+                            <label for="excessiveMentionsEnabled" class="text-lg font-semibold">Enable Excessive Mentions Detection</label>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+                            <label for="excessiveMentionsCount" class="w-full sm:w-1/3 text-lg font-semibold">Max Mentions Allowed</label>
+                            <input id="excessiveMentionsCount" name="excessiveMentionsCount" type="number" min="1" value="${currentConfig.excessiveMentionsCount || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="excessiveCapsEnabled" name="excessiveCapsEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveCapsEnabled ? 'checked' : ''}>
+                            <label for="excessiveCapsEnabled" class="text-lg font-semibold">Enable Excessive Caps Detection</label>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+                            <label for="excessiveCapsPercentage" class="w-full sm:w-1/3 text-lg font-semibold">Max Caps Percentage Allowed</label>
+                            <input id="excessiveCapsPercentage" name="excessiveCapsPercentage" type="number" min="0" max="100" value="${currentConfig.excessiveCapsPercentage || 70}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <input type="checkbox" id="spamDetectionEnabled" name="spamDetectionEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.spamDetectionEnabled ? 'checked' : ''}>
+                            <label for="spamDetectionEnabled" class="text-lg font-semibold">Enable Spam Detection (Rapid Messages)</label>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+                            <label for="maxMessages" class="w-full sm:w-1/3 text-lg font-semibold">Max Messages in Timeframe</label>
+                            <input id="maxMessages" name="maxMessages" type="number" min="1" value="${currentConfig.maxMessages || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+                            <label for="timeframeSeconds" class="w-full sm:w-1/3 text-lg font-semibold">Timeframe for Spam (seconds)</label>
+                            <input id="timeframeSeconds" name="timeframeSeconds" type="number" min="1" value="${currentConfig.timeframeSeconds || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                        </div>
+                    </div>
+
+                    <h4 class="text-xl font-bold text-gray-300 pt-6 pb-2 border-b border-gray-600">Immunity Settings</h4>
+                    <div class="space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                            <label for="immuneRoles" class="w-full sm:w-1/3 text-lg font-semibold">Immune Roles</label>
+                            <select id="immuneRoles" name="immuneRoles" multiple class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold h-32">
+                                <option value="">Select roles (Ctrl/Cmd+click to select multiple)</option>
+                                ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.immuneRoles.split(',').includes(role.id) ? 'selected' : ''}>${role.name}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                            <label for="immuneChannels" class="w-full sm:w-1/3 text-lg font-semibold">Immune Channels</label>
+                            <select id="immuneChannels" name="immuneChannels" multiple class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold h-32">
+                                <option value="">Select channels (Ctrl/Cmd+click to select multiple)</option>
+                                ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.immuneChannels.split(',').includes(channel.id) ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            `;
+            const loggingHtml = `
+                <div class="space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="moderationLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Log Channel</label>
+                        <select id="moderationLogChannelId" name="moderationLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.moderationLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="messageLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Message Log Channel</label>
+                        <select id="messageLogChannelId" name="messageLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.messageLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="memberLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Member Log Channel</label>
+                        <select id="memberLogChannelId" name="memberLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.memberLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="adminLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Admin Log Channel</label>
+                        <select id="adminLogChannelId" name="adminLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.adminLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="joinLeaveLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Join/Leave Log Channel</label>
+                        <select id="joinLeaveLogChannelId" name="joinLeaveLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.joinLeaveLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="boostLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Boost Log Channel</label>
+                        <select id="boostLogChannelId" name="boostLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.boostLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="modAlertChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Alerts Channel</label>
+                        <select id="modAlertChannelId" name="modAlertChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.modAlertChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                </div>
+            `;
+            const funHtml = `
+                <div class="space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="karmaChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Karma Channel</label>
+                        <select id="karmaChannelId" name="karmaChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.karmaChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="countingChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Counting Channel</label>
+                        <select id="countingChannelId" name="countingChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.countingChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="spamChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun Channel</label>
+                        <select id="spamChannelId" name="spamChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+                            <option value="">Select a channel...</option>
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.spamChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+                        <label for="spamKeywords" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun GIF Keywords</label>
+                        <input id="spamKeywords" name="spamKeywords" type="text" placeholder="e.g., keyword1, keyword2" value="${currentConfig.spamKeywords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+                    </div>
+                    <!-- UPDATED EMOJI SELECTOR SECTION -->
+                    <div class="space-y-2">
+                        <label class="block text-lg font-semibold">Spam Fun Emojis</label>
+                        <div id="selected-emojis-container" class="flex flex-wrap gap-2 p-2 bg-gray-700 rounded-lg min-h-[40px] items-center">
+                            <!-- Emojis will be rendered here as tags -->
+                        </div>
+                        <input type="hidden" id="spamEmojis" name="spamEmojis" value="${currentConfig.spamEmojis || ''}">
+                        
+                        <div class="flex flex-wrap gap-2 max-h-56 overflow-y-auto pr-2 bg-gray-700 rounded-lg p-2">
+                            <h5 class="font-semibold text-gray-300 w-full mb-2">Default Emojis:</h5>
+                            <div id="default-emojis-list" class="flex flex-wrap gap-2 w-full">
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😂" title="😂">😂</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤣" title="🤣">🤣</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎉" title="🎉">🎉</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🥳" title="🥳">🥳</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎊" title="🎊">🎊</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="✨" title="✨">✨</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎈" title="🎈">🎈</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="❤️" title="❤️">❤️</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤩" title="🤩">🤩</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="👍" title="👍">👍</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😊" title="😊">😊</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😂" title="😂">😂</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="💯" title="💯">💯</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🔥" title="🔥">🔥</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤣" title="🤣">🤣</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="⭐" title="⭐">⭐</span>
+                            </div>
+                            <h5 class="font-semibold text-gray-300 w-full mt-4 mb-2">Server Emojis:</h5>
+                            <div id="custom-emojis-list" class="flex flex-wrap gap-2 w-full">
+                                ${guildData.emojis.length > 0 ? 
+                                   guildData.emojis.map(emoji => `
+                                    <img src="${emoji.imageURL()}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
+                                   `).join('') 
+                                   : '<p class="text-sm text-gray-400">No custom emojis found in this server.</p>'
+                               }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('tab-roles').innerHTML = rolesHtml;
+            document.getElementById('tab-logging').innerHTML = loggingHtml;
+            document.getElementById('tab-fun').innerHTML = funHtml;
+            
+            showSection(dashboardView);
+            
+            // Set up tab switching logic
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.addEventListener('click', () => {
+                    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+                    document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+                    
+                    button.classList.add('active');
+                    document.getElementById(`tab-${button.dataset.tab}`).classList.remove('hidden');
+                });
+            });
+            // Make sure the first tab is active on load
+            document.querySelector('.tab-button[data-tab="roles"]').classList.add('active');
+
+            // Initial render of emoji tags
+            renderEmojiTags();
+            
+            // Add event listener for emoji clicks in the selection list
+            document.getElementById('tab-fun').addEventListener('click', (e) => {
+                const target = e.target;
+                const emojiIdentifier = target.dataset.emojiIdentifier || target.textContent.trim();
+                
+                if (emojiIdentifier && target.closest('#default-emojis-list, #custom-emojis-list')) {
+                    if (!selectedEmojis.has(emojiIdentifier)) {
+                        selectedEmojis.add(emojiIdentifier);
+                        renderEmojiTags();
+                    }
+                }
+            });
+        }
+
+        // Handle saving the form
+        configForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formElements = e.target.elements;
+            
+            // Function to get selected values from a multiple select dropdown
+            const getSelectedValues = (selectElement) => {
+                return Array.from(selectElement.options)
+                            .filter(option => option.selected)
+                            .map(option => option.value)
+                            .join(',');
+            };
+
+            const newConfig = {
+                modRoleId: formElements.modRoleId.value || null,
+                adminRoleId: formElements.adminRoleId.value || null,
+                modPingRoleId: formElements.modPingRoleId.value || null,
+                karmaChannelId: formElements.karmaChannelId.value || null,
+                countingChannelId: formElements.countingChannelId.value || null,
+                moderationLogChannelId: formElements.moderationLogChannelId.value || null,
+                messageLogChannelId: formElements.messageLogChannelId.value || null,
+                memberLogChannelId: formElements.memberLogChannelId.value || null,
+                adminLogChannelId: formElements.adminLogChannelId.value || null,
+                joinLeaveLogChannelId: formElements.joinLeaveLogChannelId.value || null,
+                boostLogChannelId: formElements.boostLogChannelId.value || null,
+                modAlertChannelId: formElements.modAlertChannelId.value || null,
+                spamChannelId: formElements.spamChannelId.value || null,
+                spamKeywords: formElements.spamKeywords.value || null,
+                spamEmojis: formElements.spamEmojis.value || null,
+                // Automoderation settings
+                moderationLevel: formElements.moderationLevel.value,
+                blacklistedWords: formElements.blacklistedWords.value,
+                whitelistedWords: formElements.whitelistedWords.value,
+                spamDetectionEnabled: formElements.spamDetectionEnabled.checked,
+                maxMessages: parseInt(formElements.maxMessages.value, 10),
+                timeframeSeconds: parseInt(formElements.timeframeSeconds.value, 10),
+                repeatedTextEnabled: formElements.repeatedTextEnabled.checked,
+                externalLinksEnabled: formElements.externalLinksEnabled.checked,
+                discordInviteLinksEnabled: formElements.discordInviteLinksEnabled.checked,
+                excessiveEmojiEnabled: formElements.excessiveEmojiEnabled.checked,
+                excessiveEmojiCount: parseInt(formElements.excessiveEmojiCount.value, 10),
+                excessiveMentionsEnabled: formElements.excessiveMentionsEnabled.checked,
+                excessiveMentionsCount: parseInt(formElements.excessiveMentionsCount.value, 10),
+                excessiveCapsEnabled: formElements.excessiveCapsEnabled.checked,
+                excessiveCapsPercentage: parseInt(formElements.excessiveCapsPercentage.value, 10),
+                immuneRoles: getSelectedValues(formElements.immuneRoles), // Get selected roles
+                immuneChannels: getSelectedValues(formElements.immuneChannels) // Get selected channels
+            };
+
+            showLoading('Saving settings...');
+
+            try {
+                const response = await fetch(`/api/save-config?guildId=${selectedGuildId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${discordAccessToken}`
+                    },
+                    body: JSON.stringify(newConfig)
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    showSection(dashboardView);
+                    // Provide visual feedback for success
+                    const successMessage = document.createElement('div');
+                    successMessage.className = 'absolute top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-full shadow-lg transition-all duration-300';
+                    successMessage.textContent = 'Settings saved successfully!';
+                    document.body.appendChild(successMessage);
+                    setTimeout(() => successMessage.remove(), 3000);
+                } else {
+                    showErrorMessage(data.message || 'Failed to save configuration.');
+                }
+            } catch (error) {
+                console.error('Error saving config:', error);
+                showErrorMessage('An error occurred while saving the configuration.');
+            }
+        });
+
+        // Event listeners
+        backToServersButton.addEventListener('click', fetchGuilds);
+        retryButton.addEventListener('click', handleOAuthCallback);
+
+        // Check if we are on the callback URL and handle authentication
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.location.pathname === '/callback') {
+                handleOAuthCallback();
+            } else {
+                showSection(initialState);
+            }
+        });
+
+    </script>
+</body>
+</html>
