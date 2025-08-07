@@ -1,762 +1,1499 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Karma Bot Dashboard</title>
-    <!-- Favicon from logo -->
-    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
-    <link rel="manifest" href="/site.webmanifest">
-    <!-- Google Fonts: Poppins for headings, Inter for body text -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        :root {
-            --primary-blue: #1C315E; /* Dark blue from logo */
-            --secondary-blue: #3E64A5; /* Lighter blue from logo */
-            --accent-gold: #FFC107; /* Gold from logo */
-            --text-light: #f3f4f6;
-        }
 
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--primary-blue);
-            color: var(--text-light);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            padding: 2rem 1rem;
-        }
+    <meta charset="UTF-8">
 
-        h1, h2, h3 {
-            font-family: 'Poppins', sans-serif;
-        }
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-        .dashboard-container {
-            background-color: var(--secondary-blue);
-            border: 2px solid var(--accent-gold);
-        }
+    <title>Karma Bot Dashboard</title>
 
-        .server-card:hover {
-            transform: translateY(-5px) scale(1.02);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4-6px -2px rgba(0, 0, 0, 0.1);
-            background-color: #4c71b3;
-        }
-        
-        /* Custom scrollbar for server list */
-        .server-list::-webkit-scrollbar {
-            width: 8px;
-        }
+    <!-- Favicon from logo -->
 
-        .server-list::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-        }
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 
-        .server-list::-webkit-scrollbar-thumb {
-            background-color: var(--accent-gold);
-            border-radius: 10px;
-            border: 2px solid var(--secondary-blue);
-        }
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 
-        .tab-button.active {
-            background-color: var(--secondary-blue);
-            border-color: var(--accent-gold);
-            color: var(--accent-gold);
-        }
-        .tab-button {
-            border-bottom-width: 0;
-        }
-        .tab-content {
-            border-top-left-radius: 0;
-            border-top-right-radius: 0;
-        }
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
 
-        .emoji-tag {
-            background-color: var(--accent-gold);
-            color: var(--primary-blue);
-            border-radius: 9999px; /* Tailwind's rounded-full */
-            padding: 0.25rem 0.75rem; /* Tailwind's px-3 py-1 */
-            font-size: 0.875rem; /* Tailwind's text-sm */
-            font-weight: 600; /* Tailwind's font-semibold */
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .emoji-tag:hover {
-            opacity: 0.8;
-            transform: scale(0.95);
-        }
-    </style>
+    <link rel="manifest" href="/site.webmanifest">
+
+    <!-- Google Fonts: Poppins for headings, Inter for body text -->
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS CDN -->
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+
+        :root {
+
+            --primary-blue: #1C315E; /* Dark blue from logo */
+
+            --secondary-blue: #3E64A5; /* Lighter blue from logo */
+
+            --accent-gold: #FFC107; /* Gold from logo */
+
+            --text-light: #f3f4f6;
+
+        }
+
+
+
+        body {
+
+            font-family: 'Inter', sans-serif;
+
+            background-color: var(--primary-blue);
+
+            color: var(--text-light);
+
+            display: flex;
+
+            justify-content: center;
+
+            align-items: center;
+
+            min-height: 100vh;
+
+            padding: 2rem 1rem;
+
+        }
+
+
+
+        h1, h2, h3 {
+
+            font-family: 'Poppins', sans-serif;
+
+        }
+
+
+
+        .dashboard-container {
+
+            background-color: var(--secondary-blue);
+
+            border: 2px solid var(--accent-gold);
+
+        }
+
+
+
+        .server-card:hover {
+
+            transform: translateY(-5px) scale(1.02);
+
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4-6px -2px rgba(0, 0, 0, 0.1);
+
+            background-color: #4c71b3;
+
+        }
+
+        
+
+        /* Custom scrollbar for server list */
+
+        .server-list::-webkit-scrollbar {
+
+            width: 8px;
+
+        }
+
+
+
+        .server-list::-webkit-scrollbar-track {
+
+            background: rgba(255, 255, 255, 0.1);
+
+            border-radius: 10px;
+
+        }
+
+
+
+        .server-list::-webkit-scrollbar-thumb {
+
+            background-color: var(--accent-gold);
+
+            border-radius: 10px;
+
+            border: 2px solid var(--secondary-blue);
+
+        }
+
+
+
+        .tab-button.active {
+
+            background-color: var(--secondary-blue);
+
+            border-color: var(--accent-gold);
+
+            color: var(--accent-gold);
+
+        }
+
+        .tab-button {
+
+            border-bottom-width: 0;
+
+        }
+
+        .tab-content {
+
+            border-top-left-radius: 0;
+
+            border-top-right-radius: 0;
+
+        }
+
+
+
+        .emoji-tag {
+
+            background-color: var(--accent-gold);
+
+            color: var(--primary-blue);
+
+            border-radius: 9999px; /* Tailwind's rounded-full */
+
+            padding: 0.25rem 0.75rem; /* Tailwind's px-3 py-1 */
+
+            font-size: 0.875rem; /* Tailwind's text-sm */
+
+            font-weight: 600; /* Tailwind's font-semibold */
+
+            cursor: pointer;
+
+            transition: all 0.2s;
+
+        }
+
+        .emoji-tag:hover {
+
+            opacity: 0.8;
+
+            transform: scale(0.95);
+
+        }
+
+    </style>
+
 </head>
+
 <body class="bg-primary-blue text-text-light font-inter">
 
-    <div id="app" class="w-full max-w-6xl mx-auto flex flex-col items-center">
-        <!-- Header with Logo and Title -->
-        <header class="text-center mb-10 w-full">
-            <img src="Karmav1.png" alt="Karma Bot Logo" class="mx-auto w-32 h-32 rounded-full ring-4 ring-accent-gold mb-4 shadow-lg">
-            <h1 class="text-4xl font-extrabold text-accent-gold tracking-tight">Karma Bot Dashboard</h1>
-            <p class="mt-2 text-lg text-gray-300">Manage your server's moderation and karma settings.</p>
-        </header>
 
-        <main id="main-content" class="w-full">
-            <!-- Initial State / Loading / Error -->
-            <div id="initial-state" class="bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container text-center w-full min-h-[300px] flex flex-col justify-center items-center">
-                <div id="loading-spinner" class="hidden">
-                    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-accent-gold"></div>
-                    <p class="mt-4 text-xl">Loading...</p>
-                </div>
-                <div id="error-message" class="hidden text-center text-red-400">
-                    <p class="text-xl font-bold">An error occurred.</p>
-                    <p id="error-text" class="mt-2 text-sm"></p>
-                    <button id="retry-button" class="mt-4 px-6 py-2 bg-accent-gold text-primary-blue rounded-full font-bold shadow-md hover:bg-yellow-400 transition-colors">Retry</button>
-                </div>
-                <div id="login-section">
-                    <h2 class="text-2xl font-bold mb-4">Welcome!</h2>
-                    <p class="mb-6 text-gray-300">Please log in with Discord to manage your servers.</p>
-                    <a href="/api/login" id="login-button" class="inline-block px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Login with Discord</a>
-                </div>
-            </div>
 
-            <!-- Server Selection View (initially hidden) -->
-            <div id="server-selection-view" class="hidden">
-                <h2 class="text-3xl font-bold text-center mb-6 text-accent-gold">Select a Server</h2>
-                <p class="text-center text-gray-300 mb-8">Click on an icon to manage that server's settings.</p>
-                <div id="server-icons-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 max-h-[60vh] overflow-y-auto server-list pr-2">
-                    <!-- Server icons will be dynamically inserted here -->
-                </div>
-            </div>
+    <div id="app" class="w-full max-w-6xl mx-auto flex flex-col items-center">
 
-            <!-- Dashboard View (initially hidden) -->
-            <div id="dashboard-view" class="hidden w-full">
-                <div class="bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container w-full">
-                    <div class="flex items-center mb-6">
-                        <img id="guild-icon-large" src="" alt="Server Icon" class="w-16 h-16 rounded-full ring-2 ring-accent-gold mr-4">
-                        <h2 id="guild-name-display" class="text-3xl font-bold text-accent-gold"></h2>
-                        <button id="back-to-servers" class="ml-auto flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-full shadow-md hover:bg-gray-700 transition-colors">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-                            <span>Back</span>
-                        </button>
-                    </div>
+        <!-- Header with Logo and Title -->
 
-                    <h3 class="text-2xl font-bold text-gray-200 mb-4 border-b-2 border-accent-gold pb-2">Configuration Settings</h3>
+        <header class="text-center mb-10 w-full">
 
-                    <!-- Tabbed Interface -->
-                    <div class="flex flex-wrap border-b border-gray-600 mb-6">
-                        <button class="tab-button active px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none bg-secondary-blue border-b-0 hover:bg-gray-700 transition-colors" data-tab="roles">Moderation & Roles</button>
-                        <button class="tab-button px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none hover:bg-gray-700 transition-colors" data-tab="logging">Logging Channels</button>
-                        <button class="tab-button px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none hover:bg-gray-700 transition-colors" data-tab="fun">Fun & Games</button>
-                    </div>
+            <img src="Karmav1.png" alt="Karma Bot Logo" class="mx-auto w-32 h-32 rounded-full ring-4 ring-accent-gold mb-4 shadow-lg">
 
-                    <form id="config-form" class="space-y-6">
-                        <!-- Tab content will be rendered here -->
-                        <div id="tab-roles" class="tab-content">
-                            <!-- Roles Tab Content -->
-                        </div>
-                        <div id="tab-logging" class="tab-content hidden">
-                            <!-- Logging Channels Tab Content -->
-                        </div>
-                        <div id="tab-fun" class="tab-content hidden">
-                            <!-- Fun & Games Tab Content -->
-                        </div>
-                        
-                        <!-- Save Button -->
-                        <div class="flex justify-end pt-4 border-t border-gray-600 mt-6">
-                            <button type="submit" class="px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Save Settings</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </main>
-    </div>
+            <h1 class="text-4xl font-extrabold text-accent-gold tracking-tight">Karma Bot Dashboard</h1>
 
-    <!-- JavaScript for dynamic functionality -->
-    <script>
-        // Use provided environment variables, ensuring they are correctly accessed
-        const localAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const localFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const localInitialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : ''; // Corrected self-reference
+            <p class="mt-2 text-lg text-gray-300">Manage your server's moderation and karma settings.</p>
 
-        // Assign to variables expected by the rest of the script
-        const appId = localAppId;
-        const firebaseConfig = localFirebaseConfig;
-        const initialAuthToken = localInitialAuthToken;
+        </header>
 
-        // UI Elements
-        const initialState = document.getElementById('initial-state');
-        const loginSection = document.getElementById('login-section');
-        const loadingSpinner = document.getElementById('loading-spinner');
-        const errorSection = document.getElementById('error-message');
-        const errorText = document.getElementById('error-text');
-        const retryButton = document.getElementById('retry-button');
-        const serverSelectionView = document.getElementById('server-selection-view');
-        const serverIconsGrid = document.getElementById('server-icons-grid');
-        const dashboardView = document.getElementById('dashboard-view');
-        const backToServersButton = document.getElementById('back-to-servers');
-        const guildNameDisplay = document.getElementById('guild-name-display');
-        const guildIconLarge = document.getElementById('guild-icon-large');
-        const configForm = document.getElementById('config-form');
 
-        let discordAccessToken = null;
-        let selectedGuildId = null;
-        let cachedGuilds = [];
-        let selectedEmojis = new Set(); // To track selected emojis as tags
 
-        // Function to show/hide sections
-        function showSection(section) {
-            initialState.classList.add('hidden');
-            serverSelectionView.classList.add('hidden');
-            dashboardView.classList.add('hidden');
-            section.classList.remove('hidden');
-        }
+        <main id="main-content" class="w-full">
 
-        // Function to show the loading spinner
-        function showLoading(message = 'Loading...') {
-            loginSection.classList.add('hidden');
-            errorSection.classList.add('hidden');
-            loadingSpinner.classList.remove('hidden');
-            loadingSpinner.querySelector('p').textContent = message;
-            showSection(initialState);
-        }
+            <!-- Initial State / Loading / Error -->
 
-        // Function to show an error message
-        function showErrorMessage(message) {
-            loadingSpinner.classList.add('hidden');
-            loginSection.classList.add('hidden');
-            errorSection.classList.remove('hidden');
-            errorText.textContent = message;
-            showSection(initialState);
-        }
+            <div id="initial-state" class="bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container text-center w-full min-h-[300px] flex flex-col justify-center items-center">
 
-        // Function to handle the OAuth redirect and get a token
-        async function handleOAuthCallback() {
-            const params = new URLSearchParams(window.location.search);
-            const code = params.get('code');
-            
-            if (code) {
-                showLoading('Logging in...');
-                try {
-                    const response = await fetch('/api/token', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ code })
-                    });
-                    const data = await response.json();
-                    if (data.access_token) {
-                        discordAccessToken = data.access_token;
-                        // Clear the URL to hide the code
-                        window.history.replaceState({}, document.title, window.location.pathname);
-                        fetchGuilds();
-                    } else {
-                        showErrorMessage('Failed to get Discord access token.');
-                    }
-                } catch (error) {
-                    console.error('OAuth callback error:', error);
-                    showErrorMessage('An error occurred during Discord login.');
-                }
-            } else if (!discordAccessToken) {
-                // If there's no code and no token, show the login button
-                showSection(initialState);
-            }
-        }
+                <div id="loading-spinner" class="hidden">
 
-        // Function to fetch the user's guilds
-        async function fetchGuilds() {
-            showLoading('Fetching your servers...');
-            try {
-                const response = await fetch('/api/guilds', {
-                    headers: { 'Authorization': `Bearer ${discordAccessToken}` }
-                });
-                const guilds = await response.json();
+                    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-accent-gold"></div>
 
-                if (response.ok) {
-                    cachedGuilds = guilds;
-                    renderServerSelection(cachedGuilds);
-                } else {
-                    showErrorMessage(guilds.message || 'Failed to fetch servers.');
-                }
-            }
-            catch (error) {
-                console.error('Error fetching guilds:', error);
-                showErrorMessage('Failed to connect to the bot backend. Please try again.');
-            }
-        }
+                    <p class="mt-4 text-xl">Loading...</p>
 
-        // Function to render the server selection grid
-        function renderServerSelection(guilds) {
-            serverIconsGrid.innerHTML = '';
-            if (guilds.length === 0) {
-                serverIconsGrid.innerHTML = `<p class="col-span-full text-center text-gray-300">The bot is not in any servers where you have administrator permissions. Please invite it to a server.</p>`;
-            } else {
-                guilds.forEach(guild => {
-                    const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png` : `https://placehold.co/144x144/1C315E/FFC107?text=${guild.name.charAt(0)}`;
-                    const serverCard = document.createElement('div');
-                    serverCard.className = 'server-card flex flex-col items-center p-4 rounded-xl cursor-pointer transition-all duration-300 transform bg-secondary-blue shadow-lg border-2 border-transparent hover:border-accent-gold';
-                    serverCard.innerHTML = `
-                        <img src="${iconUrl}" alt="${guild.name} icon" class="w-36 h-36 rounded-full object-cover">
-                        <p class="mt-3 text-lg font-bold text-gray-100 text-center truncate w-full px-1">${guild.name}</p>
-                    `;
-                    serverCard.addEventListener('click', () => fetchGuildConfig(guild.id, guild.name, iconUrl));
-                    serverIconsGrid.appendChild(serverCard);
-                });
-            }
-            showSection(serverSelectionView);
-        }
+                </div>
 
-        // Function to fetch a specific guild's configuration
-        async function fetchGuildConfig(guildId, guildName, iconUrl) {
-            showLoading(`Loading settings for ${guildName}...`);
-            selectedGuildId = guildId;
+                <div id="error-message" class="hidden text-center text-red-400">
 
-            try {
-                const response = await fetch(`/api/guild-config?guildId=${guildId}`, {
-                    headers: { 'Authorization': `Bearer ${discordAccessToken}` }
-                });
-                const data = await response.json();
+                    <p class="text-xl font-bold">An error occurred.</p>
 
-                if (response.ok) {
-                    renderDashboard(data.guildData, data.currentConfig, iconUrl);
-                } else {
-                    showErrorMessage(data.message || 'Failed to load server configuration.');
-                }
-            } catch (error) {
-                console.error('Error fetching guild config:', error);
-                showErrorMessage('An error occurred while fetching server configuration.');
-            }
-        }
-        
-        // Function to render the emoji tags
-        function renderEmojiTags() {
-            const emojiTagsContainer = document.getElementById('selected-emojis-container');
-            const hiddenInput = document.getElementById('spamEmojis');
-            emojiTagsContainer.innerHTML = '';
-            hiddenInput.value = Array.from(selectedEmojis).join(',');
+                    <p id="error-text" class="mt-2 text-sm"></p>
 
-            if (selectedEmojis.size === 0) {
-                emojiTagsContainer.innerHTML = '<span class="text-sm text-gray-400">No emojis selected.</span>';
-            } else {
-                selectedEmojis.forEach(emoji => {
-                    const isCustom = emoji.startsWith('<');
-                    const emojiTag = document.createElement('span');
-                    emojiTag.className = 'emoji-tag flex items-center space-x-1';
-                    emojiTag.dataset.emoji = emoji;
+                    <button id="retry-button" class="mt-4 px-6 py-2 bg-accent-gold text-primary-blue rounded-full font-bold shadow-md hover:bg-yellow-400 transition-colors">Retry</button>
 
-                    if (isCustom) {
-                        const parts = emoji.match(/<a?:(\w+):(\d+)>/);
-                        const animated = parts[0].includes('a:');
-                        const emojiName = parts[1];
-                        const emojiId = parts[2];
-                        // FIX: Use imageURL() instead of .url getter
-                        const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? 'gif' : 'png'}`;
-                        emojiTag.innerHTML = `
-                            <img src="${imageUrl}" alt="${emojiName}" class="w-5 h-5">
-                            <span class="text-sm">x</span>
-                        `;
-                    } else {
-                        emojiTag.innerHTML = `
-                            <span>${emoji}</span>
-                            <span class="text-sm">x</span>
-                        `;
-                    }
+                </div>
 
-                    emojiTag.addEventListener('click', () => {
-                        selectedEmojis.delete(emoji);
-                        renderEmojiTags();
-                    });
-                    emojiTagsContainer.appendChild(emojiTag);
-                });
-            }
-        }
+                <div id="login-section">
 
-        // Function to render the dashboard view
-        function renderDashboard(guildData, currentConfig, iconUrl) {
-            guildNameDisplay.textContent = guildData.name;
-            guildIconLarge.src = iconUrl;
-            guildIconLarge.alt = `${guildData.name} icon`;
+                    <h2 class="text-2xl font-bold mb-4">Welcome!</h2>
 
-            // Initialize selected emojis from current config
-            selectedEmojis = new Set();
-            if (currentConfig.spamEmojis) {
-                currentConfig.spamEmojis.split(',').forEach(emoji => {
-                    if (emoji.trim() !== '') {
-                        selectedEmojis.add(emoji.trim());
-                    }
-                });
-            }
+                    <p class="mb-6 text-gray-300">Please log in with Discord to manage your servers.</p>
 
-            const rolesHtml = `
-                <div class="space-y-4">
-                    <h4 class="text-xl font-bold text-gray-300 pt-4 pb-2 border-b border-gray-600">Moderation Roles</h4>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="modRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Role</label>
-                        <select id="modRoleId" name="modRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a role...</option>
-                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="adminRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Admin Role</label>
-                        <select id="adminRoleId" name="adminRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a role...</option>
-                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.adminRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="modPingRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Ping Role</label>
-                        <select id="modPingRoleId" name="modPingRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modPingRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
-                        </select>
-                    </div>
+                    <a href="/api/login" id="login-button" class="inline-block px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Login with Discord</a>
 
-                    <h4 class="text-xl font-bold text-gray-300 pt-6 pb-2 border-b border-gray-600">Automoderation Rules</h4>
-                    <div class="space-y-4">
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                            <label for="moderationLevel" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Level</label>
-                            <select id="moderationLevel" name="moderationLevel" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                                <option value="none" ${currentConfig.moderationLevel === 'none' ? 'selected' : ''}>None</option>
-                                <option value="low" ${currentConfig.moderationLevel === 'low' ? 'selected' : ''}>Low</option>
-                                <option value="medium" ${currentConfig.moderationLevel === 'medium' ? 'selected' : ''}>Medium</option>
-                                <option value="high" ${currentConfig.moderationLevel === 'high' ? 'selected' : ''}>High</option>
-                            </select>
-                        </div>
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                            <label for="blacklistedWords" class="w-full sm:w-1/3 text-lg font-semibold">Blacklisted Words (comma-separated)</label>
-                            <input id="blacklistedWords" name="blacklistedWords" type="text" placeholder="e.g., badword, anotherbad" value="${currentConfig.blacklistedWords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
-                        </div>
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                            <label for="whitelistedWords" class="w-full sm:w-1/3 text-lg font-semibold">Whitelisted Words (comma-separated)</label>
-                            <input id="whitelistedWords" name="whitelistedWords" type="text" placeholder="e.g., goodword, safephrase" value="${currentConfig.whitelistedWords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <input type="checkbox" id="repeatedTextEnabled" name="repeatedTextEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.repeatedTextEnabled ? 'checked' : ''}>
-                            <label for="repeatedTextEnabled" class="text-lg font-semibold">Enable Repeated Text Detection</label>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <input type="checkbox" id="externalLinksEnabled" name="externalLinksEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.externalLinksEnabled ? 'checked' : ''}>
-                            <label for="externalLinksEnabled" class="text-lg font-semibold">Enable External Links Detection</label>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <input type="checkbox" id="discordInviteLinksEnabled" name="discordInviteLinksEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.discordInviteLinksEnabled ? 'checked' : ''}>
-                            <label for="discordInviteLinksEnabled" class="text-lg font-semibold">Enable Discord Invite Links Detection</label>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <input type="checkbox" id="excessiveEmojiEnabled" name="excessiveEmojiEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveEmojiEnabled ? 'checked' : ''}>
-                            <label for="excessiveEmojiEnabled" class="text-lg font-semibold">Enable Excessive Emoji Detection</label>
-                        </div>
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
-                            <label for="excessiveEmojiCount" class="w-full sm:w-1/3 text-lg font-semibold">Max Emojis Allowed</label>
-                            <input id="excessiveEmojiCount" name="excessiveEmojiCount" type="number" min="1" value="${currentConfig.excessiveEmojiCount || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <input type="checkbox" id="excessiveMentionsEnabled" name="excessiveMentionsEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveMentionsEnabled ? 'checked' : ''}>
-                            <label for="excessiveMentionsEnabled" class="text-lg font-semibold">Enable Excessive Mentions Detection</label>
-                        </div>
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
-                            <label for="excessiveMentionsCount" class="w-full sm:w-1/3 text-lg font-semibold">Max Mentions Allowed</label>
-                            <input id="excessiveMentionsCount" name="excessiveMentionsCount" type="number" min="1" value="${currentConfig.excessiveMentionsCount || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <input type="checkbox" id="excessiveCapsEnabled" name="excessiveCapsEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveCapsEnabled ? 'checked' : ''}>
-                            <label for="excessiveCapsEnabled" class="text-lg font-semibold">Enable Excessive Caps Detection</label>
-                        </div>
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
-                            <label for="excessiveCapsPercentage" class="w-full sm:w-1/3 text-lg font-semibold">Max Caps Percentage Allowed</label>
-                            <input id="excessiveCapsPercentage" name="excessiveCapsPercentage" type="number" min="0" max="100" value="${currentConfig.excessiveCapsPercentage || 70}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <input type="checkbox" id="spamDetectionEnabled" name="spamDetectionEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.spamDetectionEnabled ? 'checked' : ''}>
-                            <label for="spamDetectionEnabled" class="text-lg font-semibold">Enable Spam Detection (Rapid Messages)</label>
-                        </div>
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
-                            <label for="maxMessages" class="w-full sm:w-1/3 text-lg font-semibold">Max Messages in Timeframe</label>
-                            <input id="maxMessages" name="maxMessages" type="number" min="1" value="${currentConfig.maxMessages || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
-                        </div>
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
-                            <label for="timeframeSeconds" class="w-full sm:w-1/3 text-lg font-semibold">Timeframe for Spam (seconds)</label>
-                            <input id="timeframeSeconds" name="timeframeSeconds" type="number" min="1" value="${currentConfig.timeframeSeconds || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
-                        </div>
-                    </div>
+                </div>
 
-                    <h4 class="text-xl font-bold text-gray-300 pt-6 pb-2 border-b border-gray-600">Immunity Settings</h4>
-                    <div class="space-y-4">
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                            <label for="immuneRoles" class="w-full sm:w-1/3 text-lg font-semibold">Immune Roles</label>
-                            <select id="immuneRoles" name="immuneRoles" multiple class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold h-32">
-                                <option value="">Select roles (Ctrl/Cmd+click to select multiple)</option>
-                                ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.immuneRoles.split(',').includes(role.id) ? 'selected' : ''}>${role.name}</option>`).join('')}
-                            </select>
-                        </div>
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                            <label for="immuneChannels" class="w-full sm:w-1/3 text-lg font-semibold">Immune Channels</label>
-                            <select id="immuneChannels" name="immuneChannels" multiple class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold h-32">
-                                <option value="">Select channels (Ctrl/Cmd+click to select multiple)</option>
-                                ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.immuneChannels.split(',').includes(channel.id) ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                            </select>
-                        </div>
-                    </div>
-                </div>
-            `;
-            const loggingHtml = `
-                <div class="space-y-4">
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="moderationLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Log Channel</label>
-                        <select id="moderationLogChannelId" name="moderationLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.moderationLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="messageLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Message Log Channel</label>
-                        <select id="messageLogChannelId" name="messageLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.messageLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="memberLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Member Log Channel</label>
-                        <select id="memberLogChannelId" name="memberLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.memberLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="adminLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Admin Log Channel</label>
-                        <select id="adminLogChannelId" name="adminLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.adminLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="joinLeaveLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Join/Leave Log Channel</label>
-                        <select id="joinLeaveLogChannelId" name="joinLeaveLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.joinLeaveLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="boostLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Boost Log Channel</label>
-                        <select id="boostLogChannelId" name="boostLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.boostLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="modAlertChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Alerts Channel</label>
-                        <select id="modAlertChannelId" name="modAlertChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.modAlertChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-                </div>
-            `;
-            const funHtml = `
-                <div class="space-y-4">
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="karmaChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Karma Channel</label>
-                        <select id="karmaChannelId" name="karmaChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.karmaChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="countingChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Counting Channel</label>
-                        <select id="countingChannelId" name="countingChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.countingChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="spamChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun Channel</label>
-                        <select id="spamChannelId" name="spamChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
-                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.spamChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
-                        <label for="spamKeywords" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun GIF Keywords</label>
-                        <input id="spamKeywords" name="spamKeywords" type="text" placeholder="e.g., keyword1, keyword2" value="${currentConfig.spamKeywords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
-                    </div>
-                    <!-- UPDATED EMOJI SELECTOR SECTION -->
-                    <div class="space-y-2">
-                        <label class="block text-lg font-semibold">Spam Fun Emojis</label>
-                        <div id="selected-emojis-container" class="flex flex-wrap gap-2 p-2 bg-gray-700 rounded-lg min-h-[40px] items-center">
-                            <!-- Emojis will be rendered here as tags -->
-                        </div>
-                        <input type="hidden" id="spamEmojis" name="spamEmojis" value="${currentConfig.spamEmojis || ''}">
-                        
-                        <div class="flex flex-wrap gap-2 max-h-56 overflow-y-auto pr-2 bg-gray-700 rounded-lg p-2">
-                            <h5 class="font-semibold text-gray-300 w-full mb-2">Default Emojis:</h5>
-                            <div id="default-emojis-list" class="flex flex-wrap gap-2 w-full">
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😂" title="😂">😂</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤣" title="🤣">🤣</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎉" title="�">🎉</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🥳" title="🥳">🥳</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎊" title="🎊">🎊</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="✨" title="✨">✨</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎈" title="🎈">🎈</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="❤️" title="❤️">❤️</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤩" title="🤩">🤩</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="👍" title="👍">👍</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😊" title="😊">😊</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😂" title="😂">😂</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="💯" title="💯">💯</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🔥" title="🔥">🔥</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤣" title="🤣">🤣</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="⭐" title="⭐">⭐</span>
-                            </div>
-                            <h5 class="font-semibold text-gray-300 w-full mt-4 mb-2">Server Emojis:</h5>
-                            <div id="custom-emojis-list" class="flex flex-wrap gap-2 w-full">
-                                ${guildData.emojis.length > 0 ? 
-                                   guildData.emojis.map(emoji => `
-                                    <img src="${emoji.imageURL()}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
-                                   `).join('') 
-                                   : '<p class="text-sm text-gray-400">No custom emojis found in this server.</p>'
-                               }
-                            </div>
-                        </div>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                        <input type="checkbox" id="meowFunEnabled" name="meowFunEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.meowFunEnabled ? 'checked' : ''}>
-                        <label for="meowFunEnabled" class="text-lg font-semibold">Enable Meow Fun (Bot replies with cat image to "meow")</label>
-                    </div>
-                </div>
-            `;
-            
-            document.getElementById('tab-roles').innerHTML = rolesHtml;
-            document.getElementById('tab-logging').innerHTML = loggingHtml;
-            document.getElementById('tab-fun').innerHTML = funHtml;
-            
-            showSection(dashboardView);
-            
-            // Set up tab switching logic
-            document.querySelectorAll('.tab-button').forEach(button => {
-                button.addEventListener('click', () => {
-                    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-                    document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
-                    
-                    button.classList.add('active');
-                    document.getElementById(`tab-${button.dataset.tab}`).classList.remove('hidden');
-                });
-            });
-            // Make sure the first tab is active on load
-            document.querySelector('.tab-button[data-tab="roles"]').classList.add('active');
+            </div>
 
-            // Initial render of emoji tags
-            renderEmojiTags();
-            
-            // Add event listener for emoji clicks in the selection list
-            document.getElementById('tab-fun').addEventListener('click', (e) => {
-                const target = e.target;
-                const emojiIdentifier = target.dataset.emojiIdentifier || target.textContent.trim();
-                
-                if (emojiIdentifier && target.closest('#default-emojis-list, #custom-emojis-list')) {
-                    if (!selectedEmojis.has(emojiIdentifier)) {
-                        selectedEmojis.add(emojiIdentifier);
-                        renderEmojiTags();
-                    }
-                }
-            });
-        }
 
-        // Handle saving the form
-        configForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formElements = e.target.elements;
-            
-            // Function to get selected values from a multiple select dropdown
-            const getSelectedValues = (selectElement) => {
-                return Array.from(selectElement.options)
-                            .filter(option => option.selected)
-                            .map(option => option.value)
-                            .join(',');
-            };
 
-            const newConfig = {
-                modRoleId: formElements.modRoleId.value || null,
-                adminRoleId: formElements.adminRoleId.value || null,
-                modPingRoleId: formElements.modPingRoleId.value || null,
-                karmaChannelId: formElements.karmaChannelId.value || null,
-                countingChannelId: formElements.countingChannelId.value || null,
-                moderationLogChannelId: formElements.moderationLogChannelId.value || null,
-                messageLogChannelId: formElements.messageLogChannelId.value || null,
-                memberLogChannelId: formElements.memberLogChannelId.value || null,
-                adminLogChannelId: formElements.adminLogChannelId.value || null,
-                joinLeaveLogChannelId: formElements.joinLeaveLogChannelId.value || null,
-                boostLogChannelId: formElements.boostLogChannelId.value || null,
-                modAlertChannelId: formElements.modAlertChannelId.value || null,
-                spamChannelId: formElements.spamChannelId.value || null,
-                spamKeywords: formElements.spamKeywords.value || null,
-                spamEmojis: formElements.spamEmojis.value || null,
-                // Automoderation settings
-                moderationLevel: formElements.moderationLevel.value,
-                blacklistedWords: formElements.blacklistedWords.value,
-                whitelistedWords: formElements.whitelistedWords.value,
-                spamDetectionEnabled: formElements.spamDetectionEnabled.checked,
-                maxMessages: parseInt(formElements.maxMessages.value, 10),
-                timeframeSeconds: parseInt(formElements.timeframeSeconds.value, 10),
-                repeatedTextEnabled: formElements.repeatedTextEnabled.checked,
-                externalLinksEnabled: formElements.externalLinksEnabled.checked,
-                discordInviteLinksEnabled: formElements.discordInviteLinksEnabled.checked,
-                excessiveEmojiEnabled: formElements.excessiveEmojiEnabled.checked,
-                excessiveEmojiCount: parseInt(formElements.excessiveEmojiCount.value, 10),
-                excessiveMentionsEnabled: formElements.excessiveMentionsEnabled.checked,
-                excessiveMentionsCount: parseInt(formElements.excessiveMentionsCount.value, 10),
-                excessiveCapsEnabled: formElements.excessiveCapsEnabled.checked,
-                excessiveCapsPercentage: parseInt(formElements.excessiveCapsPercentage.value, 10),
-                immuneRoles: getSelectedValues(formElements.immuneRoles), // Get selected roles
-                immuneChannels: getSelectedValues(formElements.immuneChannels), // Get selected channels
-                meowFunEnabled: formElements.meowFunEnabled.checked // NEW: Get Meow Fun checkbox state
-            };
+            <!-- Server Selection View (initially hidden) -->
 
-            showLoading('Saving settings...');
+            <div id="server-selection-view" class="hidden">
 
-            try {
-                const response = await fetch(`/api/save-config?guildId=${selectedGuildId}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${discordAccessToken}`
-                    },
-                    body: JSON.stringify(newConfig)
-                });
-                const data = await response.json();
-                if (response.ok) {
-                    showSection(dashboardView);
-                    // Provide visual feedback for success
-                    const successMessage = document.createElement('div');
-                    successMessage.className = 'absolute top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-full shadow-lg transition-all duration-300';
-                    successMessage.textContent = 'Settings saved successfully!';
-                    document.body.appendChild(successMessage);
-                    setTimeout(() => successMessage.remove(), 3000);
-                } else {
-                    showErrorMessage(data.message || 'Failed to save configuration.');
-                }
-            } catch (error) {
-                console.error('Error saving config:', error);
-                showErrorMessage('An error occurred while saving the configuration.');
-            }
-        });
+                <h2 class="text-3xl font-bold text-center mb-6 text-accent-gold">Select a Server</h2>
 
-        // Event listeners
-        backToServersButton.addEventListener('click', fetchGuilds);
-        retryButton.addEventListener('click', handleOAuthCallback);
+                <p class="text-center text-gray-300 mb-8">Click on an icon to manage that server's settings.</p>
 
-        // Check if we are on the callback URL and handle authentication
-        document.addEventListener('DOMContentLoaded', () => {
-            if (window.location.pathname === '/callback') {
-                handleOAuthCallback();
-            } else {
-                showSection(initialState);
-            }
-        });
+                <div id="server-icons-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 max-h-[60vh] overflow-y-auto server-list pr-2">
 
-    </script>
+                    <!-- Server icons will be dynamically inserted here -->
+
+                </div>
+
+            </div>
+
+
+
+            <!-- Dashboard View (initially hidden) -->
+
+            <div id="dashboard-view" class="hidden w-full">
+
+                <div class="bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container w-full">
+
+                    <div class="flex items-center mb-6">
+
+                        <img id="guild-icon-large" src="" alt="Server Icon" class="w-16 h-16 rounded-full ring-2 ring-accent-gold mr-4">
+
+                        <h2 id="guild-name-display" class="text-3xl font-bold text-accent-gold"></h2>
+
+                        <button id="back-to-servers" class="ml-auto flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-full shadow-md hover:bg-gray-700 transition-colors">
+
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-left"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+
+                            <span>Back</span>
+
+                        </button>
+
+                    </div>
+
+
+
+                    <h3 class="text-2xl font-bold text-gray-200 mb-4 border-b-2 border-accent-gold pb-2">Configuration Settings</h3>
+
+
+
+                    <!-- Tabbed Interface -->
+
+                    <div class="flex flex-wrap border-b border-gray-600 mb-6">
+
+                        <button class="tab-button active px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none bg-secondary-blue border-b-0 hover:bg-gray-700 transition-colors" data-tab="roles">Moderation & Roles</button>
+
+                        <button class="tab-button px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none hover:bg-gray-700 transition-colors" data-tab="logging">Logging Channels</button>
+
+                        <button class="tab-button px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none hover:bg-gray-700 transition-colors" data-tab="fun">Fun & Games</button>
+
+                    </div>
+
+
+
+                    <form id="config-form" class="space-y-6">
+
+                        <!-- Tab content will be rendered here -->
+
+                        <div id="tab-roles" class="tab-content">
+
+                            <!-- Roles Tab Content -->
+
+                        </div>
+
+                        <div id="tab-logging" class="tab-content hidden">
+
+                            <!-- Logging Channels Tab Content -->
+
+                        </div>
+
+                        <div id="tab-fun" class="tab-content hidden">
+
+                            <!-- Fun & Games Tab Content -->
+
+                        </div>
+
+                        
+
+                        <!-- Save Button -->
+
+                        <div class="flex justify-end pt-4 border-t border-gray-600 mt-6">
+
+                            <button type="submit" class="px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Save Settings</button>
+
+                        </div>
+
+                    </form>
+
+                </div>
+
+            </div>
+
+        </main>
+
+    </div>
+
+
+
+    <!-- JavaScript for dynamic functionality -->
+
+    <script>
+
+        // Use provided environment variables
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? initialAuthToken : '';
+
+
+
+        // UI Elements
+
+        const initialState = document.getElementById('initial-state');
+
+        const loginSection = document.getElementById('login-section');
+
+        const loadingSpinner = document.getElementById('loading-spinner');
+
+        const errorSection = document.getElementById('error-message');
+
+        const errorText = document.getElementById('error-text');
+
+        const retryButton = document.getElementById('retry-button');
+
+        const serverSelectionView = document.getElementById('server-selection-view');
+
+        const serverIconsGrid = document.getElementById('server-icons-grid');
+
+        const dashboardView = document.getElementById('dashboard-view');
+
+        const backToServersButton = document.getElementById('back-to-servers');
+
+        const guildNameDisplay = document.getElementById('guild-name-display');
+
+        const guildIconLarge = document.getElementById('guild-icon-large');
+
+        const configForm = document.getElementById('config-form');
+
+
+
+        let discordAccessToken = null;
+
+        let selectedGuildId = null;
+
+        let cachedGuilds = [];
+
+        let selectedEmojis = new Set(); // To track selected emojis as tags
+
+
+
+        // Function to show/hide sections
+
+        function showSection(section) {
+
+            initialState.classList.add('hidden');
+
+            serverSelectionView.classList.add('hidden');
+
+            dashboardView.classList.add('hidden');
+
+            section.classList.remove('hidden');
+
+        }
+
+
+
+        // Function to show the loading spinner
+
+        function showLoading(message = 'Loading...') {
+
+            loginSection.classList.add('hidden');
+
+            errorSection.classList.add('hidden');
+
+            loadingSpinner.classList.remove('hidden');
+
+            loadingSpinner.querySelector('p').textContent = message;
+
+            showSection(initialState);
+
+        }
+
+
+
+        // Function to show an error message
+
+        function showErrorMessage(message) {
+
+            loadingSpinner.classList.add('hidden');
+
+            loginSection.classList.add('hidden');
+
+            errorSection.classList.remove('hidden');
+
+            errorText.textContent = message;
+
+            showSection(initialState);
+
+        }
+
+
+
+        // Function to handle the OAuth redirect and get a token
+
+        async function handleOAuthCallback() {
+
+            const params = new URLSearchParams(window.location.search);
+
+            const code = params.get('code');
+
+            
+
+            if (code) {
+
+                showLoading('Logging in...');
+
+                try {
+
+                    const response = await fetch('/api/token', {
+
+                        method: 'POST',
+
+                        headers: { 'Content-Type': 'application/json' },
+
+                        body: JSON.stringify({ code })
+
+                    });
+
+                    const data = await response.json();
+
+                    if (data.access_token) {
+
+                        discordAccessToken = data.access_token;
+
+                        // Clear the URL to hide the code
+
+                        window.history.replaceState({}, document.title, window.location.pathname);
+
+                        fetchGuilds();
+
+                    } else {
+
+                        showErrorMessage('Failed to get Discord access token.');
+
+                    }
+
+                } catch (error) {
+
+                    console.error('OAuth callback error:', error);
+
+                    showErrorMessage('An error occurred during Discord login.');
+
+                }
+
+            } else if (!discordAccessToken) {
+
+                // If there's no code and no token, show the login button
+
+                showSection(initialState);
+
+            }
+
+        }
+
+
+
+        // Function to fetch the user's guilds
+
+        async function fetchGuilds() {
+
+            showLoading('Fetching your servers...');
+
+            try {
+
+                const response = await fetch('/api/guilds', {
+
+                    headers: { 'Authorization': `Bearer ${discordAccessToken}` }
+
+                });
+
+                const guilds = await response.json();
+
+
+
+                if (response.ok) {
+
+                    cachedGuilds = guilds;
+
+                    renderServerSelection(cachedGuilds);
+
+                } else {
+
+                    showErrorMessage(guilds.message || 'Failed to fetch servers.');
+
+                }
+
+            }
+
+            catch (error) {
+
+                console.error('Error fetching guilds:', error);
+
+                showErrorMessage('Failed to connect to the bot backend. Please try again.');
+
+            }
+
+        }
+
+
+
+        // Function to render the server selection grid
+
+        function renderServerSelection(guilds) {
+
+            serverIconsGrid.innerHTML = '';
+
+            if (guilds.length === 0) {
+
+                serverIconsGrid.innerHTML = `<p class="col-span-full text-center text-gray-300">The bot is not in any servers where you have administrator permissions. Please invite it to a server.</p>`;
+
+            } else {
+
+                guilds.forEach(guild => {
+
+                    const iconUrl = guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png` : `https://placehold.co/144x144/1C315E/FFC107?text=${guild.name.charAt(0)}`;
+
+                    const serverCard = document.createElement('div');
+
+                    serverCard.className = 'server-card flex flex-col items-center p-4 rounded-xl cursor-pointer transition-all duration-300 transform bg-secondary-blue shadow-lg border-2 border-transparent hover:border-accent-gold';
+
+                    serverCard.innerHTML = `
+
+                        <img src="${iconUrl}" alt="${guild.name} icon" class="w-36 h-36 rounded-full object-cover">
+
+                        <p class="mt-3 text-lg font-bold text-gray-100 text-center truncate w-full px-1">${guild.name}</p>
+
+                    `;
+
+                    serverCard.addEventListener('click', () => fetchGuildConfig(guild.id, guild.name, iconUrl));
+
+                    serverIconsGrid.appendChild(serverCard);
+
+                });
+
+            }
+
+            showSection(serverSelectionView);
+
+        }
+
+
+
+        // Function to fetch a specific guild's configuration
+
+        async function fetchGuildConfig(guildId, guildName, iconUrl) {
+
+            showLoading(`Loading settings for ${guildName}...`);
+
+            selectedGuildId = guildId;
+
+
+
+            try {
+
+                const response = await fetch(`/api/guild-config?guildId=${guildId}`, {
+
+                    headers: { 'Authorization': `Bearer ${discordAccessToken}` }
+
+                });
+
+                const data = await response.json();
+
+
+
+                if (response.ok) {
+
+                    renderDashboard(data.guildData, data.currentConfig, iconUrl);
+
+                } else {
+
+                    showErrorMessage(data.message || 'Failed to load server configuration.');
+
+                }
+
+            } catch (error) {
+
+                console.error('Error fetching guild config:', error);
+
+                showErrorMessage('An error occurred while fetching server configuration.');
+
+            }
+
+        }
+
+        
+
+        // Function to render the emoji tags
+
+        function renderEmojiTags() {
+
+            const emojiTagsContainer = document.getElementById('selected-emojis-container');
+
+            const hiddenInput = document.getElementById('spamEmojis');
+
+            emojiTagsContainer.innerHTML = '';
+
+            hiddenInput.value = Array.from(selectedEmojis).join(',');
+
+
+
+            if (selectedEmojis.size === 0) {
+
+                emojiTagsContainer.innerHTML = '<span class="text-sm text-gray-400">No emojis selected.</span>';
+
+            } else {
+
+                selectedEmojis.forEach(emoji => {
+
+                    const isCustom = emoji.startsWith('<');
+
+                    const emojiTag = document.createElement('span');
+
+                    emojiTag.className = 'emoji-tag flex items-center space-x-1';
+
+                    emojiTag.dataset.emoji = emoji;
+
+
+
+                    if (isCustom) {
+
+                        const parts = emoji.match(/<a?:(\w+):(\d+)>/);
+
+                        const animated = parts[0].includes('a:');
+
+                        const emojiName = parts[1];
+
+                        const emojiId = parts[2];
+
+                        const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? 'gif' : 'png'}`;
+
+                        emojiTag.innerHTML = `
+
+                            <img src="${imageUrl}" alt="${emojiName}" class="w-5 h-5">
+
+                            <span class="text-sm">x</span>
+
+                        `;
+
+                    } else {
+
+                        emojiTag.innerHTML = `
+
+                            <span>${emoji}</span>
+
+                            <span class="text-sm">x</span>
+
+                        `;
+
+                    }
+
+
+
+                    emojiTag.addEventListener('click', () => {
+
+                        selectedEmojis.delete(emoji);
+
+                        renderEmojiTags();
+
+                    });
+
+                    emojiTagsContainer.appendChild(emojiTag);
+
+                });
+
+            }
+
+        }
+
+
+
+        // Function to render the dashboard view
+
+        function renderDashboard(guildData, currentConfig, iconUrl) {
+
+            guildNameDisplay.textContent = guildData.name;
+
+            guildIconLarge.src = iconUrl;
+
+            guildIconLarge.alt = `${guildData.name} icon`;
+
+
+
+            // Initialize selected emojis from current config
+
+            selectedEmojis = new Set();
+
+            if (currentConfig.spamEmojis) {
+
+                currentConfig.spamEmojis.split(',').forEach(emoji => {
+
+                    if (emoji.trim() !== '') {
+
+                        selectedEmojis.add(emoji.trim());
+
+                    }
+
+                });
+
+            }
+
+
+
+            const rolesHtml = `
+
+                <div class="space-y-4">
+
+                    <h4 class="text-xl font-bold text-gray-300 pt-4 pb-2 border-b border-gray-600">Moderation Roles</h4>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="modRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Role</label>
+
+                        <select id="modRoleId" name="modRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a role...</option>
+
+                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="adminRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Admin Role</label>
+
+                        <select id="adminRoleId" name="adminRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a role...</option>
+
+                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.adminRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="modPingRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Ping Role</label>
+
+                        <select id="modPingRoleId" name="modPingRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a role...</option>
+
+                            ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modPingRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+
+
+                    <h4 class="text-xl font-bold text-gray-300 pt-6 pb-2 border-b border-gray-600">Automoderation Rules</h4>
+
+                    <div class="space-y-4">
+
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                            <label for="moderationLevel" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Level</label>
+
+                            <select id="moderationLevel" name="moderationLevel" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                                <option value="none" ${currentConfig.moderationLevel === 'none' ? 'selected' : ''}>None</option>
+
+                                <option value="low" ${currentConfig.moderationLevel === 'low' ? 'selected' : ''}>Low</option>
+
+                                <option value="medium" ${currentConfig.moderationLevel === 'medium' ? 'selected' : ''}>Medium</option>
+
+                                <option value="high" ${currentConfig.moderationLevel === 'high' ? 'selected' : ''}>High</option>
+
+                            </select>
+
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                            <label for="blacklistedWords" class="w-full sm:w-1/3 text-lg font-semibold">Blacklisted Words (comma-separated)</label>
+
+                            <input id="blacklistedWords" name="blacklistedWords" type="text" placeholder="e.g., badword, anotherbad" value="${currentConfig.blacklistedWords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                            <label for="whitelistedWords" class="w-full sm:w-1/3 text-lg font-semibold">Whitelisted Words (comma-separated)</label>
+
+                            <input id="whitelistedWords" name="whitelistedWords" type="text" placeholder="e.g., goodword, safephrase" value="${currentConfig.whitelistedWords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+
+                            <input type="checkbox" id="repeatedTextEnabled" name="repeatedTextEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.repeatedTextEnabled ? 'checked' : ''}>
+
+                            <label for="repeatedTextEnabled" class="text-lg font-semibold">Enable Repeated Text Detection</label>
+
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+
+                            <input type="checkbox" id="externalLinksEnabled" name="externalLinksEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.externalLinksEnabled ? 'checked' : ''}>
+
+                            <label for="externalLinksEnabled" class="text-lg font-semibold">Enable External Links Detection</label>
+
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+
+                            <input type="checkbox" id="discordInviteLinksEnabled" name="discordInviteLinksEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.discordInviteLinksEnabled ? 'checked' : ''}>
+
+                            <label for="discordInviteLinksEnabled" class="text-lg font-semibold">Enable Discord Invite Links Detection</label>
+
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+
+                            <input type="checkbox" id="excessiveEmojiEnabled" name="excessiveEmojiEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveEmojiEnabled ? 'checked' : ''}>
+
+                            <label for="excessiveEmojiEnabled" class="text-lg font-semibold">Enable Excessive Emoji Detection</label>
+
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+
+                            <label for="excessiveEmojiCount" class="w-full sm:w-1/3 text-lg font-semibold">Max Emojis Allowed</label>
+
+                            <input id="excessiveEmojiCount" name="excessiveEmojiCount" type="number" min="1" value="${currentConfig.excessiveEmojiCount || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+
+                            <input type="checkbox" id="excessiveMentionsEnabled" name="excessiveMentionsEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveMentionsEnabled ? 'checked' : ''}>
+
+                            <label for="excessiveMentionsEnabled" class="text-lg font-semibold">Enable Excessive Mentions Detection</label>
+
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+
+                            <label for="excessiveMentionsCount" class="w-full sm:w-1/3 text-lg font-semibold">Max Mentions Allowed</label>
+
+                            <input id="excessiveMentionsCount" name="excessiveMentionsCount" type="number" min="1" value="${currentConfig.excessiveMentionsCount || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+
+                            <input type="checkbox" id="excessiveCapsEnabled" name="excessiveCapsEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.excessiveCapsEnabled ? 'checked' : ''}>
+
+                            <label for="excessiveCapsEnabled" class="text-lg font-semibold">Enable Excessive Caps Detection</label>
+
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+
+                            <label for="excessiveCapsPercentage" class="w-full sm:w-1/3 text-lg font-semibold">Max Caps Percentage Allowed</label>
+
+                            <input id="excessiveCapsPercentage" name="excessiveCapsPercentage" type="number" min="0" max="100" value="${currentConfig.excessiveCapsPercentage || 70}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+
+                        </div>
+
+                        <div class="flex items-center space-x-2">
+
+                            <input type="checkbox" id="spamDetectionEnabled" name="spamDetectionEnabled" class="form-checkbox h-5 w-5 text-accent-gold rounded" ${currentConfig.spamDetectionEnabled ? 'checked' : ''}>
+
+                            <label for="spamDetectionEnabled" class="text-lg font-semibold">Enable Spam Detection (Rapid Messages)</label>
+
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+
+                            <label for="maxMessages" class="w-full sm:w-1/3 text-lg font-semibold">Max Messages in Timeframe</label>
+
+                            <input id="maxMessages" name="maxMessages" type="number" min="1" value="${currentConfig.maxMessages || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4 ml-7">
+
+                            <label for="timeframeSeconds" class="w-full sm:w-1/3 text-lg font-semibold">Timeframe for Spam (seconds)</label>
+
+                            <input id="timeframeSeconds" name="timeframeSeconds" type="number" min="1" value="${currentConfig.timeframeSeconds || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+
+                        </div>
+
+                    </div>
+
+
+
+                    <h4 class="text-xl font-bold text-gray-300 pt-6 pb-2 border-b border-gray-600">Immunity Settings</h4>
+
+                    <div class="space-y-4">
+
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                            <label for="immuneRoles" class="w-full sm:w-1/3 text-lg font-semibold">Immune Roles</label>
+
+                            <select id="immuneRoles" name="immuneRoles" multiple class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold h-32">
+
+                                <option value="">Select roles (Ctrl/Cmd+click to select multiple)</option>
+
+                                ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.immuneRoles.split(',').includes(role.id) ? 'selected' : ''}>${role.name}</option>`).join('')}
+
+                            </select>
+
+                        </div>
+
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                            <label for="immuneChannels" class="w-full sm:w-1/3 text-lg font-semibold">Immune Channels</label>
+
+                            <select id="immuneChannels" name="immuneChannels" multiple class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold h-32">
+
+                                <option value="">Select channels (Ctrl/Cmd+click to select multiple)</option>
+
+                                ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.immuneChannels.split(',').includes(channel.id) ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+
+                            </select>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            `;
+
+            const loggingHtml = `
+
+                <div class="space-y-4">
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="moderationLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Log Channel</label>
+
+                        <select id="moderationLogChannelId" name="moderationLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a channel...</option>
+
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.moderationLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="messageLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Message Log Channel</label>
+
+                        <select id="messageLogChannelId" name="messageLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a channel...</option>
+
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.messageLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="memberLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Member Log Channel</label>
+
+                        <select id="memberLogChannelId" name="memberLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a channel...</option>
+
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.memberLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="adminLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Admin Log Channel</label>
+
+                        <select id="adminLogChannelId" name="adminLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a channel...</option>
+
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.adminLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="joinLeaveLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Join/Leave Log Channel</label>
+
+                        <select id="joinLeaveLogChannelId" name="joinLeaveLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a channel...</option>
+
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.joinLeaveLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="boostLogChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Boost Log Channel</label>
+
+                        <select id="boostLogChannelId" name="boostLogChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a channel...</option>
+
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.boostLogChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="modAlertChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Moderation Alerts Channel</label>
+
+                        <select id="modAlertChannelId" name="modAlertChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a channel...</option>
+
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.modAlertChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                </div>
+
+            `;
+
+            const funHtml = `
+
+                <div class="space-y-4">
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="karmaChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Karma Channel</label>
+
+                        <select id="karmaChannelId" name="karmaChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a channel...</option>
+
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.karmaChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="countingChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Counting Channel</label>
+
+                        <select id="countingChannelId" name="countingChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a channel...</option>
+
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.countingChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="spamChannelId" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun Channel</label>
+
+                        <select id="spamChannelId" name="spamChannelId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
+
+                            <option value="">Select a channel...</option>
+
+                            ${guildData.channels.map(channel => `<option value="${channel.id}" ${currentConfig.spamChannelId === channel.id ? 'selected' : ''}>#${channel.name}</option>`).join('')}
+
+                        </select>
+
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
+
+                        <label for="spamKeywords" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun GIF Keywords</label>
+
+                        <input id="spamKeywords" name="spamKeywords" type="text" placeholder="e.g., keyword1, keyword2" value="${currentConfig.spamKeywords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
+
+                    </div>
+
+                    <!-- UPDATED EMOJI SELECTOR SECTION -->
+
+                    <div class="space-y-2">
+
+                        <label class="block text-lg font-semibold">Spam Fun Emojis</label>
+
+                        <div id="selected-emojis-container" class="flex flex-wrap gap-2 p-2 bg-gray-700 rounded-lg min-h-[40px] items-center">
+
+                            <!-- Emojis will be rendered here as tags -->
+
+                        </div>
+
+                        <input type="hidden" id="spamEmojis" name="spamEmojis" value="${currentConfig.spamEmojis || ''}">
+
+                        
+
+                        <div class="flex flex-wrap gap-2 max-h-56 overflow-y-auto pr-2 bg-gray-700 rounded-lg p-2">
+
+                            <h5 class="font-semibold text-gray-300 w-full mb-2">Default Emojis:</h5>
+
+                            <div id="default-emojis-list" class="flex flex-wrap gap-2 w-full">
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😂" title="😂">😂</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤣" title="🤣">🤣</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎉" title="🎉">🎉</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🥳" title="🥳">🥳</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎊" title="🎊">🎊</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="✨" title="✨">✨</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🎈" title="🎈">🎈</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="❤️" title="❤️">❤️</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤩" title="🤩">🤩</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="👍" title="👍">👍</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😊" title="😊">😊</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😂" title="😂">😂</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="💯" title="💯">💯</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🔥" title="🔥">🔥</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤣" title="🤣">🤣</span>
+
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="⭐" title="⭐">⭐</span>
+
+                            </div>
+
+                            <h5 class="font-semibold text-gray-300 w-full mt-4 mb-2">Server Emojis:</h5>
+
+                            <div id="custom-emojis-list" class="flex flex-wrap gap-2 w-full">
+
+                                ${guildData.emojis.length > 0 ? 
+
+                                   guildData.emojis.map(emoji => `
+
+                                    <img src="${emoji.url}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
+
+                                   `).join('') 
+
+                                   : '<p class="text-sm text-gray-400">No custom emojis found in this server.</p>'
+
+                               }
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            `;
+
+            
+
+            document.getElementById('tab-roles').innerHTML = rolesHtml;
+
+            document.getElementById('tab-logging').innerHTML = loggingHtml;
+
+            document.getElementById('tab-fun').innerHTML = funHtml;
+
+            
+
+            showSection(dashboardView);
+
+            
+
+            // Set up tab switching logic
+
+            document.querySelectorAll('.tab-button').forEach(button => {
+
+                button.addEventListener('click', () => {
+
+                    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+
+                    document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+
+                    
+
+                    button.classList.add('active');
+
+                    document.getElementById(`tab-${button.dataset.tab}`).classList.remove('hidden');
+
+                });
+
+            });
+
+            // Make sure the first tab is active on load
+
+            document.querySelector('.tab-button[data-tab="roles"]').classList.add('active');
+
+
+
+            // Initial render of emoji tags
+
+            renderEmojiTags();
+
+            
+
+            // Add event listener for emoji clicks in the selection list
+
+            document.getElementById('tab-fun').addEventListener('click', (e) => {
+
+                const target = e.target;
+
+                const emojiIdentifier = target.dataset.emojiIdentifier || target.textContent.trim();
+
+                
+
+                if (emojiIdentifier && target.closest('#default-emojis-list, #custom-emojis-list')) {
+
+                    if (!selectedEmojis.has(emojiIdentifier)) {
+
+                        selectedEmojis.add(emojiIdentifier);
+
+                        renderEmojiTags();
+
+                    }
+
+                }
+
+            });
+
+        }
+
+
+
+        // Handle saving the form
+
+        configForm.addEventListener('submit', async (e) => {
+
+            e.preventDefault();
+
+            const formElements = e.target.elements;
+
+            
+
+            // Function to get selected values from a multiple select dropdown
+
+            const getSelectedValues = (selectElement) => {
+
+                return Array.from(selectElement.options)
+
+                            .filter(option => option.selected)
+
+                            .map(option => option.value)
+
+                            .join(',');
+
+            };
+
+
+
+            const newConfig = {
+
+                modRoleId: formElements.modRoleId.value || null,
+
+                adminRoleId: formElements.adminRoleId.value || null,
+
+                modPingRoleId: formElements.modPingRoleId.value || null,
+
+                karmaChannelId: formElements.karmaChannelId.value || null,
+
+                countingChannelId: formElements.countingChannelId.value || null,
+
+                moderationLogChannelId: formElements.moderationLogChannelId.value || null,
+
+                messageLogChannelId: formElements.messageLogChannelId.value || null,
+
+                memberLogChannelId: formElements.memberLogChannelId.value || null,
+
+                adminLogChannelId: formElements.adminLogChannelId.value || null,
+
+                joinLeaveLogChannelId: formElements.joinLeaveLogChannelId.value || null,
+
+                boostLogChannelId: formElements.boostLogChannelId.value || null,
+
+                modAlertChannelId: formElements.modAlertChannelId.value || null,
+
+                spamChannelId: formElements.spamChannelId.value || null,
+
+                spamKeywords: formElements.spamKeywords.value || null,
+
+                spamEmojis: formElements.spamEmojis.value || null,
+
+                // Automoderation settings
+
+                moderationLevel: formElements.moderationLevel.value,
+
+                blacklistedWords: formElements.blacklistedWords.value,
+
+                whitelistedWords: formElements.whitelistedWords.value,
+
+                spamDetectionEnabled: formElements.spamDetectionEnabled.checked,
+
+                maxMessages: parseInt(formElements.maxMessages.value, 10),
+
+                timeframeSeconds: parseInt(formElements.timeframeSeconds.value, 10),
+
+                repeatedTextEnabled: formElements.repeatedTextEnabled.checked,
+
+                externalLinksEnabled: formElements.externalLinksEnabled.checked,
+
+                discordInviteLinksEnabled: formElements.discordInviteLinksEnabled.checked,
+
+                excessiveEmojiEnabled: formElements.excessiveEmojiEnabled.checked,
+
+                excessiveEmojiCount: parseInt(formElements.excessiveEmojiCount.value, 10),
+
+                excessiveMentionsEnabled: formElements.excessiveMentionsEnabled.checked,
+
+                excessiveMentionsCount: parseInt(formElements.excessiveMentionsCount.value, 10),
+
+                excessiveCapsEnabled: formElements.excessiveCapsEnabled.checked,
+
+                excessiveCapsPercentage: parseInt(formElements.excessiveCapsPercentage.value, 10),
+
+                immuneRoles: getSelectedValues(formElements.immuneRoles), // Get selected roles
+
+                immuneChannels: getSelectedValues(formElements.immuneChannels) // Get selected channels
+
+            };
+
+
+
+            showLoading('Saving settings...');
+
+
+
+            try {
+
+                const response = await fetch(`/api/save-config?guildId=${selectedGuildId}`, {
+
+                    method: 'POST',
+
+                    headers: {
+
+                        'Content-Type': 'application/json',
+
+                        'Authorization': `Bearer ${discordAccessToken}`
+
+                    },
+
+                    body: JSON.stringify(newConfig)
+
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+
+                    showSection(dashboardView);
+
+                    // Provide visual feedback for success
+
+                    const successMessage = document.createElement('div');
+
+                    successMessage.className = 'absolute top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-full shadow-lg transition-all duration-300';
+
+                    successMessage.textContent = 'Settings saved successfully!';
+
+                    document.body.appendChild(successMessage);
+
+                    setTimeout(() => successMessage.remove(), 3000);
+
+                } else {
+
+                    showErrorMessage(data.message || 'Failed to save configuration.');
+
+                }
+
+            } catch (error) {
+
+                console.error('Error saving config:', error);
+
+                showErrorMessage('An error occurred while saving the configuration.');
+
+            }
+
+        });
+
+
+
+        // Event listeners
+
+        backToServersButton.addEventListener('click', fetchGuilds);
+
+        retryButton.addEventListener('click', handleOAuthCallback);
+
+
+
+        // Check if we are on the callback URL and handle authentication
+
+        document.addEventListener('DOMContentLoaded', () => {
+
+            if (window.location.pathname === '/callback') {
+
+                handleOAuthCallback();
+
+            } else {
+
+                showSection(initialState);
+
+            }
+
+        });
+
+
+
+    </script>
+
 </body>
+
 </html>
-�
