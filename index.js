@@ -509,4 +509,410 @@ client.once('ready', async () => {
         client.userId = client.auth.currentUser?.uid || crypto.randomUUID();
         console.log(`Firebase initialized. User ID: ${client.userId}. App ID for Firestore: ${client.appId}`);
 
-        // Attach getGuildConfig and saveGuildConfig to
+        // Attach getGuildConfig and saveGuildConfig to the client object
+        client.getGuildConfig = (guildId) => getGuildConfig(client, guildId);
+        client.saveGuildConfig = (guildId, newConfig) => saveGuildConfig(client, guildId, newConfig);
+
+    } catch (firebaseError) {
+        console.error('Failed to initialize Firebase:', firebaseError);
+        process.exit(1);
+    }
+
+    // Register slash commands
+    const commands = [];
+    client.commands.forEach(command => {
+        commands.push(command.data.toJSON());
+    });
+
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+
+    try {
+        console.log('Started refreshing application (/) commands.');
+        const APPLICATION_ID = process.env.DISCORD_APPLICATION_ID; // Use local const
+        if (!APPLICATION_ID) {
+            console.error('DISCORD_APPLICATION_ID environment variable is not set. Slash commands might not register.');
+            return;
+        }
+
+        await rest.put(
+            Routes.applicationCommands(APPLICATION_ID),
+            { body: commands },
+        );
+
+        console.log('Successfully reloaded application (/) commands.');
+    } catch (error) {
+        console.error('Error refreshing application commands:', error);
+    }
+
+    // --- Populate invite cache for join tracking ---
+    client.guilds.cache.forEach(async guild => {
+        // Ensure bot has 'Manage Guild' permission to fetch invites
+        if (guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+            try {
+                const invites = await guild.invites.fetch();
+                // Store invites as a Map of code -> uses
+                client.invites.set(guild.id, new Map(invites.map(invite => [invite.code, invite.uses])));
+                console.log(`Cached initial invites for guild ${guild.name}`);
+            } catch (error) {
+                console.warn(`Could not fetch initial invites for guild ${guild.name}. Ensure bot has 'Manage Guild' permission.`, error);
+            }
+        } else {
+            console.warn(`Bot does not have 'Manage Guild' permission in ${guild.name}. Cannot track invites.`);
+        }
+    });
+
+
+    // --- Register ALL Event Listeners HERE, after client is ready and Firebase is initialized ---
+
+    // Message-related events
+    client.on('messageCreate', async message => {
+        if (!message.author.bot && message.guild) { // Ignore bot messages and DMs
+            // Ensure message.author is not null/undefined before accessing properties
+            if (!message.author) {
+                console.warn(`Message ${message.id} has no author. Skipping message processing.`);
+                return;
+            }
+            
+            // Check if the author is a partial user and fetch if necessary
+            if (message.author.partial) {
+                try {
+                    await message.author.fetch();
+                } catch (error) {
+                    console.error(`Failed to fetch partial author for message ${message.id}:`, error);
+                    return; // Skip message if author cannot be fetched
+                }
+            }
+
+
+            if (!client.db || !client.appId || !client.googleApiKey) {
+                console.warn('Skipping message processing: Firebase or API keys not fully initialized yet.');
+                return;
+            }
+            const guild = message.guild;
+            const author = message.author;
+
+            // --- Spam Fun Game Check ---
+            const guildConfig = await client.getGuildConfig(guild.id); // Use client.getGuildConfig
+            if (spamGame.shouldHandle(message, guildConfig)) {
+                await spamGame.handleMessage(message, client.tenorApiKey, guildConfig.spamKeywords, guildConfig.spamEmojis); // Pass keywords and emojis
+                return; // Stop further processing
+            }
+
+            // --- Counting Game Check (after auto-mod) ---
+            if (guildConfig.countingChannelId && message.channel.id === guildConfig.countingChannelId) {
+                const handledByCountingGame = await countingGame.checkCountMessage(
+                    message,
+                    client,
+                    client.getGuildConfig, // Pass the client's getGuildConfig
+                    client.saveGuildConfig, // Pass the client's saveGuildConfig
+                    isExempt,
+                    logging.logMessage
+                );
+                if (handledByCountingGame) {
+                    return; // Message was handled by counting game, stop further processing
+                }
+            }
+            
+            // Replaced AI-based moderation with the new function call
+            await autoModeration.checkMessageForModeration(
+                message, client, client.getGuildConfig, client.saveGuildConfig, isExempt, logging.logModerationAction, logging.logMessage, karmaSystem // Pass karmaSystem
+            );
+            
+            try {
+                const authorKarmaData = await karmaSystem.getOrCreateUserKarma(guild.id, author.id, client.db, client.appId);
+                await karmaSystem.updateUserKarmaData(guild.id, author.id, { messagesToday: (authorKarmaData.messagesToday || 0) + 1, lastActivityDate: new Date() }, client.db, client.appId);
+                await karmaSystem.calculateAndAwardKarma(guild, author, { ...authorKarmaData, messagesToday: (authorKarmaData.messagesToday || 0) + 1 }, client.db, client.appId); // Removed Google API Key
+                
+                if (message.reference && message.reference.messageId) {
+                    const repliedToMessage = await message.channel.messages.fetch(message.reference.messageId).catch(() => null);
+                    if (repliedToMessage && !repliedToMessage.author.bot && repliedToMessage.author.id !== author.id) {
+                        const repliedToAuthor = repliedToMessage.author;
+                        const repliedToKarmaData = await karmaSystem.getOrCreateUserKarma(guild.id, repliedToAuthor.id, client.db, client.appId);
+                        // AI-based sentiment analysis removed here. You can add a new system or keep a neutral karma value.
+                        // For now, replies will not influence karma based on sentiment.
+                        await karmaSystem.updateUserKarmaData(guild.id, repliedToAuthor.id, { repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1, lastActivityDate: new Date() }, client.db, client.appId);
+                        await karmaSystem.calculateAndAwardKarma(guild, repliedToAuthor, { ...repliedToKarmaData, repliesReceivedToday: (repliedToKarmaData.repliesReceivedToday || 0) + 1 }, client.db, client.appId);
+                    }
+                }
+            } catch (error) {
+                console.error(`Error in messageCreate karma tracking for ${author.tag}:`, error);
+            }
+        }
+    });
+
+    client.on('messageDelete', async message => {
+        if (!message.guild) return;
+        await messageLogHandler.handleMessageDelete(message, client.getGuildConfig, logging.logMessage); // Use client.getGuildConfig
+    });
+
+    client.on('messageUpdate', async (oldMessage, newMessage) => {
+        if (!newMessage.guild) return;
+        await messageLogHandler.handleMessageUpdate(oldMessage, newMessage, client.getGuildConfig, logging.logMessage); // Use client.getGuildConfig
+    });
+
+    // Member-related events
+    client.on('guildMemberUpdate', async (oldMember, newMember) => {
+        await memberLogHandler.handleGuildMemberUpdate(oldMember, newMember, client.getGuildConfig); // Use client.getGuildConfig
+    });
+
+    client.on('userUpdate', async (oldUser, newUser) => {
+        await memberLogHandler.handleUserUpdate(oldUser, newUser, client.getGuildConfig, client); // Use client.getGuildConfig
+    });
+
+    client.on('guildMemberAdd', async member => {
+        // Store the old invites map *before* fetching new ones for comparison
+        const oldInvitesMap = client.invites.has(member.guild.id) ? new Map(client.invites.get(member.guild.id)) : new Map();
+
+        // Fetch new invites immediately to get latest uses
+        let newInvitesMap = new Collection();
+        if (member.guild.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+            try {
+                const invites = await guild.invites.fetch();
+                // Store invites as a Map of code -> uses
+                client.invites.set(guild.id, new Map(invites.map(invite => [invite.code, invite.uses])));
+                console.log(`Cached initial invites for guild ${guild.name}`);
+            } catch (error) {
+                console.warn(`Could not fetch initial invites for guild ${member.guild.name} on member join:`, error);
+            }
+        }
+        // Pass newInvitesMap and oldInvitesMap to handler
+        await joinLeaveLogHandler.handleGuildMemberAdd(member, client.getGuildConfig, oldInvitesMap, newInvitesMap, karmaSystem.sendKarmaAnnouncement, karmaSystem.addKarmaPoints, client.db, client.appId, client); // Use client.getGuildConfig
+
+        // Update client.invites cache AFTER the handler has used the old state
+        if (member.guild.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+            client.invites.set(guild.id, newInvitesMap); // Store the latest uses map
+        }
+        
+        // --- New Member Greeting and +1 Karma ---
+        const guildConfig = await client.getGuildConfig(member.guild.id); // Use client.getGuildConfig
+        if (guildConfig.karmaChannelId) {
+            try {
+                // Give +1 Karma to the new member
+                const newKarma = await karmaSystem.addKarmaPoints(member.guild.id, member.user, 1, client.db, client.appId);
+                // Send a joyful greeting message to the Karma Channel
+                await karmaSystem.sendKarmaAnnouncement(member.guild, member.user.id, 1, newKarma, client.getGuildConfig, client, true); // Use client.getGuildConfig
+            } catch (error) {
+                console.error(`Error greeting new member ${member.user.tag} or giving initial karma:`, error);
+            }
+        }
+    });
+
+    client.on('guildMemberRemove', async member => {
+        await joinLeaveLogHandler.handleGuildMemberRemove(member, client.getGuildConfig); // Use client.getGuildConfig
+    });
+
+    // Admin-related events (channels, roles, emojis, scheduled events)
+    client.on('channelCreate', async channel => {
+        await adminLogHandler.handleChannelCreate(channel, client.getGuildConfig); // Use client.getGuildConfig
+    });
+    client.on('channelDelete', async channel => {
+        await adminLogHandler.handleChannelDelete(channel, client.getGuildConfig); // Use client.getGuildConfig
+    });
+    client.on('channelUpdate', async (oldChannel, newChannel) => {
+        await adminLogHandler.handleChannelUpdate(oldChannel, newChannel, client.getGuildConfig); // Use client.getGuildConfig
+    });
+    client.on('channelPinsUpdate', async (channel, time) => {
+        // console.log(`Pins updated in channel ${channel.name} at ${time}`);
+    });
+    client.on('roleCreate', async role => {
+        await adminLogHandler.handleRoleCreate(role, client.getGuildConfig); // Use client.getGuildConfig
+    });
+    client.on('roleDelete', async role => {
+        await adminLogHandler.handleRoleDelete(role, client.getGuildConfig); // Use client.getGuildConfig
+    });
+    client.on('roleUpdate', async (oldRole, newRole) => {
+        await adminLogHandler.handleRoleUpdate(oldRole, newRole, client.getGuildConfig); // Use client.getGuildConfig
+    });
+    client.on('emojiCreate', async emoji => {
+        await adminLogHandler.handleEmojiCreate(emoji, client.getGuildConfig); // Use client.getGuildConfig
+    });
+    client.on('emojiDelete', async emoji => {
+        await adminLogHandler.handleEmojiDelete(emoji, client.getGuildConfig); // Use client.getGuildConfig
+    });
+    client.on('emojiUpdate', async (oldEmoji, newEmoji) => {
+        await adminLogHandler.handleEmojiUpdate(oldEmoji, newEmoji, client.getGuildConfig); // Use client.getGuildConfig
+    });
+    client.on('guildScheduledEventCreate', async guildScheduledEvent => {
+        await adminLogHandler.handleGuildScheduledEventCreate(guildScheduledEvent, client.getGuildConfig); // Use client.getGuildConfig
+    });
+    client.on('guildScheduledEventDelete', async guildScheduledEvent => {
+        await adminLogHandler.handleGuildScheduledEventDelete(guildScheduledEvent, client.getGuildConfig); // Use client.getGuildConfig
+    });
+    client.on('guildScheduledEventUpdate', async (oldGuildScheduledEvent, newGuildScheduledEvent) => {
+        await adminLogHandler.handleGuildScheduledEventUpdate(oldGuildScheduledEvent, newGuildScheduledEvent, client.getGuildConfig); // Use client.getGuildConfig
+    });
+
+    // Invite tracking events
+    client.on('inviteCreate', async invite => {
+        if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+            try {
+                const newInvites = await guild.invites.fetch();
+                client.invites.set(guild.id, new Map(newInvites.map(invite => [invite.code, invite.uses])));
+                console.log(`Cached initial invites for guild ${guild.name}`);
+            } catch (error) {
+                console.warn(`Could not fetch initial invites for guild ${invite.guild.name} after invite create:`, error);
+            }
+        }
+    });
+
+    client.on('inviteDelete', async invite => {
+        if (invite.guild && client.invites.has(invite.guild.id)) {
+            client.invites.get(guild.id).delete(invite.code);
+        }
+    });
+
+
+    // Event: Message reaction added (for emoji moderation and karma system reactions)
+    client.on('messageReactionAdd', async (reaction, user) => {
+        // Add checks for partial messages and null properties
+        if (reaction.partial) {
+            try {
+                await reaction.fetch();
+            } catch (error) {
+                console.error('Failed to fetch partial reaction message:', error);
+                return;
+            }
+        }
+
+        // Now, safely check for null properties on the fetched message
+        if (!reaction.message || !reaction.message.guild || !reaction.message.author) {
+            console.warn('Skipping reaction processing: Message, guild, or author is null/undefined.');
+            return;
+        }
+
+        if (!client.db || !client.appId || !client.googleApiKey) {
+            console.warn('Skipping reaction processing: Firebase or API keys not fully initialized yet.');
+            reaction.users.remove(user.id).catch(e => console.error('Failed to remove reaction for uninitialized bot:', e));
+            return;
+        }
+        
+        // Handle Karma reactions first
+        if (['👍', '👎'].includes(reaction.emoji.name)) {
+            const reactorMember = await reaction.message.guild.members.fetch(user.id).catch(() => null);
+            const guildConfig = await client.getGuildConfig(reaction.message.guild.id);
+            
+            const targetUser = reaction.message.author; 
+            let karmaChange = 0;
+            let actionText = '';
+
+            if (reaction.emoji.name === '👍') {
+                karmaChange = 1;
+                actionText = '+1 Karma';
+            } else { // 👎
+                karmaChange = -1;
+                actionText = '-1 Karma';
+            }
+
+            // Only process karma reactions from moderators or admins
+            if (reactorMember && hasPermission(reactorMember, guildConfig)) {
+                try {
+                    const newKarma = await karmaSystem.addKarmaPoints(reaction.message.guild.id, targetUser, karmaChange, client.db, client.appId);
+                    await karmaSystem.sendKarmaAnnouncement(reaction.message.guild, targetUser.id, karmaChange, newKarma, client.getGuildConfig, client);
+                } catch (error) {
+                    console.error(`Error adjusting karma for ${targetUser.tag} via emoji:`, error);
+                    reaction.message.channel.send(`Failed to adjust Karma for <@${targetUser.id}>. An error occurred.`).catch(console.error);
+                } finally {
+                    // Always remove the reaction after processing
+                    reaction.users.remove(user.id).catch(e => console.error(`Failed to remove karma emoji reaction:`, e));
+                }
+                return; // Stop processing this reaction, it's handled
+            }
+        }
+
+        // Delegate to the external moderation/karma reaction handler if not a karma emoji
+        await handleMessageReactionAdd(
+            reaction, user, client, client.getGuildConfig, client.saveGuildConfig, hasPermission, isExempt, logging.logModerationAction, logging.logMessage, karmaSystem
+        );
+    });
+
+    // Event: Interaction created (for slash commands and buttons)
+    client.on('interactionCreate', async interaction => {
+        if (!client.db || !client.appId) {
+            console.warn('Skipping interaction processing: Firebase or API keys not fully initialized yet.');
+            // Removed direct reply here. Commands will handle their own deferrals/replies.
+            return;
+        }
+
+        try {
+            // Determine if the reply should be ephemeral based on command
+            let ephemeral = true; // Default to ephemeral
+            if (interaction.isCommand() && interaction.commandName === 'leaderboard') {
+                ephemeral = false; // Make leaderboard public
+            }
+            
+            // Individual commands are now responsible for deferring their replies.
+            // Removed global deferral logic from here.
+
+            if (interaction.isCommand()) {
+                const { commandName } = interaction;
+                const command = client.commands.get(commandName);
+
+                if (!command) {
+                    // If command is not found, reply immediately (not deferred)
+                    return interaction.reply({ content: 'No command matching that name was found.', flags: [MessageFlags.Ephemeral] });
+                }
+
+                const guildConfig = await client.getGuildConfig(interaction.guildId); // Use client.getGuildConfig
+
+                // Check permissions for karma commands
+                if (['karma_plus', 'karma_minus', 'karma_set'].includes(commandName)) {
+                    if (!hasPermission(interaction.member, guildConfig)) {
+                        // Commands are now responsible for their own deferral.
+                        // This path should defer if it hasn't already.
+                        if (!interaction.deferred && !interaction.replied) {
+                           await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+                        }
+                        return interaction.editReply({ content: 'You do not have permission to use this karma command.', flags: [MessageFlags.Ephemeral] });
+                    }
+                } else { // For other moderation commands
+                    if (!hasPermission(interaction.member, guildConfig)) {
+                        // Commands are now responsible for their own deferral.
+                        // This path should defer if it hasn't already.
+                        if (!interaction.deferred && !interaction.replied) {
+                            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+                        }
+                        return interaction.editReply({ content: 'You do not have permission to use this command.', flags: [MessageFlags.Ephemeral] });
+                    }
+                }
+
+                await command.execute(interaction, {
+                    getGuildConfig: client.getGuildConfig, // Pass client's getGuildConfig
+                    saveGuildConfig: client.saveGuildConfig, // Pass client's saveGuildConfig
+                    hasPermission,
+                    isExempt, // isExempt is still passed, but individual karma commands will ignore it for target
+                    logModerationAction: logging.logModerationAction,
+                    logMessage: logging.logMessage,
+                    MessageFlags,
+                    db: client.db,
+                    appId: client.appId,
+                    getOrCreateUserKarma: karmaSystem.getOrCreateUserKarma,
+                    updateUserKarmaData: karmaSystem.updateUserKarmaData,
+                    calculateAndAwardKarma: karmaSystem.calculateAndAwardKarma,
+                    addKarmaPoints: karmaSystem.addKarmaPoints, // Passed new karma functions
+                    subtractKarmaPoints: karmaSystem.subtractKarmaPoints, // Passed new karma functions
+                    setKarmaPoints: karmaSystem.setKarmaPoints, // Passed new karma functions
+                    client, // Pass client object for full context
+                    karmaSystem // Pass karmaSystem module for moderation functions
+                });
+            } else if (interaction.isButton()) {
+                // For buttons, deferUpdate is usually sufficient and handled above.
+                // No specific button logic here for now.
+            }
+        } catch (error) {
+            console.error('Error during interaction processing:', error);
+            // If already deferred, edit reply. Otherwise, reply immediately.
+            if (interaction.deferred || interaction.replied) {
+                await interaction.editReply({ content: 'An unexpected error occurred while processing your command.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
+            } else {
+                await interaction.reply({ content: 'An unexpected error occurred while processing your command.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to reply for uninitialized bot:', e));
+            }
+        }
+    });
+    // End of event listener registrations
+});
+
+// Log in to Discord with the client's token
+client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
+    console.error("Discord login failed:", err);
+    // Do not exit here, let the process continue for the web server
+});
