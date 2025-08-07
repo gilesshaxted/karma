@@ -48,6 +48,7 @@ const logging = require('./logging/logging'); // Core logging functions
 const karmaSystem = require('./karma/karmaSystem'); // Karma system functions
 const autoModeration = require('./automoderation/autoModeration'); // Auto-moderation functions
 const handleMessageReactionAdd = require('./events/messageReactionAdd'); // Emoji reaction handler
+const meowFun = require('./events/meow'); // NEW: Import meowFun handler
 
 // New logging handlers
 const messageLogHandler = require('./logging/messageLogHandler');
@@ -114,7 +115,8 @@ const getGuildConfig = async (clientInstance, guildId) => {
             excessiveCapsEnabled: configData.excessiveCapsEnabled !== undefined ? configData.excessiveCapsEnabled : false,
             excessiveCapsPercentage: configData.excessiveCapsPercentage !== undefined ? configData.excessiveCapsPercentage : 70,
             immuneRoles: configData.immuneRoles || '',
-            immuneChannels: configData.immuneChannels || ''
+            immuneChannels: configData.immuneChannels || '',
+            meowFunEnabled: configData.meowFunEnabled !== undefined ? configData.meowFunEnabled : false // NEW: Meow Fun setting
         };
     } else {
         const defaultConfig = {
@@ -153,7 +155,8 @@ const getGuildConfig = async (clientInstance, guildId) => {
             excessiveCapsEnabled: false,
             excessiveCapsPercentage: 70,
             immuneRoles: '',
-            immuneChannels: ''
+            immuneChannels: '',
+            meowFunEnabled: false // NEW: Default Meow Fun to false
         };
         await setDoc(configRef, defaultConfig);
         return defaultConfig;
@@ -747,6 +750,7 @@ client.once('ready', async () => {
         if (invite.guild && invite.guild.members.me.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
             try {
                 const newInvites = await guild.invites.fetch();
+                // Store invites as a Map of code -> uses
                 client.invites.set(guild.id, new Map(newInvites.map(invite => [invite.code, invite.uses])));
                 console.log(`Cached initial invites for guild ${guild.name}`);
             } catch (error) {
@@ -756,7 +760,7 @@ client.once('ready', async () => {
     });
 
     client.on('inviteDelete', async invite => {
-        if (invite.guild && client.invites.has(invite.guild.id)) {
+        if (invite.guild && client.invites.has(guild.id)) {
             client.invites.get(guild.id).delete(invite.code);
         }
     });
