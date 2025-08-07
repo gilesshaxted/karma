@@ -557,7 +557,7 @@ client.once('ready', async () => {
                 client.invites.set(guild.id, new Map(invites.map(invite => [invite.code, invite.uses])));
                 console.log(`Cached initial invites for guild ${guild.name}`);
             } catch (error) {
-                console.warn(`Could not fetch initial invites for guild ${invite.guild.name} on member join:`, error);
+                console.warn(`Could not fetch initial invites for guild ${guild.name}. Ensure bot has 'Manage Guild' permission.`, error);
             }
         } else {
             console.warn(`Bot does not have 'Manage Guild' permission in ${guild.name}. Cannot track invites.`);
@@ -600,6 +600,9 @@ client.once('ready', async () => {
                 await spamGame.handleMessage(message, client.tenorApiKey, guildConfig.spamKeywords, guildConfig.spamEmojis); // Pass keywords and emojis
                 return; // Stop further processing
             }
+
+            // --- Meow Fun Check ---
+            await meowFun.handleMeow(message, process.env.THE_CAT_API_KEY, client.getGuildConfig); // Pass API key and getGuildConfig
 
             // --- Counting Game Check (after auto-mod) ---
             if (guildConfig.countingChannelId && message.channel.id === guildConfig.countingChannelId) {
