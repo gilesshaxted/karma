@@ -787,7 +787,7 @@ client.once('ready', async () => {
         }
         
         // Handle Karma reactions first
-        if (['👍', '👎'].includes(reaction.emoji.name)) {
+        if (['�', '👎'].includes(reaction.emoji.name)) {
             const reactorMember = await reaction.message.guild.members.fetch(user.id).catch(() => null);
             const guildConfig = await client.getGuildConfig(reaction.message.guild.id);
             
@@ -829,7 +829,7 @@ client.once('ready', async () => {
     client.on('interactionCreate', async interaction => {
         if (!client.db || !client.appId) {
             console.warn('Skipping interaction processing: Firebase or API keys not fully initialized yet.');
-            // Removed direct reply here. Commands will handle their own deferrals/replies.
+            // Commands will handle their own deferrals/replies.
             return;
         }
 
@@ -916,3 +916,4 @@ client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
     console.error("Discord login failed:", err);
     // Do not exit here, let the process continue for the web server
 });
+�
