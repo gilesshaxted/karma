@@ -787,7 +787,7 @@ client.once('ready', async () => {
         }
         
         // Handle Karma reactions first
-        if (['�', '👎'].includes(reaction.emoji.name)) {
+        if (['👍', '👎'].includes(reaction.emoji.name)) {
             const reactorMember = await reaction.message.guild.members.fetch(user.id).catch(() => null);
             const guildConfig = await client.getGuildConfig(reaction.message.guild.id);
             
@@ -829,7 +829,6 @@ client.once('ready', async () => {
     client.on('interactionCreate', async interaction => {
         if (!client.db || !client.appId) {
             console.warn('Skipping interaction processing: Firebase or API keys not fully initialized yet.');
-            // Commands will handle their own deferrals/replies.
             return;
         }
 
@@ -840,25 +839,19 @@ client.once('ready', async () => {
                 ephemeral = false; // Make leaderboard public
             }
             
-            // Individual commands are now responsible for deferring their replies.
-            // Removed global deferral logic from here.
-
             if (interaction.isCommand()) {
                 const { commandName } = interaction;
                 const command = client.commands.get(commandName);
 
                 if (!command) {
-                    // If command is not found, reply immediately (not deferred)
                     return interaction.reply({ content: 'No command matching that name was found.', flags: [MessageFlags.Ephemeral] });
                 }
 
-                const guildConfig = await client.getGuildConfig(interaction.guildId); // Use client.getGuildConfig
+                const guildConfig = await client.getGuildConfig(interaction.guildId);
 
                 // Check permissions for karma commands
                 if (['karma_plus', 'karma_minus', 'karma_set'].includes(commandName)) {
                     if (!hasPermission(interaction.member, guildConfig)) {
-                        // Commands are now responsible for their own deferral.
-                        // This path should defer if it hasn't already.
                         if (!interaction.deferred && !interaction.replied) {
                            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
                         }
@@ -866,8 +859,6 @@ client.once('ready', async () => {
                     }
                 } else { // For other moderation commands
                     if (!hasPermission(interaction.member, guildConfig)) {
-                        // Commands are now responsible for their own deferral.
-                        // This path should defer if it hasn't already.
                         if (!interaction.deferred && !interaction.replied) {
                             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
                         }
@@ -876,10 +867,10 @@ client.once('ready', async () => {
                 }
 
                 await command.execute(interaction, {
-                    getGuildConfig: client.getGuildConfig, // Pass client's getGuildConfig
-                    saveGuildConfig: client.saveGuildConfig, // Pass client's saveGuildConfig
+                    getGuildConfig: client.getGuildConfig,
+                    saveGuildConfig: client.saveGuildConfig,
                     hasPermission,
-                    isExempt, // isExempt is still passed, but individual karma commands will ignore it for target
+                    isExempt,
                     logModerationAction: logging.logModerationAction,
                     logMessage: logging.logMessage,
                     MessageFlags,
@@ -888,11 +879,11 @@ client.once('ready', async () => {
                     getOrCreateUserKarma: karmaSystem.getOrCreateUserKarma,
                     updateUserKarmaData: karmaSystem.updateUserKarmaData,
                     calculateAndAwardKarma: karmaSystem.calculateAndAwardKarma,
-                    addKarmaPoints: karmaSystem.addKarmaPoints, // Passed new karma functions
-                    subtractKarmaPoints: karmaSystem.subtractKarmaPoints, // Passed new karma functions
-                    setKarmaPoints: karmaSystem.setKarmaPoints, // Passed new karma functions
-                    client, // Pass client object for full context
-                    karmaSystem // Pass karmaSystem module for moderation functions
+                    addKarmaPoints: karmaSystem.addKarmaPoints,
+                    subtractKarmaPoints: karmaSystem.subtractKarmaPoints,
+                    setKarmaPoints: karmaSystem.setKarmaPoints,
+                    client,
+                    karmaSystem
                 });
             } else if (interaction.isButton()) {
                 // For buttons, deferUpdate is usually sufficient and handled above.
@@ -900,7 +891,6 @@ client.once('ready', async () => {
             }
         } catch (error) {
             console.error('Error during interaction processing:', error);
-            // If already deferred, edit reply. Otherwise, reply immediately.
             if (interaction.deferred || interaction.replied) {
                 await interaction.editReply({ content: 'An unexpected error occurred while processing your command.', flags: [MessageFlags.Ephemeral] }).catch(e => console.error('Failed to edit reply for uninitialized bot:', e));
             } else {
@@ -908,7 +898,6 @@ client.once('ready', async () => {
             }
         }
     });
-    // End of event listener registrations
 });
 
 // Log in to Discord with the client's token
@@ -916,4 +905,3 @@ client.login(process.env.DISCORD_BOT_TOKEN).catch(err => {
     console.error("Discord login failed:", err);
     // Do not exit here, let the process continue for the web server
 });
-�
