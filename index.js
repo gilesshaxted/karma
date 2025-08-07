@@ -554,7 +554,7 @@ client.once('ready', async () => {
                 client.invites.set(guild.id, new Map(invites.map(invite => [invite.code, invite.uses])));
                 console.log(`Cached initial invites for guild ${guild.name}`);
             } catch (error) {
-                console.warn(`Could not fetch initial invites for guild ${guild.name}. Ensure bot has 'Manage Guild' permission.`, error);
+                console.warn(`Could not fetch initial invites for guild ${invite.guild.name} on member join:`, error);
             }
         } else {
             console.warn(`Bot does not have 'Manage Guild' permission in ${guild.name}. Cannot track invites.`);
