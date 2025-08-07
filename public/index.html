@@ -180,7 +180,7 @@
         // Use provided environment variables
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? initialAuthToken : '';
 
         // UI Elements
         const initialState = document.getElementById('initial-state');
@@ -597,7 +597,7 @@
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="❤️" title="❤️">❤️</span>
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🤩" title="🤩">🤩</span>
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="👍" title="👍">👍</span>
-                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😊" title="😊">😊</span>
+                                <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😊" title="�">😊</span>
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="😂" title="😂">😂</span>
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="💯" title="💯">💯</span>
                                 <span class="text-3xl cursor-pointer hover:scale-110 transition-transform" data-emoji-identifier="🔥" title="🔥">🔥</span>
@@ -748,3 +748,4 @@
     </script>
 </body>
 </html>
+�
