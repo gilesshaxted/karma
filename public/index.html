@@ -4,16 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Karma Bot Dashboard</title>
-    <!-- Favicon from logo -->
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
     <link rel="manifest" href="/site.webmanifest">
-    <!-- Google Fonts: Poppins for headings, Inter for body text -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         :root {
@@ -22,7 +19,6 @@
             --accent-gold: #FFC107; /* Gold from logo */
             --text-light: #f3f4f6;
         }
-
         body {
             font-family: 'Inter', sans-serif;
             background-color: var(--primary-blue);
@@ -33,38 +29,31 @@
             min-height: 100vh;
             padding: 2rem 1rem;
         }
-
         h1, h2, h3 {
             font-family: 'Poppins', sans-serif;
         }
-
         .dashboard-container {
             background-color: var(--secondary-blue);
             border: 2px solid var(--accent-gold);
         }
-
         .server-card:hover {
             transform: translateY(-5px) scale(1.02);
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4-6px -2px rgba(0, 0, 0, 0.1);
             background-color: #4c71b3;
         }
-        
         /* Custom scrollbar for server list */
         .server-list::-webkit-scrollbar {
             width: 8px;
         }
-
         .server-list::-webkit-scrollbar-track {
             background: rgba(255, 255, 255, 0.1);
             border-radius: 10px;
         }
-
         .server-list::-webkit-scrollbar-thumb {
             background-color: var(--accent-gold);
             border-radius: 10px;
             border: 2px solid var(--secondary-blue);
         }
-
         .tab-button.active {
             background-color: var(--secondary-blue);
             border-color: var(--accent-gold);
@@ -77,7 +66,6 @@
             border-top-left-radius: 0;
             border-top-right-radius: 0;
         }
-
         .emoji-tag {
             background-color: var(--accent-gold);
             color: var(--primary-blue);
@@ -95,17 +83,13 @@
     </style>
 </head>
 <body class="bg-primary-blue text-text-light font-inter">
-
     <div id="app" class="w-full max-w-6xl mx-auto flex flex-col items-center">
-        <!-- Header with Logo and Title -->
         <header class="text-center mb-10 w-full">
             <img src="Karmav1.png" alt="Karma Bot Logo" class="mx-auto w-32 h-32 rounded-full ring-4 ring-accent-gold mb-4 shadow-lg">
             <h1 class="text-4xl font-extrabold text-accent-gold tracking-tight">Karma Bot Dashboard</h1>
             <p class="mt-2 text-lg text-gray-300">Manage your server's moderation and karma settings.</p>
         </header>
-
         <main id="main-content" class="w-full">
-            <!-- Initial State / Loading / Error -->
             <div id="initial-state" class="bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container text-center w-full min-h-[300px] flex flex-col justify-center items-center">
                 <div id="loading-spinner" class="hidden">
                     <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-accent-gold"></div>
@@ -122,17 +106,12 @@
                     <a href="/api/login" id="login-button" class="inline-block px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Login with Discord</a>
                 </div>
             </div>
-
-            <!-- Server Selection View (initially hidden) -->
             <div id="server-selection-view" class="hidden">
                 <h2 class="text-3xl font-bold text-center mb-6 text-accent-gold">Select a Server</h2>
                 <p class="text-center text-gray-300 mb-8">Click on an icon to manage that server's settings.</p>
                 <div id="server-icons-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 max-h-[60vh] overflow-y-auto server-list pr-2">
-                    <!-- Server icons will be dynamically inserted here -->
-                </div>
+                    </div>
             </div>
-
-            <!-- Dashboard View (initially hidden) -->
             <div id="dashboard-view" class="hidden w-full">
                 <div class="bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container w-full">
                     <div class="flex items-center mb-6">
@@ -143,29 +122,19 @@
                             <span>Back</span>
                         </button>
                     </div>
-
                     <h3 class="text-2xl font-bold text-gray-200 mb-4 border-b-2 border-accent-gold pb-2">Configuration Settings</h3>
-
-                    <!-- Tabbed Interface -->
                     <div class="flex flex-wrap border-b border-gray-600 mb-6">
                         <button class="tab-button active px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none bg-secondary-blue border-b-0 hover:bg-gray-700 transition-colors" data-tab="roles">Moderation & Roles</button>
                         <button class="tab-button px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none hover:bg-gray-700 transition-colors" data-tab="logging">Logging Channels</button>
                         <button class="tab-button px-4 py-2 text-lg font-semibold rounded-t-lg border border-transparent border-gray-600 focus:outline-none hover:bg-gray-700 transition-colors" data-tab="fun">Fun & Games</button>
                     </div>
-
                     <form id="config-form" class="space-y-6">
-                        <!-- Tab content will be rendered here -->
                         <div id="tab-roles" class="tab-content">
-                            <!-- Roles Tab Content -->
-                        </div>
+                            </div>
                         <div id="tab-logging" class="tab-content hidden">
-                            <!-- Logging Channels Tab Content -->
-                        </div>
+                            </div>
                         <div id="tab-fun" class="tab-content hidden">
-                            <!-- Fun & Games Tab Content -->
-                        </div>
-                        
-                        <!-- Save Button -->
+                            </div>
                         <div class="flex justify-end pt-4 border-t border-gray-600 mt-6">
                             <button type="submit" class="px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Save Settings</button>
                         </div>
@@ -174,19 +143,11 @@
             </div>
         </main>
     </div>
-
-    <!-- JavaScript for dynamic functionality -->
     <script>
-        // Use provided environment variables, ensuring they are correctly accessed
-        const localAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const localFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const localInitialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : ''; // Corrected self-reference
-
-        // Assign to variables expected by the rest of the script
-        const appId = localAppId;
-        const firebaseConfig = localFirebaseConfig;
-        const initialAuthToken = localInitialAuthToken;
-
+        // Use provided environment variables
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? initialAuthToken : '';
         // UI Elements
         const initialState = document.getElementById('initial-state');
         const loginSection = document.getElementById('login-section');
@@ -201,12 +162,10 @@
         const guildNameDisplay = document.getElementById('guild-name-display');
         const guildIconLarge = document.getElementById('guild-icon-large');
         const configForm = document.getElementById('config-form');
-
         let discordAccessToken = null;
         let selectedGuildId = null;
         let cachedGuilds = [];
         let selectedEmojis = new Set(); // To track selected emojis as tags
-
         // Function to show/hide sections
         function showSection(section) {
             initialState.classList.add('hidden');
@@ -214,7 +173,6 @@
             dashboardView.classList.add('hidden');
             section.classList.remove('hidden');
         }
-
         // Function to show the loading spinner
         function showLoading(message = 'Loading...') {
             loginSection.classList.add('hidden');
@@ -223,7 +181,6 @@
             loadingSpinner.querySelector('p').textContent = message;
             showSection(initialState);
         }
-
         // Function to show an error message
         function showErrorMessage(message) {
             loadingSpinner.classList.add('hidden');
@@ -232,12 +189,10 @@
             errorText.textContent = message;
             showSection(initialState);
         }
-
         // Function to handle the OAuth redirect and get a token
         async function handleOAuthCallback() {
             const params = new URLSearchParams(window.location.search);
             const code = params.get('code');
-            
             if (code) {
                 showLoading('Logging in...');
                 try {
@@ -264,7 +219,6 @@
                 showSection(initialState);
             }
         }
-
         // Function to fetch the user's guilds
         async function fetchGuilds() {
             showLoading('Fetching your servers...');
@@ -273,7 +227,6 @@
                     headers: { 'Authorization': `Bearer ${discordAccessToken}` }
                 });
                 const guilds = await response.json();
-
                 if (response.ok) {
                     cachedGuilds = guilds;
                     renderServerSelection(cachedGuilds);
@@ -286,7 +239,6 @@
                 showErrorMessage('Failed to connect to the bot backend. Please try again.');
             }
         }
-
         // Function to render the server selection grid
         function renderServerSelection(guilds) {
             serverIconsGrid.innerHTML = '';
@@ -307,18 +259,15 @@
             }
             showSection(serverSelectionView);
         }
-
         // Function to fetch a specific guild's configuration
         async function fetchGuildConfig(guildId, guildName, iconUrl) {
             showLoading(`Loading settings for ${guildName}...`);
             selectedGuildId = guildId;
-
             try {
                 const response = await fetch(`/api/guild-config?guildId=${guildId}`, {
                     headers: { 'Authorization': `Bearer ${discordAccessToken}` }
                 });
                 const data = await response.json();
-
                 if (response.ok) {
                     renderDashboard(data.guildData, data.currentConfig, iconUrl);
                 } else {
@@ -329,14 +278,12 @@
                 showErrorMessage('An error occurred while fetching server configuration.');
             }
         }
-        
         // Function to render the emoji tags
         function renderEmojiTags() {
             const emojiTagsContainer = document.getElementById('selected-emojis-container');
             const hiddenInput = document.getElementById('spamEmojis');
             emojiTagsContainer.innerHTML = '';
             hiddenInput.value = Array.from(selectedEmojis).join(',');
-
             if (selectedEmojis.size === 0) {
                 emojiTagsContainer.innerHTML = '<span class="text-sm text-gray-400">No emojis selected.</span>';
             } else {
@@ -345,13 +292,11 @@
                     const emojiTag = document.createElement('span');
                     emojiTag.className = 'emoji-tag flex items-center space-x-1';
                     emojiTag.dataset.emoji = emoji;
-
                     if (isCustom) {
                         const parts = emoji.match(/<a?:(\w+):(\d+)>/);
                         const animated = parts[0].includes('a:');
                         const emojiName = parts[1];
                         const emojiId = parts[2];
-                        // FIX: Use imageURL() instead of .url getter
                         const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? 'gif' : 'png'}`;
                         emojiTag.innerHTML = `
                             <img src="${imageUrl}" alt="${emojiName}" class="w-5 h-5">
@@ -363,7 +308,6 @@
                             <span class="text-sm">x</span>
                         `;
                     }
-
                     emojiTag.addEventListener('click', () => {
                         selectedEmojis.delete(emoji);
                         renderEmojiTags();
@@ -372,13 +316,11 @@
                 });
             }
         }
-
         // Function to render the dashboard view
         function renderDashboard(guildData, currentConfig, iconUrl) {
             guildNameDisplay.textContent = guildData.name;
             guildIconLarge.src = iconUrl;
             guildIconLarge.alt = `${guildData.name} icon`;
-
             // Initialize selected emojis from current config
             selectedEmojis = new Set();
             if (currentConfig.spamEmojis) {
@@ -388,7 +330,6 @@
                     }
                 });
             }
-
             const rolesHtml = `
                 <div class="space-y-4">
                     <h4 class="text-xl font-bold text-gray-300 pt-4 pb-2 border-b border-gray-600">Moderation Roles</h4>
@@ -409,11 +350,10 @@
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="modPingRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Ping Role</label>
                         <select id="modPingRoleId" name="modPingRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a channel...</option>
+                            <option value="">Select a role...</option>
                             ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modPingRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
                         </select>
                     </div>
-
                     <h4 class="text-xl font-bold text-gray-300 pt-6 pb-2 border-b border-gray-600">Automoderation Rules</h4>
                     <div class="space-y-4">
                         <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
@@ -482,7 +422,6 @@
                             <input id="timeframeSeconds" name="timeframeSeconds" type="number" min="1" value="${currentConfig.timeframeSeconds || 5}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
                         </div>
                     </div>
-
                     <h4 class="text-xl font-bold text-gray-300 pt-6 pb-2 border-b border-gray-600">Immunity Settings</h4>
                     <div class="space-y-4">
                         <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
@@ -582,14 +521,11 @@
                         <label for="spamKeywords" class="w-full sm:w-1/3 text-lg font-semibold">Spam Fun GIF Keywords</label>
                         <input id="spamKeywords" name="spamKeywords" type="text" placeholder="e.g., keyword1, keyword2" value="${currentConfig.spamKeywords || ''}" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold" />
                     </div>
-                    <!-- UPDATED EMOJI SELECTOR SECTION -->
                     <div class="space-y-2">
                         <label class="block text-lg font-semibold">Spam Fun Emojis</label>
                         <div id="selected-emojis-container" class="flex flex-wrap gap-2 p-2 bg-gray-700 rounded-lg min-h-[40px] items-center">
-                            <!-- Emojis will be rendered here as tags -->
-                        </div>
+                            </div>
                         <input type="hidden" id="spamEmojis" name="spamEmojis" value="${currentConfig.spamEmojis || ''}">
-                        
                         <div class="flex flex-wrap gap-2 max-h-56 overflow-y-auto pr-2 bg-gray-700 rounded-lg p-2">
                             <h5 class="font-semibold text-gray-300 w-full mb-2">Default Emojis:</h5>
                             <div id="default-emojis-list" class="flex flex-wrap gap-2 w-full">
@@ -612,12 +548,12 @@
                             </div>
                             <h5 class="font-semibold text-gray-300 w-full mt-4 mb-2">Server Emojis:</h5>
                             <div id="custom-emojis-list" class="flex flex-wrap gap-2 w-full">
-                                ${guildData.emojis.length > 0 ? 
-                                   guildData.emojis.map(emoji => `
-                                    <img src="${emoji.imageURL()}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
-                                   `).join('') 
-                                   : '<p class="text-sm text-gray-400">No custom emojis found in this server.</p>'
-                               }
+                                ${guildData.emojis.length > 0 ?
+                                    guildData.emojis.map(emoji => `
+                                        <img src="${emoji.url}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
+                                        `).join('')
+                                        : '<p class="text-sm text-gray-400">No custom emojis found in this server.</p>'
+                                    }
                             </div>
                         </div>
                     </div>
@@ -627,34 +563,27 @@
                     </div>
                 </div>
             `;
-            
             document.getElementById('tab-roles').innerHTML = rolesHtml;
             document.getElementById('tab-logging').innerHTML = loggingHtml;
             document.getElementById('tab-fun').innerHTML = funHtml;
-            
             showSection(dashboardView);
-            
             // Set up tab switching logic
             document.querySelectorAll('.tab-button').forEach(button => {
                 button.addEventListener('click', () => {
                     document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
                     document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
-                    
                     button.classList.add('active');
                     document.getElementById(`tab-${button.dataset.tab}`).classList.remove('hidden');
                 });
             });
             // Make sure the first tab is active on load
             document.querySelector('.tab-button[data-tab="roles"]').classList.add('active');
-
             // Initial render of emoji tags
             renderEmojiTags();
-            
             // Add event listener for emoji clicks in the selection list
             document.getElementById('tab-fun').addEventListener('click', (e) => {
                 const target = e.target;
                 const emojiIdentifier = target.dataset.emojiIdentifier || target.textContent.trim();
-                
                 if (emojiIdentifier && target.closest('#default-emojis-list, #custom-emojis-list')) {
                     if (!selectedEmojis.has(emojiIdentifier)) {
                         selectedEmojis.add(emojiIdentifier);
@@ -663,12 +592,10 @@
                 }
             });
         }
-
         // Handle saving the form
         configForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const formElements = e.target.elements;
-            
             // Function to get selected values from a multiple select dropdown
             const getSelectedValues = (selectElement) => {
                 return Array.from(selectElement.options)
@@ -676,7 +603,6 @@
                             .map(option => option.value)
                             .join(',');
             };
-
             const newConfig = {
                 modRoleId: formElements.modRoleId.value || null,
                 adminRoleId: formElements.adminRoleId.value || null,
@@ -713,9 +639,7 @@
                 immuneChannels: getSelectedValues(formElements.immuneChannels), // Get selected channels
                 meowFunEnabled: formElements.meowFunEnabled.checked // NEW: Get Meow Fun checkbox state
             };
-
             showLoading('Saving settings...');
-
             try {
                 const response = await fetch(`/api/save-config?guildId=${selectedGuildId}`, {
                     method: 'POST',
@@ -742,11 +666,9 @@
                 showErrorMessage('An error occurred while saving the configuration.');
             }
         });
-
         // Event listeners
         backToServersButton.addEventListener('click', fetchGuilds);
         retryButton.addEventListener('click', handleOAuthCallback);
-
         // Check if we are on the callback URL and handle authentication
         document.addEventListener('DOMContentLoaded', () => {
             if (window.location.pathname === '/callback') {
@@ -755,7 +677,6 @@
                 showSection(initialState);
             }
         });
-
     </script>
 </body>
 </html>
