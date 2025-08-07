@@ -177,10 +177,15 @@
 
     <!-- JavaScript for dynamic functionality -->
     <script>
-        // Use provided environment variables
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? initialAuthToken : '';
+        // Use provided environment variables, ensuring they are correctly accessed
+        const localAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const localFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const localInitialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : ''; // Corrected self-reference
+
+        // Assign to variables expected by the rest of the script
+        const appId = localAppId;
+        const firebaseConfig = localFirebaseConfig;
+        const initialAuthToken = localInitialAuthToken;
 
         // UI Elements
         const initialState = document.getElementById('initial-state');
@@ -346,6 +351,7 @@
                         const animated = parts[0].includes('a:');
                         const emojiName = parts[1];
                         const emojiId = parts[2];
+                        // FIX: Use imageURL() instead of .url getter
                         const imageUrl = `https://cdn.discordapp.com/emojis/${emojiId}.${animated ? 'gif' : 'png'}`;
                         emojiTag.innerHTML = `
                             <img src="${imageUrl}" alt="${emojiName}" class="w-5 h-5">
@@ -403,7 +409,7 @@
                     <div class="flex flex-col sm:flex-row sm:items-center sm:space-x-4">
                         <label for="modPingRoleId" class="w-full sm:w-1/3 text-lg font-semibold">Moderator Ping Role</label>
                         <select id="modPingRoleId" name="modPingRoleId" class="mt-1 block w-full sm:w-2/3 p-3 bg-gray-700 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-accent-gold focus:border-accent-gold">
-                            <option value="">Select a role...</option>
+                            <option value="">Select a channel...</option>
                             ${guildData.roles.map(role => `<option value="${role.id}" ${currentConfig.modPingRoleId === role.id ? 'selected' : ''}>${role.name}</option>`).join('')}
                         </select>
                     </div>
@@ -608,7 +614,7 @@
                             <div id="custom-emojis-list" class="flex flex-wrap gap-2 w-full">
                                 ${guildData.emojis.length > 0 ? 
                                    guildData.emojis.map(emoji => `
-                                    <img src="${emoji.url}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
+                                    <img src="${emoji.imageURL()}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
                                    `).join('') 
                                    : '<p class="text-sm text-gray-400">No custom emojis found in this server.</p>'
                                }
