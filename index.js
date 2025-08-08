@@ -9,6 +9,7 @@ const { Routes } = require('discord-api-types/v10');
 const { initializeApp } = require('firebase/app');
 const { getAuth, signInAnonymously, signInWithCustomToken } = require('firebase/auth');
 const { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, query, where, limit, getDocs } = require('firebase/firestore');
+const MAX_READY_RETRIES = 5; // Or whatever number of retries you want
 const express = require('express');
 const axios = require('axios'); // For OAuth calls
 const cookieParser = require('cookie-parser'); // NEW: For handling cookies
@@ -339,7 +340,7 @@ const checkBotReadiness = async (req, res, next) => {
     const MAX_READY_RETRIES = 10; // Max attempts to wait for bot readiness
     const READY_RETRY_DELAY_MS = 1000; // 1 second delay between retries
 
-    for (let i = 0; i < MAX_READY_RETries; i++) {
+    for (let i = 0; i < MAX_READY_RETRIES; i++) {
         if (client.isReady() && client.db && client.appId && client.guilds.cache.size > 0) {
             // Bot is ready, Firebase initialized, and guilds cached
             return next();
