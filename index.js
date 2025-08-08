@@ -41,6 +41,7 @@ client.auth = null;
 client.appId = null;
 client.googleApiKey = null;
 client.tenorApiKey = process.env.TENOR_API_KEY; // New environment variable for Tenor
+client.leetApiUserId = '1754677509.3255689641054f769'; // NEW: Leet Speak API User ID (from your example)
 client.userId = null; // Also store userId on client
 
 
@@ -50,7 +51,8 @@ const logging = require('./logging/logging'); // Core logging functions
 const karmaSystem = require('./karma/karmaSystem'); // Karma system functions
 const autoModeration = require('./automoderation/autoModeration'); // Auto-moderation functions
 const handleMessageReactionAdd = require('./events/messageReactionAdd'); // Emoji reaction handler
-const meowFun = require('./events/meow'); // NEW: Import meowFun handler
+const meowFun = require('./events/meow'); // Import meowFun handler
+const leetFun = require('./events/leet'); // NEW: Import leetFun handler
 
 // New logging handlers
 const messageLogHandler = require('./logging/messageLogHandler');
@@ -118,7 +120,8 @@ const getGuildConfig = async (clientInstance, guildId) => {
             excessiveCapsPercentage: configData.excessiveCapsPercentage !== undefined ? configData.excessiveCapsPercentage : 70,
             immuneRoles: configData.immuneRoles || '',
             immuneChannels: configData.immuneChannels || '',
-            meowFunEnabled: configData.meowFunEnabled !== undefined ? configData.meowFunEnabled : false // NEW: Meow Fun setting
+            meowFunEnabled: configData.meowFunEnabled !== undefined ? configData.meowFunEnabled : false,
+            leetFunEnabled: configData.leetFunEnabled !== undefined ? configData.leetFunEnabled : false // NEW: Leet Fun setting
         };
     } else {
         const defaultConfig = {
@@ -158,7 +161,8 @@ const getGuildConfig = async (clientInstance, guildId) => {
             excessiveCapsPercentage: 70,
             immuneRoles: '',
             immuneChannels: '',
-            meowFunEnabled: false // NEW: Default Meow Fun to false
+            meowFunEnabled: false,
+            leetFunEnabled: false // NEW: Default Leet Fun to false
         };
         await setDoc(configRef, defaultConfig);
         return defaultConfig;
@@ -379,7 +383,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             // If bot's guild cache is still empty, and we have retries left, wait and retry.
             if (botGuilds.size === 0 && i < MAX_GUILD_FETCH_RETRIES - 1) {
                 console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_DELAY_MS)); // Fixed typo here
                 continue; // Retry the loop
             }
 
@@ -524,7 +528,8 @@ app.post('/api/save-config', verifyDiscordToken, checkBotReadiness, async (req, 
             excessiveCapsPercentage: newConfig.excessiveCapsPercentage,
             immuneRoles: newConfig.immuneRoles || '',
             immuneChannels: newConfig.immuneChannels || '',
-            meowFunEnabled: newConfig.meowFunEnabled, // FIX: Meow Fun is now correctly saved.
+            meowFunEnabled: newConfig.meowFunEnabled,
+            leetFunEnabled: newConfig.leetFunEnabled // NEW: Leet Fun is now correctly saved.
         };
 
         await saveGuildConfig(client, guildId, validConfig); // Pass client to saveGuildConfig
@@ -633,7 +638,7 @@ client.once('ready', async () => {
     client.on('messageCreate', async message => {
         if (!message.author.bot && message.guild) { // Ignore bot messages and DMs
             // Ensure message.author is not null/undefined before accessing properties
-            if (!message.author) {
+            if (message.author === null || message.author === undefined) {
                 console.warn(`Message ${message.id} has no author. Skipping message processing.`);
                 return;
             }
@@ -657,11 +662,18 @@ client.once('ready', async () => {
             const author = message.author;
             const guildConfig = await client.getGuildConfig(guild.id); // Use client.getGuildConfig
 
+            // --- Leet Fun Check ---
+            // Try handling with Leet Fun first (higher chance response).
+            const isLeetHandled = await leetFun.handleLeet(message, client.leetApiUserId, client.getGuildConfig, logging.logMessage, client);
+            if (isLeetHandled) {
+                return; // Message was handled by Leet Fun, stop further processing
+            }
+
             // --- Meow Fun Check ---
-            // The handleMeow function now returns a boolean to indicate if it handled the message.
+            // If Leet Fun didn't handle it, try Meow Fun.
             const isMeowHandled = await meowFun.handleMeow(message, process.env.THE_CAT_API_KEY, client.getGuildConfig, logging.logMessage, client);
             if (isMeowHandled) {
-                return; // Message was handled, so stop further processing.
+                return; // Message was handled by meowFun, stop further processing
             }
 
             // --- Spam Fun Game Check ---
