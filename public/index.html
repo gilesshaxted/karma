@@ -110,7 +110,7 @@
                 <h2 class="text-3xl font-bold text-center mb-6 text-accent-gold">Select a Server</h2>
                 <p class="text-center text-gray-300 mb-8">Click on an icon to manage that server's settings.</p>
                 <div id="server-icons-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 max-h-[60vh] overflow-y-auto server-list pr-2">
-                    </div>
+                </div>
             </div>
             <div id="dashboard-view" class="hidden w-full">
                 <div class="bg-secondary-blue p-8 rounded-2xl shadow-xl dashboard-container w-full">
@@ -130,11 +130,11 @@
                     </div>
                     <form id="config-form" class="space-y-6">
                         <div id="tab-roles" class="tab-content">
-                            </div>
+                        </div>
                         <div id="tab-logging" class="tab-content hidden">
-                            </div>
+                        </div>
                         <div id="tab-fun" class="tab-content hidden">
-                            </div>
+                        </div>
                         <div class="flex justify-end pt-4 border-t border-gray-600 mt-6">
                             <button type="submit" class="px-8 py-3 bg-accent-gold text-primary-blue font-bold rounded-full shadow-lg transition-transform transform hover:scale-105">Save Settings</button>
                         </div>
@@ -215,8 +215,23 @@
                     showErrorMessage('An error occurred during Discord login.');
                 }
             } else if (!discordAccessToken) {
-                // If there's no code and no token, show the login button
-                showSection(initialState);
+                // Check if we have a refresh token to stay logged in. This requires backend implementation.
+                // The backend would need to set an HTTP-only cookie with the refresh token.
+                // The `/api/refresh` endpoint would then exchange the token for a new access token.
+                try {
+                    const response = await fetch('/api/refresh', { method: 'POST' });
+                    const data = await response.json();
+                    if (response.ok && data.access_token) {
+                        discordAccessToken = data.access_token;
+                        fetchGuilds();
+                    } else {
+                         // If refresh fails, show the login button
+                        showSection(initialState);
+                    }
+                } catch (error) {
+                    console.error('Refresh token error:', error);
+                    showSection(initialState);
+                }
             }
         }
         // Function to fetch the user's guilds
@@ -524,7 +539,7 @@
                     <div class="space-y-2">
                         <label class="block text-lg font-semibold">Spam Fun Emojis</label>
                         <div id="selected-emojis-container" class="flex flex-wrap gap-2 p-2 bg-gray-700 rounded-lg min-h-[40px] items-center">
-                            </div>
+                        </div>
                         <input type="hidden" id="spamEmojis" name="spamEmojis" value="${currentConfig.spamEmojis || ''}">
                         <div class="flex flex-wrap gap-2 max-h-56 overflow-y-auto pr-2 bg-gray-700 rounded-lg p-2">
                             <h5 class="font-semibold text-gray-300 w-full mb-2">Default Emojis:</h5>
@@ -549,9 +564,9 @@
                             <h5 class="font-semibold text-gray-300 w-full mt-4 mb-2">Server Emojis:</h5>
                             <div id="custom-emojis-list" class="flex flex-wrap gap-2 w-full">
                                 ${guildData.emojis.length > 0 ?
-                                    guildData.emojis.map(emoji => `
-                                        <img src="${emoji.url}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
-                                        `).join('')
+                                        guildData.emojis.map(emoji => `
+                                            <img src="${emoji.url}" alt="${emoji.name}" title=":${emoji.name}:" data-emoji-identifier="<${emoji.animated ? 'a' : ''}:${emoji.name}:${emoji.id}>" class="w-8 h-8 cursor-pointer hover:scale-110 transition-transform">
+                                            `).join('')
                                         : '<p class="text-sm text-gray-400">No custom emojis found in this server.</p>'
                                     }
                             </div>
@@ -674,7 +689,8 @@
             if (window.location.pathname === '/callback') {
                 handleOAuthCallback();
             } else {
-                showSection(initialState);
+                // If not on a callback, attempt to log in using the refresh token
+                handleOAuthCallback();
             }
         });
     </script>
