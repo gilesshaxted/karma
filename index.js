@@ -655,17 +655,20 @@ client.once('ready', async () => {
             }
             const guild = message.guild;
             const author = message.author;
+            const guildConfig = await client.getGuildConfig(guild.id); // Use client.getGuildConfig
+
+            // --- Meow Fun Check ---
+            // The handleMeow function now returns a boolean to indicate if it handled the message.
+            const isMeowHandled = await meowFun.handleMeow(message, process.env.THE_CAT_API_KEY, client.getGuildConfig, logging.logMessage, client);
+            if (isMeowHandled) {
+                return; // Message was handled, so stop further processing.
+            }
 
             // --- Spam Fun Game Check ---
-            const guildConfig = await client.getGuildConfig(guild.id); // Use client.getGuildConfig
             if (spamGame.shouldHandle(message, guildConfig)) {
                 await spamGame.handleMessage(message, client.tenorApiKey, guildConfig.spamKeywords, guildConfig.spamEmojis); // Pass keywords and emojis
                 return; // Stop further processing
             }
-
-            // --- Meow Fun Check ---
-            // FIX: Pass the logMessage function and client to handleMeow
-            await meowFun.handleMeow(message, process.env.THE_CAT_API_KEY, client.getGuildConfig, logging.logMessage, client);
 
             // --- Counting Game Check (after auto-mod) ---
             if (guildConfig.countingChannelId && message.channel.id === guildConfig.countingChannelId) {
