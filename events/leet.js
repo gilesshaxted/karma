@@ -20,7 +20,7 @@ const handleLeet = async (message, leetApiUserId, getGuildConfig, logMessage, cl
 
     // Check for a 5% chance to respond
     const randomChance = Math.random(); // Generates a number between 0 (inclusive) and 1 (exclusive)
-    const LEET_RESPONSE_CHANCE = 0.05; // 5% chance
+    const LEET_RESPONSE_CHANCE = 1.00; // 5% chance
     if (randomChance > LEET_RESPONSE_CHANCE) {
         return false; // Not within the 5% chance, so don't respond
     }
