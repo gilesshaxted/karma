@@ -383,7 +383,7 @@ app.get('/api/guilds', verifyDiscordToken, checkBotReadiness, async (req, res) =
             // If bot's guild cache is still empty, and we have retries left, wait and retry.
             if (botGuilds.size === 0 && i < MAX_GUILD_FETCH_RETRIES - 1) {
                 console.warn(`Bot's guild cache is empty. Retrying guild fetch in ${GUILD_FETCH_RETRY_DELAY_MS / 1000} seconds... (Attempt ${i + 1}/${MAX_GUILD_FETCH_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_DELAY_MS)); // Fixed typo here
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS)); // Fixed typo here
                 continue; // Retry the loop
             }
 
