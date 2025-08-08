@@ -664,7 +664,8 @@ client.once('ready', async () => {
             }
 
             // --- Meow Fun Check ---
-            await meowFun.handleMeow(message, process.env.THE_CAT_API_KEY, client.getGuildConfig); // Pass API key and getGuildConfig
+            // FIX: Pass the logMessage function and client to handleMeow
+            await meowFun.handleMeow(message, process.env.THE_CAT_API_KEY, client.getGuildConfig, logging.logMessage, client);
 
             // --- Counting Game Check (after auto-mod) ---
             if (guildConfig.countingChannelId && message.channel.id === guildConfig.countingChannelId) {
