@@ -24,10 +24,16 @@ const handleMeow = async (message, catApiKey, getGuildConfig, logMessage, client
         return false; // Feature is disabled
     }
 
-    // Check if the message content contains "meow" (case-insensitive)
-    if (message.content.toLowerCase().includes('meow')) {
-        console.log(`[MEOW FUN] 'meow' detected from ${message.author.tag} in #${message.channel.name}.`);
-        await logMessage(message, client, `'meow' detected from ${message.author.tag} in #${message.channel.name}.`); // Log detection
+    // --- NEW: Define multiple trigger words ---
+    const triggerWords = ['meow', 'cat', 'kitty', 'puss','pussy'];
+    const messageContent = message.content.toLowerCase();
+
+    // Check if the message content includes ANY of the trigger words
+    const isTriggered = triggerWords.some(word => messageContent.includes(word));
+
+    if (isTriggered) {
+        console.log(`[MEOW FUN] A trigger word detected from ${message.author.tag} in #${message.channel.name}.`);
+        await logMessage(message, client, `A trigger word detected from ${message.author.tag} in #${message.channel.name}.`); // Log detection
 
         try {
             const response = await axios.get('https://api.thecatapi.com/v1/images/search?', {
@@ -39,6 +45,7 @@ const handleMeow = async (message, catApiKey, getGuildConfig, logMessage, client
             if (imageUrl) {
                 const embed = new EmbedBuilder()
                     .setTitle('Meow! 🐱')
+                    .setDescription('Here is a magnificent feline just for you.')
                     .setImage(imageUrl)
                     .setColor('#FFC107') // Gold color from your theme
                     .setFooter({ text: 'Powered by TheCatAPI' })
@@ -58,9 +65,10 @@ const handleMeow = async (message, catApiKey, getGuildConfig, logMessage, client
         }
     }
 
-    return false; // Return false if no 'meow' was detected or an error occurred
+    return false; // Return false if no trigger word was detected or an error occurred
 };
 
 module.exports = {
     handleMeow
 };
+```
