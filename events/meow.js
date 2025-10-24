@@ -24,8 +24,8 @@ const handleMeow = async (message, catApiKey, getGuildConfig, logMessage, client
         return false; // Feature is disabled
     }
 
-    // --- NEW: Define multiple trigger words ---
-    const triggerWords = ['meow', 'cat', 'kitty', 'puss','pussy'];
+    // --- Define multiple trigger words ---
+    const triggerWords = ['meow', 'cat', 'kitty', 'puss'];
     const messageContent = message.content.toLowerCase();
 
     // Check if the message content includes ANY of the trigger words
@@ -40,6 +40,7 @@ const handleMeow = async (message, catApiKey, getGuildConfig, logMessage, client
                 headers: { 'x-api-key': catApiKey }
             });
 
+            // The Cat API returns an array, we access the URL of the first element
             const imageUrl = response.data[0]?.url;
 
             if (imageUrl) {
@@ -71,4 +72,3 @@ const handleMeow = async (message, catApiKey, getGuildConfig, logMessage, client
 module.exports = {
     handleMeow
 };
-```
