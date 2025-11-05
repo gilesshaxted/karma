@@ -1,4 +1,3 @@
-// events/meow.js
 const axios = require('axios');
 const { EmbedBuilder } = require('discord.js');
 
@@ -12,14 +11,19 @@ const { EmbedBuilder } = require('discord.js');
  * @returns {Promise<boolean>} - Returns true if the message was handled, false otherwise.
  */
 const handleMeow = async (message, catApiKey, getGuildConfig, logMessage, client) => {
-    // Ignore bot messages and DMs
+    // 1. Initial Checks: Ignore bot messages and DMs
     if (message.author.bot || !message.guild) {
+        return false;
+    }
+
+    // 2. Ignore messages that are primarily embeds (like GIFs/images) or attachments
+    if (message.embeds.length > 0 || message.attachments.size > 0) {
         return false;
     }
 
     const guildConfig = await getGuildConfig(message.guild.id);
 
-    // Check if Meow Fun is enabled for this guild
+    // 3. Check if Meow Fun is enabled for this guild
     if (!guildConfig.meowFunEnabled) {
         return false; // Feature is disabled
     }
@@ -28,12 +32,20 @@ const handleMeow = async (message, catApiKey, getGuildConfig, logMessage, client
     const triggerWords = ['meow', 'cat', 'kitty', 'puss'];
     const messageContent = message.content.toLowerCase();
 
-    // Check if the message content includes ANY of the trigger words
-    const isTriggered = triggerWords.some(word => messageContent.includes(word));
+    // 4. Whole Word Trigger Check using Regular Expressions
+    
+    // Split the message content into an array of whole words (tokens).
+    // The regular expression /\b\w+\b/g uses word boundaries (\b) to ensure 
+    // only isolated words are matched (e.g., 'cat' but not 'catapult').
+    // Use an empty array if no words are found.
+    const messageWords = messageContent.match(/\b\w+\b/g) || [];
+
+    // Check if ANY of the trigger words are present in the list of message words
+    const isTriggered = triggerWords.some(trigger => messageWords.includes(trigger));
 
     if (isTriggered) {
-        console.log(`[MEOW FUN] A trigger word detected from ${message.author.tag} in #${message.channel.name}.`);
-        await logMessage(message, client, `A trigger word detected from ${message.author.tag} in #${message.channel.name}.`); // Log detection
+        console.log(`[MEOW FUN] A whole-word trigger detected from ${message.author.tag} in #${message.channel.name}.`);
+        await logMessage(message, client, `A whole-word trigger detected from ${message.author.tag} in #${message.channel.name}.`); // Log detection
 
         try {
             const response = await axios.get('https://api.thecatapi.com/v1/images/search?', {
@@ -48,7 +60,7 @@ const handleMeow = async (message, catApiKey, getGuildConfig, logMessage, client
                     .setTitle('Meow! 🐱')
                     .setDescription('Here is a magnificent feline just for you.')
                     .setImage(imageUrl)
-                    .setColor('#FFC107') // Gold color from your theme
+                    .setColor('#FFC107') // Gold color
                     .setFooter({ text: 'Powered by TheCatAPI' })
                     .setTimestamp();
 
